@@ -59,9 +59,14 @@ export class QwenAdapter implements AIModelAdapter {
 5. 处理可能的异常情况
 6. 使用 async/await 语法
 
-示例：
-用户需求：爬取百度首页的标题
-生成代码：
+重要提示：
+- 访问页面时使用 { waitUntil: 'domcontentloaded', timeout: 60000 } 加快加载
+- 如果需要爬取图片、商品列表等内容，必须先滚动页面触发懒加载
+- 滚动15次，每次滚动一个视口高度，间隔800ms
+- 收集图片时要检查 src、data-src、data-lazy-src 等多种属性
+- 过滤掉无效图片（非http开头、包含data:image等）
+
+示例1：爬取百度首页的标题
 \`\`\`javascript
 log('开始访问百度');
 await page.goto('https://www.baidu.com');
@@ -70,6 +75,48 @@ await page.waitForLoadState('networkidle');
 const title = await page.title();
 log(\`获取到标题: \${title}\`);
 return { title };
+\`\`\`
+
+示例2：爬取页面所有图片（包含懒加载）
+\`\`\`javascript
+log('访问页面');
+await page.goto('https://www.taobao.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
+log('等待页面初始加载');
+await page.waitForTimeout(3000);
+log('开始滚动页面触发懒加载');
+await page.evaluate(async () => {
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const scrollStep = window.innerHeight;
+  const maxScrolls = 15;
+  for (let i = 0; i < maxScrolls; i++) {
+    window.scrollBy(0, scrollStep);
+    await delay(800);
+  }
+  window.scrollTo(0, document.body.scrollHeight);
+  await delay(1500);
+});
+log('滚动完成，等待图片加载');
+await page.waitForTimeout(3000);
+log('收集页面所有图片');
+const images = await page.evaluate(() => {
+  const imgElements = document.querySelectorAll('img');
+  const imageData = [];
+  imgElements.forEach((img, index) => {
+    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+    if (src && src.startsWith('http') && !src.includes('data:image')) {
+      imageData.push({
+        index: index + 1,
+        src: src,
+        alt: img.alt || '',
+        width: img.width,
+        height: img.height
+      });
+    }
+  });
+  return imageData;
+});
+log(\`成功收集到 \${images.length} 张图片\`);
+return { images: images, count: images.length };
 \`\`\`
 
 现在请根据用户需求生成代码，只返回代码部分，不要包含\`\`\`标记。`;
@@ -81,11 +128,6 @@ export class SiliconFlowAdapter implements AIModelAdapter {
   name = '硅基流动';
 
   formatRequest(prompt: string, options: any = {}) {
-    // 硅基流动常用的免费模型
-    // Qwen/Qwen2.5-7B-Instruct - 通义千问 2.5
-    // Qwen/Qwen3.5-27B - 通义千问 3.5
-    // deepseek-ai/DeepSeek-V2.5 - DeepSeek
-    // THUDM/glm-4-9b-chat - 智谱GLM
     const model = options.model || 'Qwen/Qwen2.5-7B-Instruct';
     
     return {
@@ -129,9 +171,14 @@ export class SiliconFlowAdapter implements AIModelAdapter {
 5. 处理可能的异常情况
 6. 使用 async/await 语法
 
-示例：
-用户需求：爬取百度首页的标题
-生成代码：
+重要提示：
+- 访问页面时使用 { waitUntil: 'domcontentloaded', timeout: 60000 } 加快加载
+- 如果需要爬取图片、商品列表等内容，必须先滚动页面触发懒加载
+- 滚动15次，每次滚动一个视口高度，间隔800ms
+- 收集图片时要检查 src、data-src、data-lazy-src 等多种属性
+- 过滤掉无效图片（非http开头、包含data:image等）
+
+示例1：爬取百度首页的标题
 \`\`\`javascript
 log('开始访问百度');
 await page.goto('https://www.baidu.com');
@@ -140,6 +187,48 @@ await page.waitForLoadState('networkidle');
 const title = await page.title();
 log(\`获取到标题: \${title}\`);
 return { title };
+\`\`\`
+
+示例2：爬取页面所有图片（包含懒加载）
+\`\`\`javascript
+log('访问页面');
+await page.goto('https://www.taobao.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
+log('等待页面初始加载');
+await page.waitForTimeout(3000);
+log('开始滚动页面触发懒加载');
+await page.evaluate(async () => {
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const scrollStep = window.innerHeight;
+  const maxScrolls = 15;
+  for (let i = 0; i < maxScrolls; i++) {
+    window.scrollBy(0, scrollStep);
+    await delay(800);
+  }
+  window.scrollTo(0, document.body.scrollHeight);
+  await delay(1500);
+});
+log('滚动完成，等待图片加载');
+await page.waitForTimeout(3000);
+log('收集页面所有图片');
+const images = await page.evaluate(() => {
+  const imgElements = document.querySelectorAll('img');
+  const imageData = [];
+  imgElements.forEach((img, index) => {
+    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+    if (src && src.startsWith('http') && !src.includes('data:image')) {
+      imageData.push({
+        index: index + 1,
+        src: src,
+        alt: img.alt || '',
+        width: img.width,
+        height: img.height
+      });
+    }
+  });
+  return imageData;
+});
+log(\`成功收集到 \${images.length} 张图片\`);
+return { images: images, count: images.length };
 \`\`\`
 
 现在请根据用户需求生成代码，只返回代码部分，不要包含\`\`\`标记。`;

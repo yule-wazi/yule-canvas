@@ -21,6 +21,17 @@
       >
         清空日志
       </button>
+      
+      <div class="save-toggle">
+        <label class="toggle-label">
+          <input 
+            type="checkbox" 
+            v-model="autoSaveData"
+            class="toggle-checkbox"
+          />
+          <span class="toggle-text">自动保存数据</span>
+        </label>
+      </div>
     </div>
 
     <div v-if="progress > 0" class="progress-bar">
@@ -77,6 +88,7 @@ const result = ref<any>(null);
 const progress = ref(0);
 const progressMessage = ref('');
 const logsRef = ref<HTMLElement | null>(null);
+const autoSaveData = ref(false); // 默认关闭自动保存
 
 const execute = () => {
   if (!props.code) return;
@@ -111,8 +123,14 @@ const execute = () => {
         message: `✅ 执行成功，耗时 ${(res.duration / 1000).toFixed(2)}秒`
       });
       
-      // 保存执行结果到LocalStorage
-      saveExecutionResult(res);
+      // 根据开关决定是否保存执行结果
+      if (autoSaveData.value) {
+        saveExecutionResult(res);
+        logs.value.push({
+          timestamp: Date.now(),
+          message: '💾 数据已保存到本地存储'
+        });
+      }
     } else {
       logs.value.push({
         timestamp: Date.now(),
@@ -242,6 +260,32 @@ const saveExecutionResult = (res: any) => {
 
 .clear-btn:hover {
   background: #30363d;
+}
+
+.save-toggle {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #238636;
+}
+
+.toggle-text {
+  color: #c9d1d9;
+  font-size: 0.9rem;
 }
 
 .progress-bar {
