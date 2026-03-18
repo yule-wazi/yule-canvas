@@ -73,8 +73,12 @@ export class PlaywrightExecutor {
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage'
-            ]
+              '--disable-dev-shm-usage',
+              '--disable-blink-features=AutomationControlled'
+            ],
+            ignoreDefaultArgs: ['--enable-automation'],
+            viewport: { width: 1920, height: 1080 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
           }
         );
       } else {
@@ -85,7 +89,13 @@ export class PlaywrightExecutor {
             process.env.CHROME_USER_DATA || './chrome-data',
             {
               headless: false,
-              channel: 'chrome'
+              channel: 'chrome',
+              args: [
+                '--disable-blink-features=AutomationControlled'
+              ],
+              ignoreDefaultArgs: ['--enable-automation'],
+              viewport: { width: 1920, height: 1080 },
+              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
             }
           );
         } catch (e) {
@@ -99,6 +109,23 @@ export class PlaywrightExecutor {
       this.sendProgress(20, '创建页面');
 
       const page = browser.pages()[0] || await browser.newPage();
+      
+      // 隐藏webdriver特征
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', {
+          get: () => undefined
+        });
+        // @ts-ignore
+        window.navigator.chrome = {
+          runtime: {}
+        };
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [1, 2, 3, 4, 5]
+        });
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['zh-CN', 'zh', 'en']
+        });
+      });
 
       this.log('开始执行脚本...');
       this.sendProgress(30, '执行脚本');

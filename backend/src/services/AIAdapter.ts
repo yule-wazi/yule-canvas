@@ -9,6 +9,127 @@ export interface AIModelAdapter {
   getApiKey(): string;
 }
 
+const SHARED_SYSTEM_PROMPT = `你是一个Playwright脚本生成专家。请根据用户的需求生成可执行的Playwright代码。
+
+要求：
+1. 只返回JavaScript代码，不要有任何解释文字
+2. 代码中可以使用 page 对象（已提供）
+3. 使用 log() 函数输出执行日志
+4. 最后使用 return 返回爬取的数据对象
+5. 处理可能的异常情况
+6. 使用 async/await 语法
+
+数据输出格式规范（重要）：
+必须返回以下统一格式的JSON对象：
+{
+  "success": true,           // 是否成功
+  "dataType": "images",      // 数据类型：images/videos/articles/products/links/custom
+  "url": "https://...",      // 爬取的URL
+  "timestamp": Date.now(),   // 时间戳
+  "count": 10,               // 数据条数
+  "items": [                 // 数据数组
+    {
+      "id": 1,               // 序号
+      "title": "",           // 标题（如果有）
+      "url": "",             // 链接/地址
+      "thumbnail": "",       // 缩略图（如果有）
+      "description": "",     // 描述（如果有）
+      "metadata": {}         // 其他元数据
+    }
+  ]
+}
+
+重要提示：
+- 访问页面时使用 { waitUntil: 'domcontentloaded', timeout: 60000 } 加快加载
+- 如果需要爬取图片、商品列表等内容，必须先滚动页面触发懒加载
+- 使用智能滚动：检测页面高度变化，到底后自动停止，最多15次
+- 收集图片时要检查 src、data-src、data-lazy-src 等多种属性
+- 过滤掉无效图片（非http开头、包含data:image等）
+
+示例1：爬取百度首页的标题
+\`\`\`javascript
+log('开始访问百度');
+await page.goto('https://www.baidu.com');
+log('等待页面加载');
+await page.waitForLoadState('networkidle');
+const title = await page.title();
+log(\`获取到标题: \${title}\`);
+return {
+  success: true,
+  dataType: 'custom',
+  url: 'https://www.baidu.com',
+  timestamp: Date.now(),
+  count: 1,
+  items: [{ id: 1, title: title, url: 'https://www.baidu.com' }]
+};
+\`\`\`
+
+示例2：爬取页面所有图片（包含智能滚动懒加载）
+\`\`\`javascript
+log('访问页面');
+const targetUrl = 'https://www.taobao.com';
+await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+log('等待页面初始加载');
+await page.waitForTimeout(3000);
+log('开始智能滚动页面触发懒加载');
+await page.evaluate(async () => {
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  let lastHeight = document.body.scrollHeight;
+  let scrollAttempts = 0;
+  const maxAttempts = 15;
+  
+  while (scrollAttempts < maxAttempts) {
+    window.scrollBy(0, window.innerHeight);
+    await delay(800);
+    
+    const newHeight = document.body.scrollHeight;
+    if (newHeight === lastHeight) {
+      break;
+    }
+    lastHeight = newHeight;
+    scrollAttempts++;
+  }
+  
+  window.scrollTo(0, document.body.scrollHeight);
+  await delay(1500);
+});
+log('滚动完成，等待图片加载');
+await page.waitForTimeout(3000);
+log('收集页面所有图片');
+const images = await page.evaluate(() => {
+  const imgElements = document.querySelectorAll('img');
+  const imageData = [];
+  imgElements.forEach((img, index) => {
+    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
+    if (src && src.startsWith('http') && !src.includes('data:image')) {
+      imageData.push({
+        id: index + 1,
+        title: img.alt || '',
+        url: src,
+        thumbnail: src,
+        description: img.title || '',
+        metadata: {
+          width: img.width,
+          height: img.height
+        }
+      });
+    }
+  });
+  return imageData;
+});
+log(\`成功收集到 \${images.length} 张图片\`);
+return {
+  success: true,
+  dataType: 'images',
+  url: targetUrl,
+  timestamp: Date.now(),
+  count: images.length,
+  items: images
+};
+\`\`\`
+
+现在请根据用户需求生成代码，只返回代码部分，不要包含\`\`\`标记。`;
+
 export class QwenAdapter implements AIModelAdapter {
   id = 'qwen';
   name = '阿里千问';
@@ -20,7 +141,7 @@ export class QwenAdapter implements AIModelAdapter {
         messages: [
           {
             role: 'system',
-            content: this.getSystemPrompt()
+            content: SHARED_SYSTEM_PROMPT
           },
           {
             role: 'user',
@@ -47,80 +168,6 @@ export class QwenAdapter implements AIModelAdapter {
   getApiKey(): string {
     return process.env.QWEN_API_KEY || '';
   }
-
-  private getSystemPrompt(): string {
-    return `你是一个Playwright脚本生成专家。请根据用户的需求生成可执行的Playwright代码。
-
-要求：
-1. 只返回JavaScript代码，不要有任何解释文字
-2. 代码中可以使用 page 对象（已提供）
-3. 使用 log() 函数输出执行日志
-4. 最后使用 return 返回爬取的数据对象
-5. 处理可能的异常情况
-6. 使用 async/await 语法
-
-重要提示：
-- 访问页面时使用 { waitUntil: 'domcontentloaded', timeout: 60000 } 加快加载
-- 如果需要爬取图片、商品列表等内容，必须先滚动页面触发懒加载
-- 滚动15次，每次滚动一个视口高度，间隔800ms
-- 收集图片时要检查 src、data-src、data-lazy-src 等多种属性
-- 过滤掉无效图片（非http开头、包含data:image等）
-
-示例1：爬取百度首页的标题
-\`\`\`javascript
-log('开始访问百度');
-await page.goto('https://www.baidu.com');
-log('等待页面加载');
-await page.waitForLoadState('networkidle');
-const title = await page.title();
-log(\`获取到标题: \${title}\`);
-return { title };
-\`\`\`
-
-示例2：爬取页面所有图片（包含懒加载）
-\`\`\`javascript
-log('访问页面');
-await page.goto('https://www.taobao.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
-log('等待页面初始加载');
-await page.waitForTimeout(3000);
-log('开始滚动页面触发懒加载');
-await page.evaluate(async () => {
-  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const scrollStep = window.innerHeight;
-  const maxScrolls = 15;
-  for (let i = 0; i < maxScrolls; i++) {
-    window.scrollBy(0, scrollStep);
-    await delay(800);
-  }
-  window.scrollTo(0, document.body.scrollHeight);
-  await delay(1500);
-});
-log('滚动完成，等待图片加载');
-await page.waitForTimeout(3000);
-log('收集页面所有图片');
-const images = await page.evaluate(() => {
-  const imgElements = document.querySelectorAll('img');
-  const imageData = [];
-  imgElements.forEach((img, index) => {
-    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
-    if (src && src.startsWith('http') && !src.includes('data:image')) {
-      imageData.push({
-        index: index + 1,
-        src: src,
-        alt: img.alt || '',
-        width: img.width,
-        height: img.height
-      });
-    }
-  });
-  return imageData;
-});
-log(\`成功收集到 \${images.length} 张图片\`);
-return { images: images, count: images.length };
-\`\`\`
-
-现在请根据用户需求生成代码，只返回代码部分，不要包含\`\`\`标记。`;
-  }
 }
 
 export class SiliconFlowAdapter implements AIModelAdapter {
@@ -135,7 +182,7 @@ export class SiliconFlowAdapter implements AIModelAdapter {
       messages: [
         {
           role: 'system',
-          content: this.getSystemPrompt()
+          content: SHARED_SYSTEM_PROMPT
         },
         {
           role: 'user',
@@ -158,80 +205,6 @@ export class SiliconFlowAdapter implements AIModelAdapter {
 
   getApiKey(): string {
     return process.env.SILICONFLOW_API_KEY || '';
-  }
-
-  private getSystemPrompt(): string {
-    return `你是一个Playwright脚本生成专家。请根据用户的需求生成可执行的Playwright代码。
-
-要求：
-1. 只返回JavaScript代码，不要有任何解释文字
-2. 代码中可以使用 page 对象（已提供）
-3. 使用 log() 函数输出执行日志
-4. 最后使用 return 返回爬取的数据对象
-5. 处理可能的异常情况
-6. 使用 async/await 语法
-
-重要提示：
-- 访问页面时使用 { waitUntil: 'domcontentloaded', timeout: 60000 } 加快加载
-- 如果需要爬取图片、商品列表等内容，必须先滚动页面触发懒加载
-- 滚动15次，每次滚动一个视口高度，间隔800ms
-- 收集图片时要检查 src、data-src、data-lazy-src 等多种属性
-- 过滤掉无效图片（非http开头、包含data:image等）
-
-示例1：爬取百度首页的标题
-\`\`\`javascript
-log('开始访问百度');
-await page.goto('https://www.baidu.com');
-log('等待页面加载');
-await page.waitForLoadState('networkidle');
-const title = await page.title();
-log(\`获取到标题: \${title}\`);
-return { title };
-\`\`\`
-
-示例2：爬取页面所有图片（包含懒加载）
-\`\`\`javascript
-log('访问页面');
-await page.goto('https://www.taobao.com', { waitUntil: 'domcontentloaded', timeout: 60000 });
-log('等待页面初始加载');
-await page.waitForTimeout(3000);
-log('开始滚动页面触发懒加载');
-await page.evaluate(async () => {
-  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const scrollStep = window.innerHeight;
-  const maxScrolls = 15;
-  for (let i = 0; i < maxScrolls; i++) {
-    window.scrollBy(0, scrollStep);
-    await delay(800);
-  }
-  window.scrollTo(0, document.body.scrollHeight);
-  await delay(1500);
-});
-log('滚动完成，等待图片加载');
-await page.waitForTimeout(3000);
-log('收集页面所有图片');
-const images = await page.evaluate(() => {
-  const imgElements = document.querySelectorAll('img');
-  const imageData = [];
-  imgElements.forEach((img, index) => {
-    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
-    if (src && src.startsWith('http') && !src.includes('data:image')) {
-      imageData.push({
-        index: index + 1,
-        src: src,
-        alt: img.alt || '',
-        width: img.width,
-        height: img.height
-      });
-    }
-  });
-  return imageData;
-});
-log(\`成功收集到 \${images.length} 张图片\`);
-return { images: images, count: images.length };
-\`\`\`
-
-现在请根据用户需求生成代码，只返回代码部分，不要包含\`\`\`标记。`;
   }
 }
 
