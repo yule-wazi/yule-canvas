@@ -30,6 +30,10 @@
             <span class="block-icon">⏱️</span>
             <span>等待</span>
           </div>
+          <div class="palette-block" @click="addBlock('log')">
+            <span class="block-icon">📝</span>
+            <span>日志输出</span>
+          </div>
         </div>
 
         <div class="palette-category">
@@ -61,10 +65,6 @@
           <div class="palette-block" @click="addBlock('loop')">
             <span class="block-icon">�</span>
             <span>循环</span>
-          </div>
-          <div class="palette-block" @click="addBlock('log')">
-            <span class="block-icon">📝</span>
-            <span>日志输出</span>
           </div>
         </div>
       </div>

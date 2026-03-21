@@ -183,7 +183,7 @@ export const useWorkflowStore = defineStore('workflow', {
         },
         log: {
           label: '日志输出',
-          category: 'logic',
+          category: 'browser',
           defaultData: { message: '' },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]

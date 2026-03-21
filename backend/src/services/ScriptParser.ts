@@ -96,6 +96,14 @@ export class ScriptParser {
         xPosition += 250;
       }
 
+      // 7. 解析 logUser（用户日志）
+      const logUserPattern = /logUser\('([^']+)'\);/g;
+      while ((match = logUserPattern.exec(code)) !== null) {
+        const message = match[1].replace(/\\'/g, "'"); // 反转义单引号
+        blocks.push(this.createLogBlock(message, xPosition));
+        xPosition += 250;
+      }
+
       // 创建顺序连接
       for (let i = 0; i < blocks.length - 1; i++) {
         connections.push({
@@ -128,141 +136,218 @@ export class ScriptParser {
     const connections: any[] = [];
     let xPosition = 100;
 
-    // 解析循环模块
-    let loopMode = 'count';
-    let loopCount = 10;
-    let loopCondition = '';
-    let maxIterations = 1000;
+    // 查找所有循环（支持多个循环）
+    const loopMatches: Array<{
+      mode: string;
+      count?: number;
+      condition?: string;
+      maxIterations?: number;
+      bodyCode: string;
+      startIndex: number;
+      endIndex: number;
+    }> = [];
 
-    // 匹配固定次数循环 - 更宽松的匹配
-    const countLoopPattern = /log\('开始循环，共 (\d+) 次'\);[\s\S]*?for \(let __loopIndex = 0; __loopIndex < (\d+); __loopIndex\+\+\) \{([\s\S]*?)\n\}[\s\S]*?log\('循环完成'\);/;
-    const countMatch = countLoopPattern.exec(code);
-    
-    // 匹配条件循环
-    const conditionLoopPattern = /log\('开始条件循环'\);[\s\S]*?let __loopIndex = 0;[\s\S]*?while \((.+?) && __loopIndex < (\d+)\) \{([\s\S]*?)__loopIndex\+\+;[\s\S]*?\n\}[\s\S]*?log\('循环完成，共执行 ' \+ __loopIndex \+ ' 次'\);/;
-    const conditionMatch = conditionLoopPattern.exec(code);
-
-    let loopBodyCode = '';
-    let beforeLoopCode = '';
-    
-    if (countMatch) {
-      loopMode = 'count';
-      loopCount = parseInt(countMatch[2]);
-      loopBodyCode = countMatch[3];
-      // 提取循环之前的代码
-      beforeLoopCode = code.substring(0, countMatch.index);
-      console.log('解析到固定次数循环，循环体代码长度:', loopBodyCode.length);
-    } else if (conditionMatch) {
-      loopMode = 'condition';
-      loopCondition = conditionMatch[1];
-      maxIterations = parseInt(conditionMatch[2]);
-      loopBodyCode = conditionMatch[3];
-      // 提取循环之前的代码
-      beforeLoopCode = code.substring(0, conditionMatch.index);
-      console.log('解析到条件循环，循环体代码长度:', loopBodyCode.length);
-    } else {
-      console.log('未能匹配到循环模式');
-    }
-
-    // 解析循环之前的模块
-    if (beforeLoopCode) {
-      const beforeBlocks = this.parseNormalBlocks(beforeLoopCode, xPosition);
-      console.log('解析到循环前模块数量:', beforeBlocks.length);
-      blocks.push(...beforeBlocks);
-      xPosition += beforeBlocks.length * 250;
-    }
-
-    // 创建循环模块
-    const loopBlock = {
-      id: `block-loop-${Date.now()}`,
-      type: 'loop',
-      label: '循环',
-      category: 'logic',
-      position: { x: xPosition + 250, y: 200 },
-      data: {
-        mode: loopMode,
-        count: loopCount,
-        condition: loopCondition,
-        maxIterations: maxIterations
-      },
-      inputs: [{ id: 'loop-end', name: '循环结束', type: 'flow' }],
-      outputs: [{ id: 'loop-start', name: '循环开始', type: 'flow' }]
-    };
-
-    // 解析循环体内的模块
-    let bodyBlocks: any[] = [];
-    if (loopBodyCode) {
-      bodyBlocks = this.parseLoopBody(loopBodyCode, xPosition);
-      console.log('解析到循环体内模块数量:', bodyBlocks.length);
-    }
-
-    // 组装所有模块
-    // 1. 循环前的模块
-    // 2. 循环体内的模块
-    // 3. 循环模块
-
-    // 如果有循环前的模块，创建它们之间的连接
-    if (blocks.length > 0) {
-      for (let i = 0; i < blocks.length - 1; i++) {
-        connections.push({
-          id: `conn-before-${i}`,
-          source: blocks[i].id,
-          sourceHandle: 'source-right',
-          target: blocks[i + 1].id,
-          targetHandle: 'target-left'
-        });
-      }
-    }
-
-    // 添加循环体内的模块
-    blocks.push(...bodyBlocks);
-    
-    // 添加循环模块
-    blocks.push(loopBlock);
-
-    // 创建循环相关的连接
-    if (bodyBlocks.length > 0) {
-      // 如果有循环前的模块，最后一个循环前模块连接到第一个循环体模块
-      if (blocks.length > bodyBlocks.length + 1) {
-        const lastBeforeLoopBlock = blocks[blocks.length - bodyBlocks.length - 2];
-        connections.push({
-          id: 'conn-to-loop-body',
-          source: lastBeforeLoopBlock.id,
-          sourceHandle: 'source-right',
-          target: bodyBlocks[0].id,
-          targetHandle: 'target-left'
-        });
-      }
-
-      // 循环模块的 loop-start 连接到第一个循环体模块
-      connections.push({
-        id: 'conn-loop-start',
-        source: loopBlock.id,
-        sourceHandle: 'loop-start',
-        target: bodyBlocks[0].id,
-        targetHandle: 'target-left'
-      });
-
-      // 循环体内模块之间的连接
-      for (let i = 0; i < bodyBlocks.length - 1; i++) {
-        connections.push({
-          id: `conn-body-${i}`,
-          source: bodyBlocks[i].id,
-          sourceHandle: 'source-right',
-          target: bodyBlocks[i + 1].id,
-          targetHandle: 'target-left'
-        });
-      }
-
-      // 最后一个循环体模块连接回循环模块
-      connections.push({
-        id: 'conn-loop-end',
-        source: bodyBlocks[bodyBlocks.length - 1].id,
-        sourceHandle: 'source-right',
-        target: loopBlock.id,
-        targetHandle: 'loop-end'
+    // 匹配所有固定次数循环
+    const countLoopPattern = /log\('开始循环，共 (\d+) 次'\);[\s\S]*?for \(let __loopIndex = 0; __loopIndex < (\d+); __loopIndex\+\+\) \{([\s\S]*?)\n\}[\s\S]*?log\('循环完成'\);/g;
+    let match;
+    while ((match = countLoopPattern.exec(code)) !== null) {
+      loopMatches.push({
+        mode: 'count',
+        count: parseInt(match[2]),
+        bodyCode: match[3],
+        startIndex: match.index,
+        endIndex: match.index + match[0].length
       });
     }
+
+    // 匹配所有条件循环
+    const conditionLoopPattern = /log\('开始条件循环'\);[\s\S]*?let __loopIndex = 0;[\s\S]*?while \((.+?) && __loopIndex < (\d+)\) \{([\s\S]*?)__loopIndex\+\+;[\s\S]*?\n\}[\s\S]*?log\('循环完成，共执行 ' \+ __loopIndex \+ ' 次'\);/g;
+    while ((match = conditionLoopPattern.exec(code)) !== null) {
+      loopMatches.push({
+        mode: 'condition',
+        condition: match[1],
+        maxIterations: parseInt(match[2]),
+        bodyCode: match[3],
+        startIndex: match.index,
+        endIndex: match.index + match[0].length
+      });
+    }
+
+    // 按照出现顺序排序
+    loopMatches.sort((a, b) => a.startIndex - b.startIndex);
+
+    // 如果没有找到循环，返回空
+    if (loopMatches.length === 0) {
+      return {
+        id: Date.now().toString(),
+        name: '解析的工作流',
+        description: '',
+        blocks: [],
+        connections: [],
+        variables: {},
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+    }
+
+    // 提取代码段：循环前、循环体、循环间、循环后
+    const codeSegments: Array<{ type: 'code' | 'loop'; content: string; loopInfo?: any }> = [];
+    let lastIndex = 0;
+
+    loopMatches.forEach((loopMatch, idx) => {
+      // 添加循环前的代码
+      if (loopMatch.startIndex > lastIndex) {
+        codeSegments.push({
+          type: 'code',
+          content: code.substring(lastIndex, loopMatch.startIndex)
+        });
+      }
+
+      // 添加循环
+      codeSegments.push({
+        type: 'loop',
+        content: loopMatch.bodyCode,
+        loopInfo: loopMatch
+      });
+
+      lastIndex = loopMatch.endIndex;
+    });
+
+    // 添加最后一个循环后的代码
+    if (lastIndex < code.length) {
+      const afterCode = code.substring(lastIndex);
+      if (afterCode.trim() && !afterCode.trim().startsWith('// 返回统一数据格式')) {
+        codeSegments.push({
+          type: 'code',
+          content: afterCode
+        });
+      }
+    }
+
+    // 解析每个代码段
+    const allBlockGroups: Array<{ blocks: any[]; type: 'code' | 'loop'; loopInfo?: any }> = [];
+
+    codeSegments.forEach(segment => {
+      if (segment.type === 'code') {
+        const parsed = this.parseNormalBlocks(segment.content, xPosition);
+        if (parsed.length > 0) {
+          allBlockGroups.push({ blocks: parsed, type: 'code' });
+          xPosition += parsed.length * 250;
+        }
+      } else if (segment.type === 'loop') {
+        // 解析循环体
+        const bodyBlocks = this.parseLoopBody(segment.content, xPosition);
+        xPosition += bodyBlocks.length * 250;
+
+        // 创建循环模块
+        const loopBlock = {
+          id: `block-loop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          type: 'loop',
+          label: '循环',
+          category: 'logic',
+          position: { x: xPosition, y: 350 },
+          data: {
+            mode: segment.loopInfo.mode,
+            count: segment.loopInfo.count || 10,
+            condition: segment.loopInfo.condition || '',
+            maxIterations: segment.loopInfo.maxIterations || 1000
+          },
+          inputs: [{ id: 'loop-end', name: '循环结束', type: 'flow' }],
+          outputs: [{ id: 'loop-start', name: '循环开始', type: 'flow' }]
+        };
+
+        allBlockGroups.push({
+          blocks: [...bodyBlocks, loopBlock],
+          type: 'loop',
+          loopInfo: { bodyBlocks, loopBlock }
+        });
+
+        xPosition += 250;
+      }
+    });
+
+    // 组装所有模块和连接
+    allBlockGroups.forEach((group, groupIdx) => {
+      blocks.push(...group.blocks);
+
+      if (group.type === 'code') {
+        // 普通代码块之间的连接
+        for (let i = 0; i < group.blocks.length - 1; i++) {
+          connections.push({
+            id: `conn-group${groupIdx}-${i}`,
+            source: group.blocks[i].id,
+            sourceHandle: 'source-right',
+            target: group.blocks[i + 1].id,
+            targetHandle: 'target-left'
+          });
+        }
+      } else if (group.type === 'loop' && group.loopInfo) {
+        const { bodyBlocks, loopBlock } = group.loopInfo;
+
+        // 循环体内模块之间的连接
+        for (let i = 0; i < bodyBlocks.length - 1; i++) {
+          connections.push({
+            id: `conn-loop-body-${groupIdx}-${i}`,
+            source: bodyBlocks[i].id,
+            sourceHandle: 'source-right',
+            target: bodyBlocks[i + 1].id,
+            targetHandle: 'target-left'
+          });
+        }
+
+        // 循环模块的连接
+        if (bodyBlocks.length > 0) {
+          // loop-start -> 第一个循环体模块
+          connections.push({
+            id: `conn-loop-start-${groupIdx}`,
+            source: loopBlock.id,
+            sourceHandle: 'loop-start',
+            target: bodyBlocks[0].id,
+            targetHandle: 'target-left'
+          });
+
+          // 最后一个循环体模块 -> loop-end
+          connections.push({
+            id: `conn-loop-end-${groupIdx}`,
+            source: bodyBlocks[bodyBlocks.length - 1].id,
+            sourceHandle: 'source-right',
+            target: loopBlock.id,
+            targetHandle: 'loop-end'
+          });
+        }
+      }
+
+      // 连接不同组之间的模块
+      if (groupIdx > 0) {
+        const prevGroup = allBlockGroups[groupIdx - 1];
+        const currentGroup = group;
+
+        let prevLastBlock;
+        if (prevGroup.type === 'code') {
+          prevLastBlock = prevGroup.blocks[prevGroup.blocks.length - 1];
+        } else if (prevGroup.type === 'loop' && prevGroup.loopInfo) {
+          // 从循环体的最后一个模块连接到下一组
+          prevLastBlock = prevGroup.loopInfo.bodyBlocks[prevGroup.loopInfo.bodyBlocks.length - 1];
+        }
+
+        let currentFirstBlock;
+        if (currentGroup.type === 'code') {
+          currentFirstBlock = currentGroup.blocks[0];
+        } else if (currentGroup.type === 'loop' && currentGroup.loopInfo) {
+          currentFirstBlock = currentGroup.loopInfo.bodyBlocks[0];
+        }
+
+        if (prevLastBlock && currentFirstBlock) {
+          connections.push({
+            id: `conn-between-groups-${groupIdx}`,
+            source: prevLastBlock.id,
+            sourceHandle: 'source-right',
+            target: currentFirstBlock.id,
+            targetHandle: 'target-left'
+          });
+        }
+      }
+    });
 
     return {
       id: Date.now().toString(),
@@ -316,6 +401,14 @@ export class ScriptParser {
       xPosition += 250;
     }
 
+    // 5. 解析 log（用户日志）
+    const logPattern = /logUser\('([^']+)'\);/g;
+    while ((match = logPattern.exec(code)) !== null) {
+      const message = match[1].replace(/\\'/g, "'"); // 反转义单引号
+      blocks.push(this.createLogBlock(message, xPosition));
+      xPosition += 250;
+    }
+
     return blocks;
   }
 
@@ -323,43 +416,31 @@ export class ScriptParser {
     const blocks: any[] = [];
     let xPosition = startX;
 
-    console.log('开始解析循环体，代码片段:', bodyCode.substring(0, 200));
-
     // 解析循环体内的各种模块
     // 1. 解析 navigate
     const navigatePattern = /await page\.goto\('([^']+)',\s*\{[^}]*waitUntil:\s*'([^']+)'[^}]*timeout:\s*(\d+)[^}]*\}\);/g;
     let match;
-    let navigateCount = 0;
     while ((match = navigatePattern.exec(bodyCode)) !== null) {
       blocks.push(this.createNavigateBlock(match[1], match[2], parseInt(match[3]), xPosition));
       xPosition += 250;
-      navigateCount++;
     }
-    console.log('解析到 navigate 模块:', navigateCount);
 
     // 2. 解析 wait
     const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
-    let waitCount = 0;
     while ((match = waitPattern.exec(bodyCode)) !== null) {
       blocks.push(this.createWaitBlock(parseInt(match[1]), xPosition));
       xPosition += 250;
-      waitCount++;
     }
-    console.log('解析到 wait 模块:', waitCount);
 
     // 3. 解析 click
     const clickPattern = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
-    let clickCount = 0;
     while ((match = clickPattern.exec(bodyCode)) !== null) {
       blocks.push(this.createClickBlock(match[1], parseInt(match[2]), xPosition));
       xPosition += 250;
-      clickCount++;
     }
-    console.log('解析到 click 模块:', clickCount);
 
     // 4. 解析 scroll - 元素滚动（简化正则）
     const elementScrollPattern = /await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
-    let scrollCount = 0;
     while ((match = elementScrollPattern.exec(bodyCode)) !== null) {
       const selector = match[1];
       const timeout = parseInt(match[2]);
@@ -369,21 +450,16 @@ export class ScriptParser {
       
       blocks.push(this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, xPosition));
       xPosition += 250;
-      scrollCount++;
     }
-    console.log('解析到 scroll 模块:', scrollCount);
 
-    // 5. 解析 log（排除系统日志）
-    const logPattern = /^\s*log\('(?!循环第|等待元素|滚动)([^']+)'\);/gm;
-    let logCount = 0;
+    // 5. 解析 log（用户日志）
+    const logPattern = /logUser\('([^']+)'\);/g;
     while ((match = logPattern.exec(bodyCode)) !== null) {
-      blocks.push(this.createLogBlock(match[1], xPosition));
+      const message = match[1].replace(/\\'/g, "'"); // 反转义单引号
+      blocks.push(this.createLogBlock(message, xPosition));
       xPosition += 250;
-      logCount++;
     }
-    console.log('解析到 log 模块:', logCount);
 
-    console.log('循环体解析完成，总模块数:', blocks.length);
     return blocks;
   }
 
@@ -392,7 +468,7 @@ export class ScriptParser {
       id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'log',
       label: '日志输出',
-      category: 'logic',
+      category: 'browser',
       position: { x: xPosition, y: 200 },
       data: {
         message

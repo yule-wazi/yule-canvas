@@ -203,9 +203,14 @@ export class PlaywrightExecutor {
       this.log(message);
     };
 
+    // 创建用户日志函数
+    const logUser = (message: string) => {
+      this.log(`[用户] ${message}`);
+    };
+
     // 使用AsyncFunction构造器执行代码
     const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-    const scriptFunction = new AsyncFunction('page', 'log', code);
+    const scriptFunction = new AsyncFunction('page', 'log', 'logUser', code);
 
     // 设置超时
     const timeoutPromise = new Promise((_, reject) => {
@@ -214,7 +219,7 @@ export class PlaywrightExecutor {
 
     // 执行脚本
     const result = await Promise.race([
-      scriptFunction(page, log),
+      scriptFunction(page, log, logUser),
       timeoutPromise
     ]);
 

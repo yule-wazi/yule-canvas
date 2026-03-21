@@ -12,7 +12,7 @@ export class BlockCompiler {
     
     if (loopBlocks.length > 0) {
       // 有循环模块，使用特殊的循环编译逻辑
-      return this.compileWithLoop(blocks, connections);
+      return this.compileWithLoops(blocks, connections);
     }
 
     // 没有循环模块，使用普通的拓扑排序
@@ -32,97 +32,169 @@ export class BlockCompiler {
     return this.assembleCode(codeFragments);
   }
 
-  private compileWithLoop(blocks: any[], connections: any[]): string {
-    // 找到循环模块
-    const loopBlock = blocks.find(b => b.type === 'loop');
-    if (!loopBlock) {
-      return this.assembleCode([]);
-    }
-
-    // 找到循环体的起始和结束节点
-    const loopStartConn = connections.find(c => 
-      c.source === loopBlock.id && c.sourceHandle === 'loop-start'
-    );
-    const loopEndConn = connections.find(c => 
-      c.target === loopBlock.id && c.targetHandle === 'loop-end'
-    );
-
-    if (!loopStartConn || !loopEndConn) {
-      return this.assembleCode([
-        `// 循环模块配置不完整\nlog('错误：循环模块未正确连接');`
-      ]);
-    }
-
-    const loopStartBlockId = loopStartConn.target;
-    const loopEndBlockId = loopEndConn.source;
-
-    // 找到循环体内的所有模块
-    const loopBodyBlocks = this.findLoopBodyBlocks(
-      blocks,
-      connections,
-      loopStartBlockId,
-      loopEndBlockId
-    );
-
-    // 找到循环体外的模块（不在循环体内且不是循环模块本身）
-    const loopBodyBlockIds = new Set(loopBodyBlocks.map(b => b.id));
-    const outsideBlocks = blocks.filter(b => 
-      b.type !== 'loop' && !loopBodyBlockIds.has(b.id)
-    );
-
-    // 对循环体外的模块进行拓扑排序
-    const sortedOutsideBlocks = this.topologicalSort(outsideBlocks, connections);
-
-    // 生成循环体外的代码
-    const outsideCode = sortedOutsideBlocks.map(block => 
-      this.generateBlockCode(block)
-    ).filter(Boolean);
-
-    // 生成循环体代码
-    const loopBodyCode = loopBodyBlocks.map(block => 
-      this.generateBlockCode(block)
-    ).filter(Boolean).join('\n');
-
-    // 生成循环代码
-    const loopCode = this.generateLoopCode(loopBlock, loopBodyCode);
-
-    // 组合所有代码：循环前的代码 + 循环代码 + 循环后的代码
-    // 需要根据连接关系确定循环模块在整个流程中的位置
-    const allCode = this.arrangeCodeWithLoop(
-      sortedOutsideBlocks,
-      loopBlock,
-      loopCode,
-      connections
-    );
-
-    return this.assembleCode(allCode);
-  }
-
-  private arrangeCodeWithLoop(
-    outsideBlocks: any[],
-    loopBlock: any,
-    loopCode: string,
-    connections: any[]
-  ): string[] {
-    const result: string[] = [];
+  private compileWithLoops(blocks: any[], connections: any[]): string {
+    // 处理多个循环模块
+    const loopBlocks = blocks.filter(b => b.type === 'loop');
     
-    // 简单策略：先生成所有循环体外的模块代码，然后是循环代码
-    // 因为循环模块通常在流程的末尾
-    
-    // 对循环体外的模块按拓扑排序
-    const sortedOutside = this.topologicalSort(outsideBlocks, connections);
-    
-    // 生成循环体外的代码
-    sortedOutside.forEach(block => {
-      const code = this.generateBlockCode(block);
-      if (code) result.push(code);
+    // 为每个循环模块找到其循环体
+    const loopInfoMap = new Map<string, any>();
+    loopBlocks.forEach(loopBlock => {
+      const loopStartConn = connections.find(c => 
+        c.source === loopBlock.id && c.sourceHandle === 'loop-start'
+      );
+      const loopEndConn = connections.find(c => 
+        c.target === loopBlock.id && c.targetHandle === 'loop-end'
+      );
+      
+      if (loopStartConn && loopEndConn) {
+        const loopBodyBlocks = this.findLoopBodyBlocks(
+          blocks,
+          connections,
+          loopStartConn.target,
+          loopEndConn.source
+        );
+        
+        loopInfoMap.set(loopBlock.id, {
+          loopBlock,
+          loopBodyBlocks,
+          loopBodyBlockIds: new Set(loopBodyBlocks.map(b => b.id)),
+          loopStartTarget: loopStartConn.target,
+          loopEndSource: loopEndConn.source
+        });
+      }
     });
     
-    // 添加循环代码
-    result.push(loopCode);
+    // 找到所有循环体内的块ID
+    const allLoopBodyIds = new Set<string>();
+    loopInfoMap.forEach(info => {
+      info.loopBodyBlockIds.forEach((id: string) => allLoopBodyIds.add(id));
+    });
     
-    return result;
+    // 创建映射：循环体块ID -> 循环模块ID
+    const blockToLoopMap = new Map<string, string>();
+    loopInfoMap.forEach((info, loopId) => {
+      info.loopBodyBlockIds.forEach((blockId: string) => {
+        blockToLoopMap.set(blockId, loopId);
+      });
+    });
+    
+    // 构建一个虚拟图：将循环体折叠成循环模块
+    // 1. 收集所有非循环体内的块和循环模块
+    const virtualBlocks = blocks.filter(b => 
+      !allLoopBodyIds.has(b.id) || b.type === 'loop'
+    );
+    
+    // 2. 构建虚拟连接
+    const virtualConnections: any[] = [];
+    const processedConnections = new Set<string>();
+    
+    connections.forEach(conn => {
+      // 跳过循环的特殊连接
+      if (conn.sourceHandle === 'loop-start' || conn.targetHandle === 'loop-end') {
+        return;
+      }
+      
+      const sourceInLoop = allLoopBodyIds.has(conn.source);
+      const targetInLoop = allLoopBodyIds.has(conn.target);
+      
+      // 情况1: 两个都在循环体内
+      if (sourceInLoop && targetInLoop) {
+        const sourceLoopId = blockToLoopMap.get(conn.source);
+        const targetLoopId = blockToLoopMap.get(conn.target);
+        
+        // 如果在同一个循环体内，跳过
+        if (sourceLoopId === targetLoopId) {
+          return;
+        }
+        
+        // 如果在不同循环体内，创建循环到循环的连接
+        const sourceLoopInfo = loopInfoMap.get(sourceLoopId!);
+        const targetLoopInfo = loopInfoMap.get(targetLoopId!);
+        
+        // 只有当源是其循环体的最后一个块，且目标是其循环体的第一个块时，才创建连接
+        if (conn.source === sourceLoopInfo.loopEndSource && 
+            conn.target === targetLoopInfo.loopStartTarget) {
+          const connKey = `${sourceLoopId}->${targetLoopId}`;
+          if (!processedConnections.has(connKey)) {
+            virtualConnections.push({
+              id: `virtual-loop-${connKey}`,
+              source: sourceLoopId,
+              sourceHandle: 'source-right',
+              target: targetLoopId,
+              targetHandle: 'target-left'
+            });
+            processedConnections.add(connKey);
+          }
+        }
+        return;
+      }
+      
+      // 情况2: 源在循环体内，目标在外面
+      if (sourceInLoop && !targetInLoop) {
+        const sourceLoopId = blockToLoopMap.get(conn.source);
+        const sourceLoopInfo = loopInfoMap.get(sourceLoopId!);
+        
+        // 只有当源是循环体的最后一个块时，才创建连接
+        if (conn.source === sourceLoopInfo.loopEndSource) {
+          virtualConnections.push({
+            ...conn,
+            source: sourceLoopId
+          });
+        }
+        return;
+      }
+      
+      // 情况3: 源在外面，目标在循环体内
+      if (!sourceInLoop && targetInLoop) {
+        const targetLoopId = blockToLoopMap.get(conn.target);
+        const targetLoopInfo = loopInfoMap.get(targetLoopId!);
+        
+        // 只有当目标是循环体的第一个块时，才创建连接
+        if (conn.target === targetLoopInfo.loopStartTarget) {
+          virtualConnections.push({
+            ...conn,
+            target: targetLoopId
+          });
+        }
+        return;
+      }
+      
+      // 情况4: 两个都在外面
+      virtualConnections.push(conn);
+    });
+    
+    // 3. 使用拓扑排序对虚拟块进行排序
+    const sortedBlocks = this.topologicalSort(virtualBlocks, virtualConnections);
+    
+    // 4. 生成代码
+    const codeFragments: string[] = [];
+    
+    sortedBlocks.forEach(block => {
+      if (block.type === 'loop') {
+        const loopInfo = loopInfoMap.get(block.id);
+        if (loopInfo) {
+          // 生成循环体代码
+          const loopBodyCode = loopInfo.loopBodyBlocks.map((b: any) => 
+            this.generateBlockCode(b)
+          ).filter(Boolean).join('\n');
+          
+          // 生成循环代码
+          const loopCode = this.generateLoopCode(block, loopBodyCode);
+          codeFragments.push(loopCode);
+        }
+      } else {
+        // 普通模块
+        const code = this.generateBlockCode(block);
+        if (code) {
+          codeFragments.push(code);
+        }
+      }
+    });
+    
+    return this.assembleCode(codeFragments);
   }
+
+
 
   private findLoopBodyBlocks(
     blocks: any[],
@@ -163,7 +235,6 @@ export class BlockCompiler {
       }
     }
     
-    console.log('循环体内找到的模块:', result.map(b => b.type));
     return result;
   }
 
@@ -614,7 +685,8 @@ log('提取完成，共获得 ' + extractedData.length + ' 条数据');
 
   private generateLogCode(block: any): string {
     const { message } = block.data;
-    return `log('${message}');
+    const escapedMessage = message.replace(/'/g, "\\'");
+    return `logUser('${escapedMessage}');
 `;
   }
 
