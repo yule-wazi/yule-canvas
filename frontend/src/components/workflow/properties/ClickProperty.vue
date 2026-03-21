@@ -26,10 +26,11 @@
       <input
         v-model.number="localData.timeout"
         type="number"
-        min="0"
+        min="1000"
         step="1000"
         @input="emitUpdate"
       />
+      <small>等待元素出现的最长时间</small>
     </div>
   </div>
 </template>
@@ -97,5 +98,11 @@ function emitUpdate() {
 .form-group input[type="checkbox"] {
   width: 16px;
   height: 16px;
+}
+
+.form-group small {
+  font-size: 0.8rem;
+  color: #6e7681;
+  margin-top: -0.25rem;
 }
 </style>

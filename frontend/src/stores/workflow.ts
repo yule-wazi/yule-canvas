@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import type { Block, BlockType, BlockData } from '../types/block';
 import type { Connection } from '../types/connection';
 import type { Workflow } from '../types/workflow';
+import { DEFAULT_SELECTOR_TIMEOUT } from '../constants/workflow';
 
 interface WorkflowState {
   currentWorkflow: Workflow | null;
@@ -93,7 +94,7 @@ export const useWorkflowStore = defineStore('workflow', {
         scroll: {
           label: '滚动页面',
           category: 'browser',
-          defaultData: { mode: 'smart', maxScrolls: 15, delay: 800 },
+          defaultData: { target: 'page', selector: '', timeout: DEFAULT_SELECTOR_TIMEOUT, mode: 'smart', maxScrolls: 15, scrollDistance: 800, delay: 800 },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },
@@ -107,14 +108,14 @@ export const useWorkflowStore = defineStore('workflow', {
         click: {
           label: '点击元素',
           category: 'interaction',
-          defaultData: { selector: '', waitForElement: true, timeout: 30000 },
+          defaultData: { selector: '', waitForElement: true, timeout: DEFAULT_SELECTOR_TIMEOUT },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },
         type: {
           label: '输入文本',
           category: 'interaction',
-          defaultData: { selector: '', text: '', delay: 100 },
+          defaultData: { selector: '', text: '', delay: 100, timeout: DEFAULT_SELECTOR_TIMEOUT },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },
@@ -128,7 +129,12 @@ export const useWorkflowStore = defineStore('workflow', {
         extract: {
           label: '提取数据',
           category: 'extraction',
-          defaultData: { selector: '', attribute: 'text', multiple: true },
+          defaultData: { 
+            multiple: true, 
+            timeout: DEFAULT_SELECTOR_TIMEOUT, 
+            saveToTable: '', 
+            extractions: [] 
+          },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [
             { id: 'out', name: '输出', type: 'flow' },
@@ -138,7 +144,7 @@ export const useWorkflowStore = defineStore('workflow', {
         'extract-images': {
           label: '提取图片',
           category: 'extraction',
-          defaultData: { filterInvalid: true, attributes: ['src', 'data-src'] },
+          defaultData: { selector: 'img', filterInvalid: true, attributes: ['src', 'data-src'], timeout: DEFAULT_SELECTOR_TIMEOUT },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [
             { id: 'out', name: '输出', type: 'flow' },

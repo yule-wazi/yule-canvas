@@ -37,6 +37,9 @@ export const taobaoWorkflowExample = {
       category: 'browser',
       position: { x: 100, y: 300 },
       data: {
+        target: 'page',
+        selector: '',
+        timeout: 30000,
         mode: 'smart',
         maxScrolls: 10,
         delay: 800

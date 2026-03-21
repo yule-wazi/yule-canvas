@@ -6,6 +6,7 @@
       <button @click="compile" class="btn-secondary">📝 生成代码</button>
       <button @click="showParseModal = true" class="btn-secondary">🔍 解析脚本</button>
       <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
+      <button @click="showDataTableModal = true" class="btn-secondary">📊 数据表</button>
       <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
       <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
       <button @click="clear" class="btn-danger">🗑️ 清空</button>
@@ -118,27 +119,39 @@
 
     <!-- 执行日志弹窗 -->
     <div v-if="showExecutionModal" class="modal-overlay" @click="!isExecuting && (showExecutionModal = false)">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content execution-modal" @click.stop>
         <h3>执行日志</h3>
         <div class="execution-logs">
           <div v-for="(log, index) in executionLogs" :key="index" class="log-line">{{ log }}</div>
         </div>
+        
         <div class="modal-actions">
           <button v-if="isExecuting" @click="stopExecution" class="btn-danger">停止执行</button>
           <button v-else @click="showExecutionModal = false" class="btn-secondary">关闭</button>
         </div>
       </div>
     </div>
+
+    <!-- 数据表管理弹窗 -->
+    <div v-if="showDataTableModal" class="modal-overlay" @click="showDataTableModal = false">
+      <div class="modal-content data-table-modal" @click.stop>
+        <DataTableManager @close="showDataTableModal = false" />
+      </div>
+    </div>
+
+    <!-- 确认对话框 -->
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineAsyncComponent } from 'vue';
+import { ref, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
+import { useDataTableStore } from '../../stores/dataTable';
 import api from '../../services/api';
 import socketService from '../../services/socket';
 import type { BlockType } from '../../types/block';
@@ -154,20 +167,113 @@ const ScrollProperty = defineAsyncComponent(() => import('./properties/ScrollPro
 const WaitProperty = defineAsyncComponent(() => import('./properties/WaitProperty.vue'));
 const ClickProperty = defineAsyncComponent(() => import('./properties/ClickProperty.vue'));
 const TypeProperty = defineAsyncComponent(() => import('./properties/TypeProperty.vue'));
+const ExtractProperty = defineAsyncComponent(() => import('./properties/ExtractProperty.vue'));
 const ExtractImagesProperty = defineAsyncComponent(() => import('./properties/ExtractImagesProperty.vue'));
 const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.vue'));
+const DataTableManager = defineAsyncComponent(() => import('../DataTableManager.vue'));
+const ConfirmDialog = defineAsyncComponent(() => import('../ConfirmDialog.vue'));
 
 const workflowStore = useWorkflowStore();
+const dataTableStore = useDataTableStore();
 const showCodeModal = ref(false);
 const showParseModal = ref(false);
 const showExecutionModal = ref(false);
+const showDataTableModal = ref(false);
 const generatedCode = ref('');
 const scriptToParse = ref('');
 const isExecuting = ref(false);
 const executionLogs = ref<string[]>([]);
+const executionResult = ref<any>(null);
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 
-// 初始化工作流
-workflowStore.initWorkflow();
+// 初始化工作流 - 尝试从localStorage加载
+const WORKFLOWS_KEY = 'saved_workflows';
+const CURRENT_WORKFLOW_ID_KEY = 'current_workflow_id';
+
+function initializeWorkflow() {
+  // 尝试加载上次编辑的工作流
+  const currentWorkflowId = localStorage.getItem(CURRENT_WORKFLOW_ID_KEY);
+  
+  if (currentWorkflowId) {
+    const workflows = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
+    const savedWorkflow = workflows.find((w: any) => w.id === currentWorkflowId);
+    
+    if (savedWorkflow) {
+      workflowStore.loadWorkflow(savedWorkflow);
+      console.log('已加载上次的工作流:', savedWorkflow.name);
+      return;
+    }
+  }
+  
+  // 如果没有保存的工作流，创建新的
+  workflowStore.initWorkflow();
+}
+
+initializeWorkflow();
+
+// 初始化数据表 store
+onMounted(() => {
+  dataTableStore.init();
+});
+
+// 自动保存 - 监听blocks和connections的变化
+let autoSaveTimer: any = null;
+
+watch(
+  () => [workflowStore.blocks, workflowStore.connections],
+  () => {
+    // 防抖：延迟2秒后自动保存
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+    }
+    
+    autoSaveTimer = setTimeout(() => {
+      if (workflowStore.currentWorkflow && workflowStore.blocks.length > 0) {
+        autoSave();
+      }
+    }, 2000);
+  },
+  { deep: true }
+);
+
+// 页面卸载前保存
+onBeforeUnmount(() => {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+  }
+  if (workflowStore.currentWorkflow && workflowStore.blocks.length > 0) {
+    autoSave();
+  }
+});
+
+function autoSave() {
+  try {
+    if (!workflowStore.currentWorkflow) return;
+
+    const workflow = {
+      ...workflowStore.currentWorkflow,
+      blocks: workflowStore.blocks,
+      connections: workflowStore.connections,
+      updatedAt: Date.now()
+    };
+
+    const workflows = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
+    const index = workflows.findIndex((w: any) => w.id === workflow.id);
+    
+    if (index >= 0) {
+      workflows[index] = workflow;
+    } else {
+      workflows.push(workflow);
+    }
+    
+    localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(workflows));
+    localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
+    
+    console.log('自动保存成功');
+  } catch (error) {
+    console.error('自动保存失败:', error);
+  }
+}
 
 // 转换为Vue Flow格式
 const elements = computed({
@@ -267,6 +373,7 @@ function getPropertyComponent(type: BlockType) {
     wait: WaitProperty,
     click: ClickProperty,
     type: TypeProperty,
+    extract: ExtractProperty,
     'extract-images': ExtractImagesProperty,
     log: LogProperty
   };
@@ -289,7 +396,6 @@ function save() {
     };
 
     // 保存到localStorage
-    const WORKFLOWS_KEY = 'saved_workflows';
     const workflows = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
     
     const index = workflows.findIndex((w: any) => w.id === workflow.id);
@@ -300,6 +406,9 @@ function save() {
     }
     
     localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(workflows));
+    
+    // 记住当前工作流ID
+    localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
     
     alert('工作流保存成功！');
   } catch (error: any) {
@@ -358,9 +467,21 @@ function redo() {
 }
 
 function clear() {
-  if (confirm('确定要清空工作流吗？')) {
-    workflowStore.clearWorkflow();
-  }
+  confirmDialog.value?.show({
+    title: '清空工作流',
+    message: '确定要清空工作流吗？',
+    confirmText: '清空',
+    cancelText: '取消',
+    type: 'danger'
+  }).then((confirmed) => {
+    if (confirmed) {
+      workflowStore.clearWorkflow();
+      // 清除当前工作流ID记录
+      localStorage.removeItem(CURRENT_WORKFLOW_ID_KEY);
+      // 重新初始化
+      workflowStore.initWorkflow();
+    }
+  });
 }
 
 function stopExecution() {
@@ -369,16 +490,89 @@ function stopExecution() {
   executionLogs.value.push('\n⚠️ 执行已停止');
 }
 
-function loadExample() {
-  if (workflowStore.blocks.length > 0) {
-    if (!confirm('当前工作流将被清空，确定要加载示例吗？')) {
-      return;
-    }
+function saveToDataTables(results: any) {
+  // 初始化数据表 store
+  dataTableStore.init();
+  
+  // 处理提取的数据
+  if (results.data && results.data.length > 0) {
+    // 按数据表分组
+    const tableGroups = new Map<string, any[]>();
+    
+    results.data.forEach((item: any) => {
+      // 新格式：包含 _rowData 的完整行数据
+      if (item._table && item._rowData) {
+        if (!tableGroups.has(item._table)) {
+          tableGroups.set(item._table, []);
+        }
+        tableGroups.get(item._table)!.push(item._rowData);
+      }
+      // 旧格式：单列数据（向后兼容）
+      else if (item._table && item._column) {
+        if (!tableGroups.has(item._table)) {
+          tableGroups.set(item._table, []);
+        }
+        tableGroups.get(item._table)!.push({
+          [item._column]: item.value
+        });
+      }
+    });
+    
+    // 保存到各个数据表
+    tableGroups.forEach((rows, tableId) => {
+      dataTableStore.insertRows(tableId, rows);
+    });
   }
   
-  workflowStore.clearWorkflow();
-  workflowStore.loadWorkflow(simpleLogWorkflow as any);
-  alert('示例工作流已加载');
+  // 处理提取的图片
+  if (results.images && results.images.length > 0) {
+    const tableGroups = new Map<string, any[]>();
+    
+    results.images.forEach((item: any) => {
+      if (item._table && item._column) {
+        if (!tableGroups.has(item._table)) {
+          tableGroups.set(item._table, []);
+        }
+        tableGroups.get(item._table)!.push({
+          [item._column]: item.src
+        });
+      }
+    });
+    
+    tableGroups.forEach((rows, tableId) => {
+      dataTableStore.insertRows(tableId, rows);
+    });
+  }
+}
+
+function loadExample() {
+  if (workflowStore.blocks.length > 0) {
+    confirmDialog.value?.show({
+      title: '加载示例',
+      message: '当前工作流将被清空，确定要加载示例吗？',
+      confirmText: '加载',
+      cancelText: '取消',
+      type: 'default'
+    }).then((confirmed) => {
+      if (confirmed) {
+        workflowStore.clearWorkflow();
+        workflowStore.loadWorkflow(simpleLogWorkflow as any);
+        
+        // 更新当前工作流ID
+        localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, simpleLogWorkflow.id);
+        
+        alert('示例工作流已加载');
+      }
+    });
+  } else {
+    workflowStore.clearWorkflow();
+    workflowStore.loadWorkflow(simpleLogWorkflow as any);
+    
+    // 更新当前工作流ID
+    localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, simpleLogWorkflow.id);
+    
+    alert('示例工作流已加载');
+  }
 }
 
 async function executeWorkflow() {
@@ -423,7 +617,27 @@ async function executeWorkflow() {
     // 监听完成
     socketService.onComplete((result) => {
       executionLogs.value.push(`\n✅ 执行完成！`);
-      executionLogs.value.push(`结果: ${JSON.stringify(result, null, 2)}`);
+      
+      // 注意：PlaywrightExecutor 返回的格式是 { success, data, duration }
+      // 实际的脚本结果在 result.data 中
+      const scriptResult = result.data;
+      executionResult.value = scriptResult;
+      
+      // 显示提取的数据统计
+      if (scriptResult && scriptResult.results) {
+        saveToDataTables(scriptResult.results);
+        const { images, data, links } = scriptResult.results;
+        if (images && images.length > 0) {
+          executionLogs.value.push(`� 提取了 ${images.length} 张图片`);
+        }
+        if (data && data.length > 0) {
+          executionLogs.value.push(`📊 提取了 ${data.length} 条数据`);
+        }
+        if (links && links.length > 0) {
+          executionLogs.value.push(`🔗 提取了 ${links.length} 个链接`);
+        }
+      }
+      
       isExecuting.value = false;
       socketService.offAll();
     });
@@ -667,9 +881,19 @@ async function parseScript() {
   flex-direction: column;
 }
 
+.execution-modal {
+  max-width: 900px;
+}
+
 .modal-content h3 {
   margin: 0 0 1rem 0;
   color: #58a6ff;
+}
+
+.modal-content h4 {
+  margin: 0 0 0.5rem 0;
+  color: #8b949e;
+  font-size: 0.9rem;
 }
 
 .code-preview {
@@ -711,5 +935,36 @@ async function parseScript() {
 .log-line {
   margin-bottom: 0.25rem;
   line-height: 1.5;
+}
+
+.data-preview {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+}
+
+.data-summary {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.data-summary span {
+  padding: 0.5rem 1rem;
+  background: #21262d;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #c9d1d9;
+}
+
+.data-table-modal {
+  width: 95%;
+  max-width: 1400px;
+  height: 85vh;
+  max-height: 85vh;
+  padding: 0;
+  overflow: hidden;
 }
 </style>

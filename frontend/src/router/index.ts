@@ -19,6 +19,11 @@ const router = createRouter({
       component: () => import('../views/DataManagement.vue')
     },
     {
+      path: '/tables',
+      name: 'tables',
+      component: () => import('../components/DataTableManager.vue')
+    },
+    {
       path: '/workflow',
       name: 'workflow',
       component: () => import('../components/workflow/WorkflowEditor.vue')

@@ -43,6 +43,14 @@ export class WorkflowExecutor {
       const fn = new AsyncFunction(wrappedCode);
       const result = await fn.call(context);
 
+      // 如果结果包含提取的数据，处理数据表保存
+      if (result && result.results) {
+        log('数据提取完成，共 ' + result.count + ' 条');
+        
+        // 返回结果，包含数据表信息
+        result._needsSave = true;
+      }
+
       return {
         success: true,
         result,

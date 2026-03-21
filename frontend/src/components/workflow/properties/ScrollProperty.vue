@@ -1,11 +1,54 @@
 <template>
   <div class="property-form">
     <div class="form-group">
+      <label>滚动目标</label>
+      <select v-model="localData.target" @change="emitUpdate">
+        <option value="page">整个页面</option>
+        <option value="element">指定元素</option>
+      </select>
+    </div>
+
+    <div class="form-group" v-if="localData.target === 'element'">
+      <label>元素选择器</label>
+      <input
+        v-model="localData.selector"
+        type="text"
+        placeholder="例如: .scroll-container"
+        @input="emitUpdate"
+      />
+      <small>CSS选择器，用于定位需要滚动的元素</small>
+    </div>
+
+    <div class="form-group" v-if="localData.target === 'element'">
+      <label>等待超时 (毫秒)</label>
+      <input
+        v-model.number="localData.timeout"
+        type="number"
+        min="1000"
+        step="1000"
+        @input="emitUpdate"
+      />
+      <small>等待元素出现的最长时间</small>
+    </div>
+
+    <div class="form-group">
       <label>滚动模式</label>
       <select v-model="localData.mode" @change="emitUpdate">
         <option value="smart">智能滚动 (检测底部)</option>
         <option value="fixed">固定次数</option>
       </select>
+    </div>
+
+    <div class="form-group">
+      <label>滚动距离 (像素)</label>
+      <input
+        v-model.number="localData.scrollDistance"
+        type="number"
+        min="100"
+        step="100"
+        @input="emitUpdate"
+      />
+      <small>每次滚动的距离，默认800像素</small>
     </div>
 
     <div class="form-group">
@@ -44,10 +87,21 @@ const emit = defineEmits<{
   update: [data: any];
 }>();
 
-const localData = ref({ ...props.block.data });
+// 初始化 localData，确保所有字段都有默认值
+const defaultData = {
+  target: 'page',
+  selector: '',
+  timeout: 5000,
+  mode: 'smart',
+  maxScrolls: 15,
+  scrollDistance: 800,
+  delay: 800
+};
+
+const localData = ref({ ...defaultData, ...props.block.data });
 
 watch(() => props.block.data, (newData) => {
-  localData.value = { ...newData };
+  localData.value = { ...defaultData, ...newData };
 }, { deep: true });
 
 function emitUpdate() {
@@ -87,5 +141,11 @@ function emitUpdate() {
 .form-group select:focus {
   outline: none;
   border-color: #58a6ff;
+}
+
+.form-group small {
+  font-size: 0.8rem;
+  color: #6e7681;
+  margin-top: -0.25rem;
 }
 </style>

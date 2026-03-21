@@ -1,0 +1,319 @@
+<template>
+  <div class="property-form">
+    <div class="form-group">
+      <label>
+        <input
+          v-model="localData.multiple"
+          type="checkbox"
+          @change="emitUpdate"
+        />
+        提取多个元素
+      </label>
+      <small>如果选中，将提取所有匹配的元素；否则只提取第一个</small>
+    </div>
+
+    <div class="form-group">
+      <label>等待超时 (毫秒)</label>
+      <input
+        v-model.number="localData.timeout"
+        type="number"
+        min="1000"
+        step="1000"
+        @input="emitUpdate"
+      />
+      <small>等待元素出现的最长时间</small>
+    </div>
+
+    <div class="form-group">
+      <label>保存到数据表</label>
+      <select v-model="localData.saveToTable" @change="emitUpdate">
+        <option value="">不保存</option>
+        <option v-for="table in dataTables" :key="table.id" :value="table.id">
+          {{ table.name }}
+        </option>
+      </select>
+      <small>选择要保存数据的数据表</small>
+    </div>
+
+    <div class="extractions-section">
+      <div class="section-header">
+        <h4>提取项</h4>
+        <button @click="addExtraction" class="btn-small btn-primary">+ 添加提取项</button>
+      </div>
+
+      <div v-for="(extraction, index) in localData.extractions" :key="index" class="extraction-item">
+        <div class="extraction-header">
+          <span class="extraction-number">#{{ index + 1 }}</span>
+          <button @click="removeExtraction(index)" class="btn-icon-small">×</button>
+        </div>
+
+        <div class="form-group">
+          <label>CSS选择器</label>
+          <input
+            v-model="extraction.selector"
+            type="text"
+            placeholder="例如: .product-name"
+            @input="emitUpdate"
+          />
+        </div>
+
+        <div class="form-group">
+          <label>提取属性</label>
+          <select v-model="extraction.attribute" @change="emitUpdate">
+            <option value="text">文本内容 (textContent)</option>
+            <option value="innerText">显示文本 (innerText)</option>
+            <option value="innerHTML">HTML内容</option>
+            <option value="href">链接地址 (href)</option>
+            <option value="src">图片/资源地址 (src)</option>
+            <option value="value">表单值 (value)</option>
+            <option value="data-*">自定义属性</option>
+          </select>
+        </div>
+
+        <div class="form-group" v-if="extraction.attribute === 'data-*'">
+          <label>自定义属性名</label>
+          <input
+            v-model="extraction.customAttribute"
+            type="text"
+            placeholder="例如: data-id"
+            @input="emitUpdate"
+          />
+        </div>
+
+        <div class="form-group" v-if="localData.saveToTable">
+          <label>保存到列</label>
+          <select v-model="extraction.saveToColumn" @change="emitUpdate">
+            <option value="">选择列</option>
+            <option v-for="column in selectedTableColumns" :key="column.key" :value="column.key">
+              {{ column.key }} ({{ column.type }})
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <div v-if="localData.extractions.length === 0" class="empty-extractions">
+        点击"+ 添加提取项"开始配置
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, watch, computed, onMounted } from 'vue';
+import type { Block } from '../../../types/block';
+import { useDataTableStore } from '../../../stores/dataTable';
+
+const dataTableStore = useDataTableStore();
+
+// 初始化数据表 store
+onMounted(() => {
+  dataTableStore.init();
+});
+
+const props = defineProps<{
+  block: Block;
+}>();
+
+const emit = defineEmits<{
+  update: [data: any];
+}>();
+
+// 初始化 localData，确保所有字段都有默认值
+const defaultData = {
+  multiple: true,
+  timeout: 5000,
+  saveToTable: '',
+  extractions: [] as Array<{
+    selector: string;
+    attribute: string;
+    customAttribute: string;
+    saveToColumn: string;
+  }>
+};
+
+const localData = ref({ ...defaultData, ...props.block.data });
+
+// 确保 extractions 是数组
+if (!Array.isArray(localData.value.extractions)) {
+  localData.value.extractions = [];
+}
+
+watch(() => props.block.data, (newData) => {
+  localData.value = { 
+    ...defaultData, 
+    ...newData,
+    extractions: Array.isArray(newData.extractions) ? newData.extractions : []
+  };
+}, { deep: true });
+
+const dataTables = computed(() => dataTableStore.tables);
+
+const selectedTableColumns = computed(() => {
+  if (!localData.value.saveToTable) return [];
+  const table = dataTableStore.getTableById(localData.value.saveToTable);
+  return table ? table.columns : [];
+});
+
+function addExtraction() {
+  localData.value.extractions.push({
+    selector: '',
+    attribute: 'text',
+    customAttribute: '',
+    saveToColumn: ''
+  });
+  emitUpdate();
+}
+
+function removeExtraction(index: number) {
+  localData.value.extractions.splice(index, 1);
+  emitUpdate();
+}
+
+function emitUpdate() {
+  emit('update', localData.value);
+}
+</script>
+
+<style scoped>
+.property-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.9rem;
+  color: #8b949e;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.5rem;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.form-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.form-group small {
+  font-size: 0.8rem;
+  color: #6e7681;
+  margin-top: -0.25rem;
+}
+
+.extractions-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #30363d;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #c9d1d9;
+  font-weight: 600;
+}
+
+.btn-small {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #238636;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2ea043;
+}
+
+.extraction-item {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.extraction-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #30363d;
+}
+
+.extraction-number {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #58a6ff;
+}
+
+.btn-icon-small {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-icon-small:hover {
+  background: #da3633;
+  border-color: #da3633;
+  color: white;
+}
+
+.empty-extractions {
+  text-align: center;
+  padding: 2rem;
+  color: #6e7681;
+  font-size: 0.9rem;
+  background: #0d1117;
+  border: 1px dashed #30363d;
+  border-radius: 6px;
+}
+</style>

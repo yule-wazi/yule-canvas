@@ -30,6 +30,18 @@
         @input="emitUpdate"
       />
     </div>
+
+    <div class="form-group">
+      <label>等待超时 (毫秒)</label>
+      <input
+        v-model.number="localData.timeout"
+        type="number"
+        min="1000"
+        step="1000"
+        @input="emitUpdate"
+      />
+      <small>等待元素出现的最长时间</small>
+    </div>
   </div>
 </template>
 
@@ -93,5 +105,11 @@ function emitUpdate() {
 
 .form-group textarea {
   resize: vertical;
+}
+
+.form-group small {
+  font-size: 0.8rem;
+  color: #6e7681;
+  margin-top: -0.25rem;
 }
 </style>
