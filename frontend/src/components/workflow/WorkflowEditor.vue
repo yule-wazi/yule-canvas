@@ -71,13 +71,24 @@
           :default-zoom="1"
           :min-zoom="0.2"
           :max-zoom="4"
+          :connect-on-click="false"
+          :node-types="{ custom: CustomNode as any }"
           @node-click="onNodeClick"
           @connect="onConnect"
           @nodes-change="onNodesChange"
+          @edges-change="onEdgesChange"
         >
           <Background pattern-color="#30363d" :gap="16" />
-          <Controls />
-          <MiniMap />
+          <MiniMap 
+            :nodeColor="getMinimapNodeColor"
+            nodeStrokeColor="#484f58"
+            :nodeStrokeWidth="1"
+            maskColor="rgba(13, 17, 23, 0.85)"
+            maskStrokeColor="#58a6ff"
+            :maskStrokeWidth="2"
+            pannable
+            zoomable
+          />
         </VueFlow>
       </div>
 
@@ -141,21 +152,25 @@
 
     <!-- 确认对话框 -->
     <ConfirmDialog ref="confirmDialog" />
+    
+    <!-- Toast 提示 -->
+    <Toast ref="toast" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw } from 'vue';
 import { VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
-import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
 import { useDataTableStore } from '../../stores/dataTable';
 import api from '../../services/api';
 import socketService from '../../services/socket';
+import storageManager from '../../services/storage';
 import type { BlockType } from '../../types/block';
 import { simpleLogWorkflow } from '../../examples/workflowExample';
+import CustomNode from './CustomNode.vue';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
@@ -172,6 +187,12 @@ const ExtractImagesProperty = defineAsyncComponent(() => import('./properties/Ex
 const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.vue'));
 const DataTableManager = defineAsyncComponent(() => import('../DataTableManager.vue'));
 const ConfirmDialog = defineAsyncComponent(() => import('../ConfirmDialog.vue'));
+const Toast = defineAsyncComponent(() => import('../Toast.vue'));
+
+// 定义节点类型
+const nodeTypes = {
+  custom: markRaw(CustomNode)
+};
 
 const workflowStore = useWorkflowStore();
 const dataTableStore = useDataTableStore();
@@ -185,6 +206,7 @@ const isExecuting = ref(false);
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
+const toast = ref<InstanceType<typeof Toast> | null>(null);
 
 // 初始化工作流 - 尝试从localStorage加载
 const WORKFLOWS_KEY = 'saved_workflows';
@@ -214,7 +236,49 @@ initializeWorkflow();
 // 初始化数据表 store
 onMounted(() => {
   dataTableStore.init();
+  updateHandleStyles();
 });
+
+// 监听连接变化，更新 handle 样式
+watch(
+  () => workflowStore.connections,
+  () => {
+    updateHandleStyles();
+  },
+  { deep: true }
+);
+
+// 更新连接点样式
+function updateHandleStyles() {
+  // 延迟执行，确保 DOM 已更新
+  setTimeout(() => {
+    // 重置所有 handle
+    document.querySelectorAll('.vue-flow__handle').forEach(handle => {
+      handle.classList.remove('connected');
+    });
+    
+    // 标记已连接的 handle
+    workflowStore.connections.forEach(conn => {
+      // 源节点的右侧 handle
+      const sourceNode = document.querySelector(`[data-id="${conn.source}"]`);
+      if (sourceNode) {
+        const sourceHandle = sourceNode.querySelector('.vue-flow__handle-right');
+        if (sourceHandle) {
+          sourceHandle.classList.add('connected');
+        }
+      }
+      
+      // 目标节点的左侧 handle
+      const targetNode = document.querySelector(`[data-id="${conn.target}"]`);
+      if (targetNode) {
+        const targetHandle = targetNode.querySelector('.vue-flow__handle-left');
+        if (targetHandle) {
+          targetHandle.classList.add('connected');
+        }
+      }
+    });
+  }, 100);
+}
 
 // 自动保存 - 监听blocks和connections的变化
 let autoSaveTimer: any = null;
@@ -278,36 +342,55 @@ function autoSave() {
 // 转换为Vue Flow格式
 const elements = computed({
   get() {
-    const nodes = workflowStore.blocks.map(block => ({
-      id: block.id,
-      type: 'default',
-      position: block.position,
-      label: block.label,
-      data: { ...block.data, blockType: block.type },
-      style: {
-        background: getBlockColor(block.category),
-        color: '#fff',
-        border: '1px solid #30363d',
-        borderRadius: '8px',
-        padding: '10px',
-        minWidth: '150px'
-      }
-    }));
+    const nodes = workflowStore.blocks.map(block => {
+      // 检查该节点的连接状态
+      const hasSourceConnection = workflowStore.connections.some(c => c.source === block.id);
+      const hasTargetConnection = workflowStore.connections.some(c => c.target === block.id);
+      
+      return {
+        id: block.id,
+        type: 'custom',  // 使用自定义节点类型
+        position: block.position,
+        label: block.label,
+        data: { 
+          label: block.label,
+          ...block.data, 
+          blockType: block.type,
+          hasSourceConnection,
+          hasTargetConnection
+        },
+        style: {
+          background: getBlockColor(block.category),
+          color: '#fff',
+          border: '1px solid #30363d',
+          borderRadius: '8px',
+          minWidth: '150px',
+          textAlign: 'center' as const
+        }
+      };
+    });
 
     const edges = workflowStore.connections.map(conn => ({
       id: conn.id,
       source: conn.source,
       target: conn.target,
-      sourceHandle: conn.sourceHandle,
-      targetHandle: conn.targetHandle,
-      type: conn.type === 'data' ? 'smoothstep' : 'default',
+      sourceHandle: conn.sourceHandle || 'source-right',
+      targetHandle: conn.targetHandle || 'target-left',
+      type: 'smoothstep',
+      animated: false,
+      markerEnd: {
+        type: 'arrowclosed' as const,
+        color: conn.type === 'data' ? '#f85149' : '#58a6ff',
+        width: 20,
+        height: 20
+      } as any,
       style: {
         stroke: conn.type === 'data' ? '#f85149' : '#58a6ff',
         strokeWidth: 2
       }
     }));
 
-    return [...nodes, ...edges];
+    return [...nodes, ...edges] as any;
   },
   set(value) {
     // Vue Flow会更新这个值
@@ -329,11 +412,48 @@ function getBlockColor(category: string) {
   return colors[category] || '#6e7681';
 }
 
+function getMinimapNodeColor(node: any) {
+  // 从节点的 style 中获取背景色
+  if (node.style && node.style.background) {
+    return node.style.background;
+  }
+  
+  // 如果没有 style，根据 blockType 返回颜色
+  const blockType = node.data?.blockType;
+  if (blockType) {
+    const colorMap: Record<string, string> = {
+      navigate: '#1f6feb',
+      scroll: '#1f6feb',
+      wait: '#1f6feb',
+      click: '#238636',
+      type: '#238636',
+      extract: '#f85149',
+      'extract-images': '#f85149',
+      log: '#8957e5'
+    };
+    return colorMap[blockType] || '#6e7681';
+  }
+  
+  return '#6e7681';
+}
+
 function addBlock(type: BlockType) {
-  const position = {
-    x: Math.random() * 400 + 100,
-    y: Math.random() * 300 + 100
-  };
+  // 计算新节点的位置 - 水平布局
+  const existingBlocks = workflowStore.blocks;
+  let x = 100;
+  let y = 200;
+  
+  if (existingBlocks.length > 0) {
+    // 找到最右边的节点
+    const rightmostBlock = existingBlocks.reduce((max, block) => 
+      block.position.x > max.position.x ? block : max
+    );
+    // 在最右边节点的右侧添加新节点
+    x = rightmostBlock.position.x + 250;
+    y = rightmostBlock.position.y;
+  }
+  
+  const position = { x, y };
   workflowStore.addBlock(type, position);
 }
 
@@ -342,12 +462,28 @@ function onNodeClick(event: any) {
 }
 
 function onConnect(connection: any) {
+  // 验证连接规则：只允许连接到左侧端点（target-left）
+  // 拒绝连接到右侧端点
+  if (connection.targetHandle && connection.targetHandle.includes('right')) {
+    return; // 静默拒绝
+  }
+  
+  // 验证：source 必须是右侧，target 必须是左侧
+  if (connection.sourceHandle && !connection.sourceHandle.includes('right')) {
+    return; // 静默拒绝
+  }
+  
+  if (connection.targetHandle && !connection.targetHandle.includes('left')) {
+    return; // 静默拒绝
+  }
+  
   workflowStore.addConnection({
     source: connection.source,
-    sourceHandle: connection.sourceHandle || 'out',
+    sourceHandle: connection.sourceHandle || 'source-right',
     target: connection.target,
-    targetHandle: connection.targetHandle || 'in'
+    targetHandle: connection.targetHandle || 'target-left'
   });
+  updateHandleStyles();
 }
 
 function onNodesChange(changes: any[]) {
@@ -356,6 +492,16 @@ function onNodesChange(changes: any[]) {
       workflowStore.updateBlockPosition(change.id, change.position);
     } else if (change.type === 'remove') {
       workflowStore.removeBlock(change.id);
+      updateHandleStyles();
+    }
+  });
+}
+
+function onEdgesChange(changes: any[]) {
+  changes.forEach(change => {
+    if (change.type === 'remove') {
+      workflowStore.removeConnection(change.id);
+      updateHandleStyles();
     }
   });
 }
@@ -380,10 +526,15 @@ function getPropertyComponent(type: BlockType) {
   return components[type] || 'div';
 }
 
-function save() {
+async function save() {
   try {
     if (!workflowStore.currentWorkflow) {
-      alert('没有可保存的工作流');
+      toast.value?.show({ message: '没有可保存的工作流', type: 'warning' });
+      return;
+    }
+
+    if (workflowStore.blocks.length === 0) {
+      toast.value?.show({ message: '工作流为空，请先添加一些功能块', type: 'warning' });
       return;
     }
 
@@ -395,7 +546,7 @@ function save() {
       updatedAt: Date.now()
     };
 
-    // 保存到localStorage
+    // 保存工作流到localStorage
     const workflows = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
     
     const index = workflows.findIndex((w: any) => w.id === workflow.id);
@@ -409,11 +560,37 @@ function save() {
     
     // 记住当前工作流ID
     localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
-    
-    alert('工作流保存成功！');
+
+    // 编译工作流为代码
+    const response: any = await api.post('/workflow/compile', {
+      workflow: {
+        blocks: workflowStore.blocks,
+        connections: workflowStore.connections
+      }
+    });
+
+    if (response && response.code) {
+      // 保存到脚本管理系统
+      const script = {
+        id: workflow.id,
+        name: workflow.name || '未命名工作流',
+        description: workflow.description || '可视化工作流生成',
+        code: response.code,
+        aiModel: 'workflow',
+        createdAt: workflow.createdAt,
+        updatedAt: workflow.updatedAt,
+        executionCount: 0
+      };
+
+      storageManager.saveScript(script);
+      
+      toast.value?.show({ message: '工作流和脚本保存成功！', type: 'success' });
+    } else {
+      toast.value?.show({ message: '工作流保存成功，但代码生成失败', type: 'warning' });
+    }
   } catch (error: any) {
     console.error('保存失败:', error);
-    alert('保存失败: ' + error.message);
+    toast.value?.show({ message: '保存失败: ' + error.message, type: 'error' });
   }
 }
 
@@ -426,7 +603,7 @@ async function compile() {
     console.log('Connections:', JSON.stringify(workflowStore.connections, null, 2));
     
     if (workflowStore.blocks.length === 0) {
-      alert('工作流为空，请先添加一些功能块');
+      toast.value?.show({ message: '工作流为空，请先添加一些功能块', type: 'warning' });
       return;
     }
     
@@ -449,13 +626,13 @@ async function compile() {
   } catch (error: any) {
     console.error('编译失败:', error);
     const errorMessage = error.response?.data?.error || error.message || '未知错误';
-    alert('生成代码失败: ' + errorMessage);
+    toast.value?.show({ message: '生成代码失败: ' + errorMessage, type: 'error' });
   }
 }
 
 function copyCode() {
   navigator.clipboard.writeText(generatedCode.value);
-  alert('代码已复制到剪贴板');
+  toast.value?.show({ message: '代码已复制到剪贴板', type: 'success' });
 }
 
 function undo() {
@@ -561,7 +738,7 @@ function loadExample() {
         // 更新当前工作流ID
         localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, simpleLogWorkflow.id);
         
-        alert('示例工作流已加载');
+        toast.value?.show({ message: '示例工作流已加载', type: 'success' });
       }
     });
   } else {
@@ -571,19 +748,19 @@ function loadExample() {
     // 更新当前工作流ID
     localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, simpleLogWorkflow.id);
     
-    alert('示例工作流已加载');
+    toast.value?.show({ message: '示例工作流已加载', type: 'success' });
   }
 }
 
 async function executeWorkflow() {
   try {
     if (workflowStore.blocks.length === 0) {
-      alert('工作流为空，请先添加一些功能块');
+      toast.value?.show({ message: '工作流为空，请先添加一些功能块', type: 'warning' });
       return;
     }
 
     if (isExecuting.value) {
-      alert('工作流正在执行中...');
+      toast.value?.show({ message: '工作流正在执行中...', type: 'warning' });
       return;
     }
 
@@ -656,7 +833,7 @@ async function executeWorkflow() {
     executionLogs.value.push('🚀 开始执行工作流...\n');
   } catch (error: any) {
     console.error('执行失败:', error);
-    alert('执行失败: ' + (error.response?.data?.error || error.message));
+    toast.value?.show({ message: '执行失败: ' + (error.response?.data?.error || error.message), type: 'error' });
     isExecuting.value = false;
   }
 }
@@ -664,7 +841,7 @@ async function executeWorkflow() {
 async function parseScript() {
   try {
     if (!scriptToParse.value.trim()) {
-      alert('请输入要解析的脚本');
+      toast.value?.show({ message: '请输入要解析的脚本', type: 'warning' });
       return;
     }
 
@@ -676,7 +853,7 @@ async function parseScript() {
     const workflow = response.workflow;
     
     if (!workflow || !workflow.blocks || workflow.blocks.length === 0) {
-      alert('未能解析出任何block，请检查脚本格式');
+      toast.value?.show({ message: '未能解析出任何block，请检查脚本格式', type: 'warning' });
       return;
     }
 
@@ -697,9 +874,9 @@ async function parseScript() {
     showParseModal.value = false;
     scriptToParse.value = '';
     
-    alert(`成功解析 ${workflow.blocks.length} 个功能块`);
+    toast.value?.show({ message: `成功解析 ${workflow.blocks.length} 个功能块`, type: 'success' });
   } catch (error: any) {
-    alert('解析失败: ' + (error.response?.data?.error || error.message));
+    toast.value?.show({ message: '解析失败: ' + (error.response?.data?.error || error.message), type: 'error' });
   }
 }
 </script>
@@ -967,4 +1144,130 @@ async function parseScript() {
   padding: 0;
   overflow: hidden;
 }
+
+/* 自定义 MiniMap 样式 */
+:deep(.vue-flow__minimap) {
+  background: #161b22 !important;
+  border: 1px solid #30363d !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+:deep(.vue-flow__minimap-mask) {
+  fill: rgba(13, 17, 23, 0.85) !important;
+  stroke: #58a6ff !important;
+  stroke-width: 2 !important;
+  rx: 8 !important;
+}
+
+:deep(.vue-flow__minimap svg) {
+  background: #161b22 !important;
+  border-radius: 8px !important;
+}
+
+/* MiniMap 节点颜色 - 让它继承节点的实际颜色 */
+:deep(.vue-flow__minimap-node) {
+  stroke: #484f58;
+  stroke-width: 1;
+  /* 不设置 fill，让它自动继承节点背景色 */
+}
+
+/* 全局覆盖 MiniMap 背景 */
+.vue-flow__minimap {
+  background: #161b22 !important;
+}
+
+/* 自定义连接点样式 - 默认空心 */
+:deep(.vue-flow__handle) {
+  width: 12px !important;
+  height: 12px !important;
+  background: #0d1117 !important;
+  border: 2px solid #58a6ff !important;
+  border-radius: 50% !important;
+  transition: all 0.2s ease !important;
+  --vf-handle: #0d1117 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: all !important;
+  z-index: 10 !important;
+  position: absolute !important;
+}
+
+/* 左侧 handle 定位 - 在节点外部 */
+:deep(.vue-flow__handle-left) {
+  left: -6px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+/* 右侧 handle 定位 - 在节点外部 */
+:deep(.vue-flow__handle-right) {
+  right: -6px !important;
+  left: auto !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+/* 已连接的连接点 - 实心 */
+:deep(.vue-flow__handle.connected),
+:deep(.vue-flow__handle-left.connected),
+:deep(.vue-flow__handle-right.connected) {
+  background: #58a6ff !important;
+  --vf-handle: #58a6ff !important;
+}
+
+/* hover 时变为实心 - 居中放大 */
+:deep(.vue-flow__handle:hover) {
+  background: #58a6ff !important;
+  border-color: #388bfd !important;
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.6) !important;
+  --vf-handle: #58a6ff !important;
+  width: 16px !important;
+  height: 16px !important;
+}
+
+/* hover 时左侧 handle 保持在外部居中 */
+:deep(.vue-flow__handle-left:hover) {
+  left: -8px !important;
+  transform: translateY(-50%) !important;
+}
+
+/* hover 时右侧 handle 保持在外部居中 */
+:deep(.vue-flow__handle-right:hover) {
+  right: -8px !important;
+  transform: translateY(-50%) !important;
+}
+
+/* 连接线样式 */
+:deep(.vue-flow__edge-path) {
+  stroke-width: 2;
+}
+
+:deep(.vue-flow__edge:hover .vue-flow__edge-path) {
+  stroke-width: 3;
+}
+
+/* 选中的边 */
+:deep(.vue-flow__edge.selected .vue-flow__edge-path) {
+  stroke-width: 3;
+}
+
+/* 箭头标记 */
+:deep(.vue-flow__edge) {
+  marker-end: url(#arrow);
+}
+
+:deep(.vue-flow__edge-path) {
+  marker-end: inherit;
+}
+
+/* SVG 箭头定义 */
+:deep(.vue-flow__edges svg defs) {
+  display: block;
+}
+
+:deep(.vue-flow__arrowhead) {
+  fill: #58a6ff;
+}
+
 </style>

@@ -144,8 +144,8 @@
         </div>
 
         <div class="modal-actions">
-          <button @click="createTable" class="btn-primary">创建</button>
           <button @click="showCreateModal = false" class="btn-secondary">取消</button>
+          <button @click="createTable" class="btn-primary">创建</button>
         </div>
       </div>
     </div>
@@ -169,8 +169,8 @@
           </select>
         </div>
         <div class="modal-actions">
-          <button @click="addColumn" class="btn-primary">添加</button>
           <button @click="showAddColumnModal = false" class="btn-secondary">取消</button>
+          <button @click="addColumn" class="btn-primary">添加</button>
         </div>
       </div>
     </div>
@@ -178,18 +178,23 @@
 
   <!-- 确认对话框 -->
   <ConfirmDialog ref="confirmDialog" />
+  
+  <!-- Toast 提示 -->
+  <Toast ref="toast" />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useDataTableStore } from '../stores/dataTable';
 import ConfirmDialog from './ConfirmDialog.vue';
+import Toast from './Toast.vue';
 
 const dataTableStore = useDataTableStore();
 const selectedTableId = ref<string | null>(null);
 const showCreateModal = ref(false);
 const showAddColumnModal = ref(false);
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
+const toast = ref<InstanceType<typeof Toast> | null>(null);
 
 const newTableName = ref('');
 const newTableColumns = ref<Array<{ key: string; type: string }>>([
@@ -222,13 +227,13 @@ function addNewColumn() {
 
 function createTable() {
   if (!newTableName.value.trim()) {
-    alert('请输入表名');
+    toast.value?.show({ message: '请输入表名', type: 'warning' });
     return;
   }
 
   const validColumns = newTableColumns.value.filter(c => c.key.trim());
   if (validColumns.length === 0) {
-    alert('请至少添加一列');
+    toast.value?.show({ message: '请至少添加一列', type: 'warning' });
     return;
   }
 
@@ -238,6 +243,8 @@ function createTable() {
   newTableName.value = '';
   newTableColumns.value = [{ key: '', type: 'text' }];
   showCreateModal.value = false;
+  
+  toast.value?.show({ message: '数据表创建成功', type: 'success' });
 }
 
 function deleteTable(id: string) {
@@ -273,7 +280,7 @@ function clearTableData(id: string) {
 
 function addColumn() {
   if (!newColumnKey.value.trim()) {
-    alert('请输入列名');
+    toast.value?.show({ message: '请输入列名', type: 'warning' });
     return;
   }
 
@@ -287,6 +294,8 @@ function addColumn() {
   newColumnKey.value = '';
   newColumnType.value = 'text';
   showAddColumnModal.value = false;
+  
+  toast.value?.show({ message: '列添加成功', type: 'success' });
 }
 
 function deleteColumn(key: string) {

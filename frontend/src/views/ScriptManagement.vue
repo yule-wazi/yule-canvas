@@ -43,6 +43,9 @@
         />
       </div>
     </div>
+    
+    <!-- Toast 提示 -->
+    <Toast ref="toast" />
   </div>
 </template>
 
@@ -52,12 +55,14 @@ import ScriptList from '../components/ScriptList.vue';
 import ScriptGenerator from '../components/ScriptGenerator.vue';
 import ScriptEditor from '../components/ScriptEditor.vue';
 import ExecutionPanel from '../components/ExecutionPanel.vue';
+import Toast from '../components/Toast.vue';
 import storageManager from '../services/storage';
 import type { Script } from '../stores/script';
 
 const currentCode = ref('');
 const currentScriptId = ref('');
 const scriptListRef = ref<InstanceType<typeof ScriptList> | null>(null);
+const toast = ref<InstanceType<typeof Toast> | null>(null);
 
 const handleScriptGenerated = (code: string) => {
   currentCode.value = code;
@@ -82,7 +87,7 @@ const handleSaveScript = (code: string, model: string) => {
   
   scriptListRef.value?.refresh();
   
-  alert('脚本已保存！');
+  toast.value?.show({ message: '脚本已保存！', type: 'success' });
 };
 
 const handleSelectScript = (script: Script) => {
@@ -111,7 +116,7 @@ const updateScript = () => {
   });
   
   scriptListRef.value?.refresh();
-  alert('脚本已更新！');
+  toast.value?.show({ message: '脚本已更新！', type: 'success' });
 };
 </script>
 

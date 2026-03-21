@@ -57,12 +57,16 @@
       </div>
     </div>
   </div>
+  
+  <!-- Toast 提示 -->
+  <Toast ref="toast" />
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
 import api from '../services/api';
 import ScriptEditor from './ScriptEditor.vue';
+import Toast from './Toast.vue';
 
 interface Emits {
   (e: 'scriptGenerated', code: string): void;
@@ -75,6 +79,7 @@ const selectedModel = ref('siliconflow');
 const siliconflowModel = ref('Qwen/Qwen3-8B');
 const prompt = ref('');
 const generatedCode = ref('');
+const toast = ref<InstanceType<typeof Toast> | null>(null);
 const loading = ref(false);
 const error = ref('');
 
@@ -124,9 +129,10 @@ const saveScript = () => {
 const copyCode = async () => {
   try {
     await navigator.clipboard.writeText(generatedCode.value);
-    alert('代码已复制到剪贴板');
+    toast.value?.show({ message: '代码已复制到剪贴板', type: 'success' });
   } catch (err) {
     console.error('复制失败:', err);
+    toast.value?.show({ message: '复制失败', type: 'error' });
   }
 };
 </script>
