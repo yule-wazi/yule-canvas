@@ -40,8 +40,6 @@ export class BlockCompiler {
     }
 
     // 找到循环体的起始和结束节点
-    // 起始：循环模块的 loop-start 连接到的节点
-    // 结束：连接到循环模块 loop-end 的节点
     const loopStartConn = connections.find(c => 
       c.source === loopBlock.id && c.sourceHandle === 'loop-start'
     );
@@ -58,13 +56,27 @@ export class BlockCompiler {
     const loopStartBlockId = loopStartConn.target;
     const loopEndBlockId = loopEndConn.source;
 
-    // 找到循环体内的所有模块（从起始到结束）
+    // 找到循环体内的所有模块
     const loopBodyBlocks = this.findLoopBodyBlocks(
       blocks,
       connections,
       loopStartBlockId,
       loopEndBlockId
     );
+
+    // 找到循环体外的模块（不在循环体内且不是循环模块本身）
+    const loopBodyBlockIds = new Set(loopBodyBlocks.map(b => b.id));
+    const outsideBlocks = blocks.filter(b => 
+      b.type !== 'loop' && !loopBodyBlockIds.has(b.id)
+    );
+
+    // 对循环体外的模块进行拓扑排序
+    const sortedOutsideBlocks = this.topologicalSort(outsideBlocks, connections);
+
+    // 生成循环体外的代码
+    const outsideCode = sortedOutsideBlocks.map(block => 
+      this.generateBlockCode(block)
+    ).filter(Boolean);
 
     // 生成循环体代码
     const loopBodyCode = loopBodyBlocks.map(block => 
@@ -74,7 +86,42 @@ export class BlockCompiler {
     // 生成循环代码
     const loopCode = this.generateLoopCode(loopBlock, loopBodyCode);
 
-    return this.assembleCode([loopCode]);
+    // 组合所有代码：循环前的代码 + 循环代码 + 循环后的代码
+    // 需要根据连接关系确定循环模块在整个流程中的位置
+    const allCode = this.arrangeCodeWithLoop(
+      sortedOutsideBlocks,
+      loopBlock,
+      loopCode,
+      connections
+    );
+
+    return this.assembleCode(allCode);
+  }
+
+  private arrangeCodeWithLoop(
+    outsideBlocks: any[],
+    loopBlock: any,
+    loopCode: string,
+    connections: any[]
+  ): string[] {
+    const result: string[] = [];
+    
+    // 简单策略：先生成所有循环体外的模块代码，然后是循环代码
+    // 因为循环模块通常在流程的末尾
+    
+    // 对循环体外的模块按拓扑排序
+    const sortedOutside = this.topologicalSort(outsideBlocks, connections);
+    
+    // 生成循环体外的代码
+    sortedOutside.forEach(block => {
+      const code = this.generateBlockCode(block);
+      if (code) result.push(code);
+    });
+    
+    // 添加循环代码
+    result.push(loopCode);
+    
+    return result;
   }
 
   private findLoopBodyBlocks(
@@ -87,19 +134,13 @@ export class BlockCompiler {
     const visited = new Set<string>();
     
     // 从起始节点开始，沿着连接找到所有节点，直到结束节点
-    const queue = [startId];
+    let currentId = startId;
     
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      
-      if (visited.has(currentId)) {
-        continue;
-      }
-      
+    while (currentId && !visited.has(currentId)) {
       visited.add(currentId);
       
       const block = blocks.find(b => b.id === currentId);
-      if (block) {
+      if (block && block.type !== 'loop') {
         result.push(block);
       }
       
@@ -108,18 +149,21 @@ export class BlockCompiler {
         break;
       }
       
-      // 找到所有从当前节点出发的连接
-      const outgoingConns = connections.filter(c => 
-        c.source === currentId && c.sourceHandle === 'source-right'
+      // 找到从当前节点出发的下一个连接（普通模块使用 source-right）
+      const nextConn = connections.find(c => 
+        c.source === currentId && 
+        (c.sourceHandle === 'source-right' || c.sourceHandle === 'out')
       );
       
-      outgoingConns.forEach(conn => {
-        if (!visited.has(conn.target)) {
-          queue.push(conn.target);
-        }
-      });
+      if (nextConn) {
+        currentId = nextConn.target;
+      } else {
+        // 没有更多连接，停止
+        break;
+      }
     }
     
+    console.log('循环体内找到的模块:', result.map(b => b.type));
     return result;
   }
 
