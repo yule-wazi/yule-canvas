@@ -5,6 +5,7 @@
       <nav>
         <router-link to="/">首页</router-link>
         <router-link to="/scripts">脚本管理</router-link>
+        <router-link to="/workflow">可视化编辑器</router-link>
         <router-link to="/data">数据管理</router-link>
       </nav>
     </header>

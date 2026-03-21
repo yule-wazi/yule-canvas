@@ -17,6 +17,11 @@ const router = createRouter({
       path: '/data',
       name: 'data',
       component: () => import('../views/DataManagement.vue')
+    },
+    {
+      path: '/workflow',
+      name: 'workflow',
+      component: () => import('../components/workflow/WorkflowEditor.vue')
     }
   ]
 });
