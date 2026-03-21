@@ -162,3 +162,102 @@ export const simpleLogWorkflow = {
   createdAt: Date.now(),
   updatedAt: Date.now()
 };
+
+// 循环示例工作流
+export const loopWorkflowExample = {
+  id: 'example-loop',
+  name: '循环示例',
+  description: '演示循环模块的使用 - 循环访问多个页面',
+  blocks: [
+    {
+      id: 'block-loop',
+      type: 'loop',
+      label: '循环',
+      category: 'logic',
+      position: { x: 100, y: 200 },
+      data: {
+        mode: 'count',
+        count: 3,
+        condition: '',
+        maxIterations: 1000
+      },
+      inputs: [{ id: 'loop-end', name: '循环结束', type: 'flow' }],
+      outputs: [{ id: 'loop-start', name: '循环开始', type: 'flow' }]
+    },
+    {
+      id: 'block-1',
+      type: 'navigate',
+      label: '访问页面',
+      category: 'browser',
+      position: { x: 350, y: 200 },
+      data: {
+        url: 'https://www.baidu.com',
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
+      },
+      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+      outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+    },
+    {
+      id: 'block-2',
+      type: 'wait',
+      label: '等待',
+      category: 'browser',
+      position: { x: 600, y: 200 },
+      data: {
+        duration: 2000
+      },
+      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+      outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+    },
+    {
+      id: 'block-3',
+      type: 'log',
+      label: '日志输出',
+      category: 'logic',
+      position: { x: 850, y: 200 },
+      data: {
+        message: '完成一次循环'
+      },
+      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+      outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+    }
+  ],
+  connections: [
+    {
+      id: 'conn-1',
+      source: 'block-loop',
+      sourceHandle: 'loop-start',
+      target: 'block-1',
+      targetHandle: 'target-left',
+      type: 'flow'
+    },
+    {
+      id: 'conn-2',
+      source: 'block-1',
+      sourceHandle: 'source-right',
+      target: 'block-2',
+      targetHandle: 'target-left',
+      type: 'flow'
+    },
+    {
+      id: 'conn-3',
+      source: 'block-2',
+      sourceHandle: 'source-right',
+      target: 'block-3',
+      targetHandle: 'target-left',
+      type: 'flow'
+    },
+    {
+      id: 'conn-4',
+      source: 'block-3',
+      sourceHandle: 'source-right',
+      target: 'block-loop',
+      targetHandle: 'loop-end',
+      type: 'flow'
+    }
+  ],
+  variables: {},
+  createdAt: Date.now(),
+  updatedAt: Date.now()
+};

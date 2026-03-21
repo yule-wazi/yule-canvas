@@ -65,8 +65,33 @@ export class PlaywrightExecutor {
       if (executablePath) {
         // 使用系统Chrome
         this.log('使用系统Chrome浏览器');
+        
+        const userDataDir = process.env.CHROME_USER_DATA || './chrome-data';
+        
+        // 在启动浏览器前，修改 Local State 文件来禁用警告
+        const localStatePath = `${userDataDir}/Local State`;
+        try {
+          let localState: any = {};
+          if (fs.existsSync(localStatePath)) {
+            localState = JSON.parse(fs.readFileSync(localStatePath, 'utf-8'));
+          }
+          
+          // 禁用各种警告和提示
+          localState.browser = localState.browser || {};
+          localState.browser.enabled_labs_experiments = localState.browser.enabled_labs_experiments || [];
+          
+          // 添加实验性标志来禁用警告
+          if (!localState.browser.enabled_labs_experiments.includes('disable-features=CalculateNativeWinOcclusion')) {
+            localState.browser.enabled_labs_experiments.push('disable-features=CalculateNativeWinOcclusion');
+          }
+          
+          fs.writeFileSync(localStatePath, JSON.stringify(localState, null, 2));
+        } catch (e) {
+          // 忽略错误，继续启动
+        }
+        
         browser = await chromium.launchPersistentContext(
-          process.env.CHROME_USER_DATA || './chrome-data',
+          userDataDir,
           {
             headless: false,
             executablePath: executablePath,
@@ -74,7 +99,12 @@ export class PlaywrightExecutor {
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
-              '--disable-blink-features=AutomationControlled'
+              '--disable-blink-features=AutomationControlled',
+              '--test-type',
+              '--disable-infobars',
+              '--disable-extensions',
+              '--no-first-run',
+              '--no-default-browser-check'
             ],
             ignoreDefaultArgs: ['--enable-automation'],
             viewport: { width: 1920, height: 1080 },

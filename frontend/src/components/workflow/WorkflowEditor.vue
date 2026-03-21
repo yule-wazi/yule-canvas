@@ -58,6 +58,10 @@
 
         <div class="palette-category">
           <h4>逻辑控制</h4>
+          <div class="palette-block" @click="addBlock('loop')">
+            <span class="block-icon">�</span>
+            <span>循环</span>
+          </div>
           <div class="palette-block" @click="addBlock('log')">
             <span class="block-icon">📝</span>
             <span>日志输出</span>
@@ -72,7 +76,7 @@
           :min-zoom="0.2"
           :max-zoom="4"
           :connect-on-click="false"
-          :node-types="{ custom: CustomNode as any }"
+          :node-types="nodeTypes"
           @node-click="onNodeClick"
           @connect="onConnect"
           @nodes-change="onNodesChange"
@@ -160,7 +164,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw } from 'vue';
-import { VueFlow } from '@vue-flow/core';
+import { VueFlow, MarkerType } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
@@ -171,6 +175,7 @@ import storageManager from '../../services/storage';
 import type { BlockType } from '../../types/block';
 import { simpleLogWorkflow } from '../../examples/workflowExample';
 import CustomNode from './CustomNode.vue';
+import LoopNode from './LoopNode.vue';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
@@ -185,13 +190,15 @@ const TypeProperty = defineAsyncComponent(() => import('./properties/TypePropert
 const ExtractProperty = defineAsyncComponent(() => import('./properties/ExtractProperty.vue'));
 const ExtractImagesProperty = defineAsyncComponent(() => import('./properties/ExtractImagesProperty.vue'));
 const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.vue'));
+const LoopProperty = defineAsyncComponent(() => import('./properties/LoopProperty.vue'));
 const DataTableManager = defineAsyncComponent(() => import('../DataTableManager.vue'));
 const ConfirmDialog = defineAsyncComponent(() => import('../ConfirmDialog.vue'));
 const Toast = defineAsyncComponent(() => import('../Toast.vue'));
 
 // 定义节点类型
 const nodeTypes = {
-  custom: markRaw(CustomNode)
+  custom: markRaw(CustomNode) as any,
+  loop: markRaw(LoopNode) as any
 };
 
 const workflowStore = useWorkflowStore();
@@ -259,19 +266,31 @@ function updateHandleStyles() {
     
     // 标记已连接的 handle
     workflowStore.connections.forEach(conn => {
-      // 源节点的右侧 handle
+      // 源节点的 handle
       const sourceNode = document.querySelector(`[data-id="${conn.source}"]`);
       if (sourceNode) {
-        const sourceHandle = sourceNode.querySelector('.vue-flow__handle-right');
+        // 根据 sourceHandle 查找对应的 handle
+        let sourceHandle;
+        if (conn.sourceHandle === 'loop-start') {
+          sourceHandle = sourceNode.querySelector('.vue-flow__handle-left');
+        } else {
+          sourceHandle = sourceNode.querySelector('.vue-flow__handle-right');
+        }
         if (sourceHandle) {
           sourceHandle.classList.add('connected');
         }
       }
       
-      // 目标节点的左侧 handle
+      // 目标节点的 handle
       const targetNode = document.querySelector(`[data-id="${conn.target}"]`);
       if (targetNode) {
-        const targetHandle = targetNode.querySelector('.vue-flow__handle-left');
+        // 根据 targetHandle 查找对应的 handle
+        let targetHandle;
+        if (conn.targetHandle === 'loop-end') {
+          targetHandle = targetNode.querySelector('.vue-flow__handle-right');
+        } else {
+          targetHandle = targetNode.querySelector('.vue-flow__handle-left');
+        }
         if (targetHandle) {
           targetHandle.classList.add('connected');
         }
@@ -349,7 +368,7 @@ const elements = computed({
       
       return {
         id: block.id,
-        type: 'custom',  // 使用自定义节点类型
+        type: block.type === 'loop' ? 'loop' : 'custom',  // 循环模块使用特殊节点类型
         position: block.position,
         label: block.label,
         data: { 
@@ -379,11 +398,11 @@ const elements = computed({
       type: 'smoothstep',
       animated: false,
       markerEnd: {
-        type: 'arrowclosed' as const,
+        type: MarkerType.ArrowClosed,
         color: conn.type === 'data' ? '#f85149' : '#58a6ff',
         width: 20,
         height: 20
-      } as any,
+      },
       style: {
         stroke: conn.type === 'data' ? '#f85149' : '#58a6ff',
         strokeWidth: 2
@@ -429,6 +448,7 @@ function getMinimapNodeColor(node: any) {
       type: '#238636',
       extract: '#f85149',
       'extract-images': '#f85149',
+      loop: '#8957e5',
       log: '#8957e5'
     };
     return colorMap[blockType] || '#6e7681';
@@ -462,19 +482,46 @@ function onNodeClick(event: any) {
 }
 
 function onConnect(connection: any) {
-  // 验证连接规则：只允许连接到左侧端点（target-left）
+  // 获取源节点和目标节点
+  const sourceBlock = workflowStore.blocks.find(b => b.id === connection.source);
+  const targetBlock = workflowStore.blocks.find(b => b.id === connection.target);
+  
+  // 循环模块的特殊连接规则
+  if (sourceBlock?.type === 'loop') {
+    // 循环模块的左端点（loop-start）只能连接到其他模块的左端点（target-left）
+    if (connection.sourceHandle === 'loop-start') {
+      if (!connection.targetHandle || !connection.targetHandle.includes('left')) {
+        return; // 静默拒绝
+      }
+    }
+  }
+  
+  if (targetBlock?.type === 'loop') {
+    // 循环模块的右端点（loop-end）只能接收其他模块的右端点（source-right）
+    if (connection.targetHandle === 'loop-end') {
+      if (!connection.sourceHandle || !connection.sourceHandle.includes('right')) {
+        return; // 静默拒绝
+      }
+    }
+  }
+  
+  // 普通模块的连接规则：只允许连接到左侧端点（target-left）
   // 拒绝连接到右侧端点
-  if (connection.targetHandle && connection.targetHandle.includes('right')) {
+  if (targetBlock?.type !== 'loop' && connection.targetHandle && connection.targetHandle.includes('right')) {
     return; // 静默拒绝
   }
   
-  // 验证：source 必须是右侧，target 必须是左侧
-  if (connection.sourceHandle && !connection.sourceHandle.includes('right')) {
-    return; // 静默拒绝
+  // 验证：source 必须是右侧，target 必须是左侧（循环模块除外）
+  if (sourceBlock?.type !== 'loop') {
+    if (connection.sourceHandle && !connection.sourceHandle.includes('right')) {
+      return; // 静默拒绝
+    }
   }
   
-  if (connection.targetHandle && !connection.targetHandle.includes('left')) {
-    return; // 静默拒绝
+  if (targetBlock?.type !== 'loop') {
+    if (connection.targetHandle && !connection.targetHandle.includes('left')) {
+      return; // 静默拒绝
+    }
   }
   
   workflowStore.addConnection({
@@ -521,6 +568,7 @@ function getPropertyComponent(type: BlockType) {
     type: TypeProperty,
     extract: ExtractProperty,
     'extract-images': ExtractImagesProperty,
+    loop: LoopProperty,
     log: LogProperty
   };
   return components[type] || 'div';
@@ -1252,22 +1300,17 @@ async function parseScript() {
   stroke-width: 3;
 }
 
-/* 箭头标记 */
-:deep(.vue-flow__edge) {
-  marker-end: url(#arrow);
-}
-
-:deep(.vue-flow__edge-path) {
-  marker-end: inherit;
-}
-
-/* SVG 箭头定义 */
-:deep(.vue-flow__edges svg defs) {
-  display: block;
+/* 箭头样式 */
+:deep(.vue-flow__edge .vue-flow__edge-textwrapper) {
+  pointer-events: all;
 }
 
 :deep(.vue-flow__arrowhead) {
   fill: #58a6ff;
+}
+
+:deep(.vue-flow__arrowhead path) {
+  fill: inherit;
 }
 
 </style>

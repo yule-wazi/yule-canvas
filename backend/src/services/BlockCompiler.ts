@@ -7,7 +7,15 @@ export class BlockCompiler {
       return '// 工作流为空\nreturn { success: false, message: "工作流为空" };';
     }
 
-    // 拓扑排序确定执行顺序
+    // 检查是否有循环模块
+    const loopBlocks = blocks.filter(b => b.type === 'loop');
+    
+    if (loopBlocks.length > 0) {
+      // 有循环模块，使用特殊的循环编译逻辑
+      return this.compileWithLoop(blocks, connections);
+    }
+
+    // 没有循环模块，使用普通的拓扑排序
     const sortedBlocks = this.topologicalSort(blocks, connections);
 
     // 生成代码片段
@@ -22,6 +30,130 @@ export class BlockCompiler {
 
     // 组装完整代码
     return this.assembleCode(codeFragments);
+  }
+
+  private compileWithLoop(blocks: any[], connections: any[]): string {
+    // 找到循环模块
+    const loopBlock = blocks.find(b => b.type === 'loop');
+    if (!loopBlock) {
+      return this.assembleCode([]);
+    }
+
+    // 找到循环体的起始和结束节点
+    // 起始：循环模块的 loop-start 连接到的节点
+    // 结束：连接到循环模块 loop-end 的节点
+    const loopStartConn = connections.find(c => 
+      c.source === loopBlock.id && c.sourceHandle === 'loop-start'
+    );
+    const loopEndConn = connections.find(c => 
+      c.target === loopBlock.id && c.targetHandle === 'loop-end'
+    );
+
+    if (!loopStartConn || !loopEndConn) {
+      return this.assembleCode([
+        `// 循环模块配置不完整\nlog('错误：循环模块未正确连接');`
+      ]);
+    }
+
+    const loopStartBlockId = loopStartConn.target;
+    const loopEndBlockId = loopEndConn.source;
+
+    // 找到循环体内的所有模块（从起始到结束）
+    const loopBodyBlocks = this.findLoopBodyBlocks(
+      blocks,
+      connections,
+      loopStartBlockId,
+      loopEndBlockId
+    );
+
+    // 生成循环体代码
+    const loopBodyCode = loopBodyBlocks.map(block => 
+      this.generateBlockCode(block)
+    ).filter(Boolean).join('\n');
+
+    // 生成循环代码
+    const loopCode = this.generateLoopCode(loopBlock, loopBodyCode);
+
+    return this.assembleCode([loopCode]);
+  }
+
+  private findLoopBodyBlocks(
+    blocks: any[],
+    connections: any[],
+    startId: string,
+    endId: string
+  ): any[] {
+    const result: any[] = [];
+    const visited = new Set<string>();
+    
+    // 从起始节点开始，沿着连接找到所有节点，直到结束节点
+    const queue = [startId];
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      
+      if (visited.has(currentId)) {
+        continue;
+      }
+      
+      visited.add(currentId);
+      
+      const block = blocks.find(b => b.id === currentId);
+      if (block) {
+        result.push(block);
+      }
+      
+      // 如果到达结束节点，停止
+      if (currentId === endId) {
+        break;
+      }
+      
+      // 找到所有从当前节点出发的连接
+      const outgoingConns = connections.filter(c => 
+        c.source === currentId && c.sourceHandle === 'source-right'
+      );
+      
+      outgoingConns.forEach(conn => {
+        if (!visited.has(conn.target)) {
+          queue.push(conn.target);
+        }
+      });
+    }
+    
+    return result;
+  }
+
+  private generateLoopCode(loopBlock: any, bodyCode: string): string {
+    const { mode, count, condition, maxIterations } = loopBlock.data;
+    const maxIter = maxIterations || 1000;
+    
+    if (mode === 'count') {
+      // 固定次数循环
+      return `log('开始循环，共 ${count} 次');
+for (let __loopIndex = 0; __loopIndex < ${count}; __loopIndex++) {
+  log('循环第 ' + (__loopIndex + 1) + ' 次');
+  
+${bodyCode.split('\n').map(line => '  ' + line).join('\n')}
+}
+log('循环完成');
+`;
+    } else if (mode === 'condition') {
+      // 条件循环
+      const safeCondition = condition || 'false';
+      return `log('开始条件循环');
+let __loopIndex = 0;
+while (${safeCondition} && __loopIndex < ${maxIter}) {
+  log('循环第 ' + (__loopIndex + 1) + ' 次');
+  
+${bodyCode.split('\n').map(line => '  ' + line).join('\n')}
+  
+  __loopIndex++;
+}
+log('循环完成，共执行 ' + __loopIndex + ' 次');
+`;
+    }
+    
+    return `// 未知的循环模式: ${mode}\n`;
   }
 
   private topologicalSort(blocks: any[], connections: any[]): any[] {
@@ -93,6 +225,9 @@ export class BlockCompiler {
         return this.generateExtractCode(block);
       case 'log':
         return this.generateLogCode(block);
+      case 'loop':
+        // 循环模块在 compileWithLoop 中处理，这里返回空
+        return '';
       default:
         return `// 未知block类型: ${block.type}\n`;
     }

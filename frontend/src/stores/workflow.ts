@@ -177,15 +177,9 @@ export const useWorkflowStore = defineStore('workflow', {
         loop: {
           label: '循环',
           category: 'logic',
-          defaultData: { mode: 'count', count: 10 },
-          inputs: [
-            { id: 'in', name: '输入', type: 'flow' },
-            { id: 'data', name: '数据', type: 'data' }
-          ],
-          outputs: [
-            { id: 'loop', name: '循环体', type: 'flow' },
-            { id: 'out', name: '完成', type: 'flow' }
-          ]
+          defaultData: { mode: 'count', count: 10, condition: '', maxIterations: 1000 },
+          inputs: [{ id: 'loop-end', name: '循环结束', type: 'flow' }],
+          outputs: [{ id: 'loop-start', name: '循环开始', type: 'flow' }]
         },
         log: {
           label: '日志输出',
