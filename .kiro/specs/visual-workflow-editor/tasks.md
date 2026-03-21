@@ -110,10 +110,10 @@
 ## 阶段5: 后端集成
 
 ### 5.1 API开发
-- [ ] 5.1.1 创建workflow路由 (`backend/src/routes/workflow.ts`)
-- [ ] 5.1.2 实现解析API (`POST /api/workflow/parse`)
-- [ ] 5.1.3 实现编译API (`POST /api/workflow/compile`)
-- [ ] 5.1.4 实现执行API (`POST /api/workflow/execute`)
+- [x] 5.1.1 创建workflow路由 (`backend/src/routes/workflow.ts`)
+- [x] 5.1.2 实现解析API (`POST /api/workflow/parse`)
+- [x] 5.1.3 实现编译API (`POST /api/workflow/compile`)
+- [x] 5.1.4 实现执行API (`POST /api/workflow/execute`)
 - [ ] 5.1.5 实现保存/加载API
 
 ### 5.2 存储管理
@@ -122,7 +122,7 @@
 - [ ] 5.2.3 实现工作流导入/导出
 
 ### 5.3 执行引擎
-- [ ] 5.3.1 创建WorkflowExecutor类 (`backend/src/services/WorkflowExecutor.ts`)
+- [x] 5.3.1 创建WorkflowExecutor类 (`backend/src/services/WorkflowExecutor.ts`)
 - [ ] 5.3.2 实现Block执行器
 - [ ] 5.3.3 实现数据流传递
 - [ ] 5.3.4 实现错误处理

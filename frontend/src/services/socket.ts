@@ -63,4 +63,7 @@ class SocketClient {
   }
 }
 
-export default new SocketClient();
+const socketClient = new SocketClient();
+
+export default socketClient;
+export { socketClient as socketService };

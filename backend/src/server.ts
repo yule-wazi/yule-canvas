@@ -4,6 +4,7 @@ import cors from 'cors';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import apiRoutes from './routes/api';
+import workflowRoutes from './routes/workflow';
 import { PlaywrightExecutor } from './services/PlaywrightExecutor';
 
 dotenv.config();
@@ -23,6 +24,7 @@ app.use(express.json());
 
 // API路由
 app.use('/api', apiRoutes);
+app.use('/api/workflow', workflowRoutes);
 
 // 健康检查
 app.get('/api/health', (req, res) => {

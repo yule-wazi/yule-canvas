@@ -1,12 +1,14 @@
 <template>
   <div class="workflow-editor">
     <div class="editor-toolbar">
-      <button @click="save" class="btn-primary">保存</button>
-      <button @click="compile" class="btn-secondary">生成代码</button>
-      <button @click="showParseModal = true" class="btn-secondary">解析脚本</button>
+      <button @click="save" class="btn-primary">💾 保存</button>
+      <button @click="executeWorkflow" class="btn-success">▶️ 执行</button>
+      <button @click="compile" class="btn-secondary">📝 生成代码</button>
+      <button @click="showParseModal = true" class="btn-secondary">🔍 解析脚本</button>
+      <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
       <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
       <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
-      <button @click="clear" class="btn-danger">清空</button>
+      <button @click="clear" class="btn-danger">🗑️ 清空</button>
     </div>
 
     <div class="editor-content">
@@ -113,16 +115,34 @@
         </div>
       </div>
     </div>
+
+    <!-- 执行日志弹窗 -->
+    <div v-if="showExecutionModal" class="modal-overlay" @click="!isExecuting && (showExecutionModal = false)">
+      <div class="modal-content" @click.stop>
+        <h3>执行日志</h3>
+        <div class="execution-logs">
+          <div v-for="(log, index) in executionLogs" :key="index" class="log-line">{{ log }}</div>
+        </div>
+        <div class="modal-actions">
+          <button v-if="isExecuting" @click="stopExecution" class="btn-danger">停止执行</button>
+          <button v-else @click="showExecutionModal = false" class="btn-secondary">关闭</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, defineAsyncComponent } from 'vue';
-import { VueFlow, Background, Controls, MiniMap } from '@vue-flow/core';
+import { VueFlow } from '@vue-flow/core';
+import { Background } from '@vue-flow/background';
+import { Controls } from '@vue-flow/controls';
+import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
-import { BlockCompiler } from '../../services/BlockCompiler';
-import { ScriptParser } from '../../services/ScriptParser';
+import api from '../../services/api';
+import socketService from '../../services/socket';
 import type { BlockType } from '../../types/block';
+import { simpleLogWorkflow } from '../../examples/workflowExample';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
@@ -138,12 +158,13 @@ const ExtractImagesProperty = defineAsyncComponent(() => import('./properties/Ex
 const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.vue'));
 
 const workflowStore = useWorkflowStore();
-const compiler = new BlockCompiler();
-const parser = new ScriptParser();
 const showCodeModal = ref(false);
 const showParseModal = ref(false);
+const showExecutionModal = ref(false);
 const generatedCode = ref('');
 const scriptToParse = ref('');
+const isExecuting = ref(false);
+const executionLogs = ref<string[]>([]);
 
 // 初始化工作流
 workflowStore.initWorkflow();
@@ -253,22 +274,74 @@ function getPropertyComponent(type: BlockType) {
 }
 
 function save() {
-  alert('保存功能待实现');
+  try {
+    if (!workflowStore.currentWorkflow) {
+      alert('没有可保存的工作流');
+      return;
+    }
+
+    // 更新工作流数据
+    const workflow = {
+      ...workflowStore.currentWorkflow,
+      blocks: workflowStore.blocks,
+      connections: workflowStore.connections,
+      updatedAt: Date.now()
+    };
+
+    // 保存到localStorage
+    const WORKFLOWS_KEY = 'saved_workflows';
+    const workflows = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
+    
+    const index = workflows.findIndex((w: any) => w.id === workflow.id);
+    if (index >= 0) {
+      workflows[index] = workflow;
+    } else {
+      workflows.push(workflow);
+    }
+    
+    localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(workflows));
+    
+    alert('工作流保存成功！');
+  } catch (error: any) {
+    console.error('保存失败:', error);
+    alert('保存失败: ' + error.message);
+  }
 }
 
 async function compile() {
   try {
-    const code = compiler.compile(workflowStore.blocks, workflowStore.connections);
-    generatedCode.value = code;
+    console.log('开始编译工作流');
+    console.log('Blocks 数量:', workflowStore.blocks.length);
+    console.log('Blocks:', JSON.stringify(workflowStore.blocks, null, 2));
+    console.log('Connections 数量:', workflowStore.connections.length);
+    console.log('Connections:', JSON.stringify(workflowStore.connections, null, 2));
+    
+    if (workflowStore.blocks.length === 0) {
+      alert('工作流为空，请先添加一些功能块');
+      return;
+    }
+    
+    const response: any = await api.post('/workflow/compile', {
+      workflow: {
+        blocks: workflowStore.blocks,
+        connections: workflowStore.connections
+      }
+    });
+    
+    console.log('编译响应:', response);
+    
+    // 注意：api 拦截器已经返回了 response.data，所以这里直接访问 response.code
+    if (!response || !response.code) {
+      throw new Error('后端返回的数据格式不正确');
+    }
+    
+    generatedCode.value = response.code;
     showCodeModal.value = true;
   } catch (error: any) {
-    alert('生成代码失败: ' + error.message);
+    console.error('编译失败:', error);
+    const errorMessage = error.response?.data?.error || error.message || '未知错误';
+    alert('生成代码失败: ' + errorMessage);
   }
-}
-
-function generateCode(): string {
-  // 使用新的编译器
-  return compiler.compile(workflowStore.blocks, workflowStore.connections);
 }
 
 function copyCode() {
@@ -290,16 +363,105 @@ function clear() {
   }
 }
 
-function parseScript() {
+function stopExecution() {
+  socketService.disconnect();
+  isExecuting.value = false;
+  executionLogs.value.push('\n⚠️ 执行已停止');
+}
+
+function loadExample() {
+  if (workflowStore.blocks.length > 0) {
+    if (!confirm('当前工作流将被清空，确定要加载示例吗？')) {
+      return;
+    }
+  }
+  
+  workflowStore.clearWorkflow();
+  workflowStore.loadWorkflow(simpleLogWorkflow as any);
+  alert('示例工作流已加载');
+}
+
+async function executeWorkflow() {
+  try {
+    if (workflowStore.blocks.length === 0) {
+      alert('工作流为空，请先添加一些功能块');
+      return;
+    }
+
+    if (isExecuting.value) {
+      alert('工作流正在执行中...');
+      return;
+    }
+
+    // 编译工作流为代码
+    const response: any = await api.post('/workflow/compile', {
+      workflow: {
+        blocks: workflowStore.blocks,
+        connections: workflowStore.connections
+      }
+    });
+
+    if (!response || !response.code) {
+      throw new Error('编译失败');
+    }
+
+    const code = response.code;
+    
+    // 清空日志
+    executionLogs.value = [];
+    isExecuting.value = true;
+    showExecutionModal.value = true;
+
+    // 连接Socket.io
+    socketService.connect();
+
+    // 监听日志
+    socketService.onLog((log) => {
+      executionLogs.value.push(`[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`);
+    });
+
+    // 监听完成
+    socketService.onComplete((result) => {
+      executionLogs.value.push(`\n✅ 执行完成！`);
+      executionLogs.value.push(`结果: ${JSON.stringify(result, null, 2)}`);
+      isExecuting.value = false;
+      socketService.offAll();
+    });
+
+    // 监听错误
+    socketService.onError((error) => {
+      executionLogs.value.push(`\n❌ 执行失败: ${error.message}`);
+      isExecuting.value = false;
+      socketService.offAll();
+    });
+
+    // 执行脚本
+    const scriptId = `workflow-${Date.now()}`;
+    socketService.executeScript(scriptId, code);
+    
+    executionLogs.value.push('🚀 开始执行工作流...\n');
+  } catch (error: any) {
+    console.error('执行失败:', error);
+    alert('执行失败: ' + (error.response?.data?.error || error.message));
+    isExecuting.value = false;
+  }
+}
+
+async function parseScript() {
   try {
     if (!scriptToParse.value.trim()) {
       alert('请输入要解析的脚本');
       return;
     }
 
-    const { blocks, connections } = parser.parse(scriptToParse.value);
+    const response: any = await api.post('/workflow/parse', {
+      code: scriptToParse.value
+    });
     
-    if (blocks.length === 0) {
+    // 注意：api 拦截器已经返回了 response.data，所以这里直接访问 response.workflow
+    const workflow = response.workflow;
+    
+    if (!workflow || !workflow.blocks || workflow.blocks.length === 0) {
       alert('未能解析出任何block，请检查脚本格式');
       return;
     }
@@ -308,11 +470,11 @@ function parseScript() {
     workflowStore.clearWorkflow();
     
     // 加载解析的blocks和connections
-    blocks.forEach(block => {
+    workflow.blocks.forEach((block: any) => {
       workflowStore.blocks.push(block);
     });
     
-    connections.forEach(conn => {
+    workflow.connections.forEach((conn: any) => {
       workflowStore.connections.push(conn);
     });
     
@@ -321,9 +483,9 @@ function parseScript() {
     showParseModal.value = false;
     scriptToParse.value = '';
     
-    alert(`成功解析 ${blocks.length} 个功能块`);
+    alert(`成功解析 ${workflow.blocks.length} 个功能块`);
   } catch (error: any) {
-    alert('解析失败: ' + error.message);
+    alert('解析失败: ' + (error.response?.data?.error || error.message));
   }
 }
 </script>
@@ -361,6 +523,15 @@ function parseScript() {
 
 .btn-primary:hover {
   background: #2ea043;
+}
+
+.btn-success {
+  background: #1f6feb;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #388bfd;
 }
 
 .btn-secondary {
@@ -519,5 +690,26 @@ function parseScript() {
   gap: 1rem;
   margin-top: 1rem;
   justify-content: flex-end;
+}
+
+.execution-logs {
+  flex: 1;
+  background: #0d1117;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 1rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9rem;
+  overflow-y: auto;
+  min-height: 400px;
+  max-height: 500px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-line {
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
 }
 </style>
