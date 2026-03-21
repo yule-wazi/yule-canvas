@@ -395,7 +395,7 @@ const elements = computed({
       target: conn.target,
       sourceHandle: conn.sourceHandle || 'source-right',
       targetHandle: conn.targetHandle || 'target-left',
-      type: 'smoothstep',
+      type: 'default', // 使用默认的贝塞尔曲线
       animated: false,
       markerEnd: {
         type: MarkerType.ArrowClosed,
