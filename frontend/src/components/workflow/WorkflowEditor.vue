@@ -3,6 +3,7 @@
     <div class="editor-toolbar">
       <button @click="save" class="btn-primary">保存</button>
       <button @click="compile" class="btn-secondary">生成代码</button>
+      <button @click="showParseModal = true" class="btn-secondary">解析脚本</button>
       <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
       <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
       <button @click="clear" class="btn-danger">清空</button>
@@ -100,6 +101,18 @@
         </div>
       </div>
     </div>
+
+    <!-- 解析脚本弹窗 -->
+    <div v-if="showParseModal" class="modal-overlay" @click="showParseModal = false">
+      <div class="modal-content" @click.stop>
+        <h3>解析Playwright脚本</h3>
+        <textarea v-model="scriptToParse" placeholder="粘贴Playwright脚本代码..." class="code-preview"></textarea>
+        <div class="modal-actions">
+          <button @click="parseScript" class="btn-primary">解析</button>
+          <button @click="showParseModal = false" class="btn-secondary">取消</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -108,6 +121,7 @@ import { ref, computed, watch, defineAsyncComponent } from 'vue';
 import { VueFlow, Background, Controls, MiniMap } from '@vue-flow/core';
 import { useWorkflowStore } from '../../stores/workflow';
 import { BlockCompiler } from '../../services/BlockCompiler';
+import { ScriptParser } from '../../services/ScriptParser';
 import type { BlockType } from '../../types/block';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -125,8 +139,11 @@ const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.
 
 const workflowStore = useWorkflowStore();
 const compiler = new BlockCompiler();
+const parser = new ScriptParser();
 const showCodeModal = ref(false);
+const showParseModal = ref(false);
 const generatedCode = ref('');
+const scriptToParse = ref('');
 
 // 初始化工作流
 workflowStore.initWorkflow();
@@ -270,6 +287,43 @@ function redo() {
 function clear() {
   if (confirm('确定要清空工作流吗？')) {
     workflowStore.clearWorkflow();
+  }
+}
+
+function parseScript() {
+  try {
+    if (!scriptToParse.value.trim()) {
+      alert('请输入要解析的脚本');
+      return;
+    }
+
+    const { blocks, connections } = parser.parse(scriptToParse.value);
+    
+    if (blocks.length === 0) {
+      alert('未能解析出任何block，请检查脚本格式');
+      return;
+    }
+
+    // 清空当前工作流
+    workflowStore.clearWorkflow();
+    
+    // 加载解析的blocks和connections
+    blocks.forEach(block => {
+      workflowStore.blocks.push(block);
+    });
+    
+    connections.forEach(conn => {
+      workflowStore.connections.push(conn);
+    });
+    
+    workflowStore.saveToHistory();
+    
+    showParseModal.value = false;
+    scriptToParse.value = '';
+    
+    alert(`成功解析 ${blocks.length} 个功能块`);
+  } catch (error: any) {
+    alert('解析失败: ' + error.message);
   }
 }
 </script>

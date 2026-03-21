@@ -3,50 +3,50 @@
 ## 阶段1: 基础架构搭建
 
 ### 1.1 安装依赖和配置
-- [ ] 1.1.1 安装Vue Flow库 (`@vue-flow/core`, `@vue-flow/background`, `@vue-flow/controls`)
-- [ ] 1.1.2 安装AST解析库 (`acorn` 或 `@babel/parser`)
-- [ ] 1.1.3 配置TypeScript类型定义
-- [ ] 1.1.4 创建基础目录结构
+- [x] 1.1.1 安装Vue Flow库 (`@vue-flow/core`, `@vue-flow/background`, `@vue-flow/controls`)
+- [x] 1.1.2 安装AST解析库 (`acorn` 或 `@babel/parser`)
+- [x] 1.1.3 配置TypeScript类型定义
+- [x] 1.1.4 创建基础目录结构
 
 ### 1.2 数据模型定义
-- [ ] 1.2.1 创建Block类型定义 (`types/block.ts`)
-- [ ] 1.2.2 创建Connection类型定义 (`types/connection.ts`)
-- [ ] 1.2.3 创建Workflow类型定义 (`types/workflow.ts`)
-- [ ] 1.2.4 创建BlockData类型定义（各种block的配置）
+- [x] 1.2.1 创建Block类型定义 (`types/block.ts`)
+- [x] 1.2.2 创建Connection类型定义 (`types/connection.ts`)
+- [x] 1.2.3 创建Workflow类型定义 (`types/workflow.ts`)
+- [x] 1.2.4 创建BlockData类型定义（各种block的配置）
 
 ### 1.3 状态管理
-- [ ] 1.3.1 创建Workflow Store (`stores/workflow.ts`)
-- [ ] 1.3.2 实现基础actions（addBlock, removeBlock, updateBlock）
-- [ ] 1.3.3 实现连接管理actions（addConnection, removeConnection）
-- [ ] 1.3.4 实现历史记录（undo/redo）
+- [x] 1.3.1 创建Workflow Store (`stores/workflow.ts`)
+- [x] 1.3.2 实现基础actions（addBlock, removeBlock, updateBlock）
+- [x] 1.3.3 实现连接管理actions（addConnection, removeConnection）
+- [x] 1.3.4 实现历史记录（undo/redo）
 
 ## 阶段2: Block库开发
 
 ### 2.1 Block基础组件
-- [ ] 2.1.1 创建通用Block组件 (`components/blocks/BaseBlock.vue`)
-- [ ] 2.1.2 实现Block端口渲染
-- [ ] 2.1.3 实现Block配置面板
-- [ ] 2.1.4 实现Block样式系统（不同类型不同颜色）
+- [x] 2.1.1 创建通用Block组件 (`components/blocks/BaseBlock.vue`)
+- [x] 2.1.2 实现Block端口渲染
+- [x] 2.1.3 实现Block配置面板
+- [x] 2.1.4 实现Block样式系统（不同类型不同颜色）
 
 ### 2.2 浏览器控制类Block
-- [ ] 2.2.1 实现Navigate Block（访问页面）
-- [ ] 2.2.2 实现Scroll Block（滚动页面）
-- [ ] 2.2.3 实现Wait Block（等待）
+- [x] 2.2.1 实现Navigate Block（访问页面）
+- [x] 2.2.2 实现Scroll Block（滚动页面）
+- [x] 2.2.3 实现Wait Block（等待）
 
 ### 2.3 页面交互类Block
-- [ ] 2.3.1 实现Click Block（点击元素）
-- [ ] 2.3.2 实现Type Block（输入文本）
+- [x] 2.3.1 实现Click Block（点击元素）
+- [x] 2.3.2 实现Type Block（输入文本）
 - [ ] 2.3.3 实现Select Block（选择下拉框）
 
 ### 2.4 数据提取类Block
 - [ ] 2.4.1 实现Extract Block（提取数据）
-- [ ] 2.4.2 实现Extract Images Block（提取图片）
+- [x] 2.4.2 实现Extract Images Block（提取图片）
 - [ ] 2.4.3 实现Extract Links Block（提取链接）
 
 ### 2.5 逻辑控制类Block
 - [ ] 2.5.1 实现Condition Block（条件判断）
 - [ ] 2.5.2 实现Loop Block（循环）
-- [ ] 2.5.3 实现Log Block（日志输出）
+- [x] 2.5.3 实现Log Block（日志输出）
 
 ### 2.6 数据处理类Block
 - [ ] 2.6.1 实现Transform Block（数据转换）
@@ -55,57 +55,57 @@
 ## 阶段3: 可视化编辑器
 
 ### 3.1 编辑器核心功能
-- [ ] 3.1.1 创建WorkflowEditor组件 (`components/WorkflowEditor.vue`)
-- [ ] 3.1.2 集成Vue Flow
-- [ ] 3.1.3 实现画布拖拽和缩放
-- [ ] 3.1.4 实现网格对齐
+- [x] 3.1.1 创建WorkflowEditor组件 (`components/WorkflowEditor.vue`)
+- [x] 3.1.2 集成Vue Flow
+- [x] 3.1.3 实现画布拖拽和缩放
+- [x] 3.1.4 实现网格对齐
 
 ### 3.2 Block工具栏
-- [ ] 3.2.1 创建BlockPalette组件 (`components/BlockPalette.vue`)
-- [ ] 3.2.2 实现Block分类显示
-- [ ] 3.2.3 实现拖拽添加Block
+- [x] 3.2.1 创建BlockPalette组件 (`components/BlockPalette.vue`)
+- [x] 3.2.2 实现Block分类显示
+- [x] 3.2.3 实现拖拽添加Block
 - [ ] 3.2.4 实现Block搜索功能
 
 ### 3.3 连接管理
-- [ ] 3.3.1 实现拖拽创建连接
+- [x] 3.3.1 实现拖拽创建连接
 - [ ] 3.3.2 实现连接验证（类型匹配）
-- [ ] 3.3.3 实现连接删除
-- [ ] 3.3.4 实现连接样式（控制流/数据流）
+- [x] 3.3.3 实现连接删除
+- [x] 3.3.4 实现连接样式（控制流/数据流）
 
 ### 3.4 属性面板
-- [ ] 3.4.1 创建PropertyPanel组件 (`components/PropertyPanel.vue`)
-- [ ] 3.4.2 实现Block配置编辑
+- [x] 3.4.1 创建PropertyPanel组件 (`components/PropertyPanel.vue`)
+- [x] 3.4.2 实现Block配置编辑
 - [ ] 3.4.3 实现表单验证
-- [ ] 3.4.4 实现实时预览
+- [x] 3.4.4 实现实时预览
 
 ### 3.5 工具栏
-- [ ] 3.5.1 创建Toolbar组件 (`components/Toolbar.vue`)
+- [x] 3.5.1 创建Toolbar组件 (`components/Toolbar.vue`)
 - [ ] 3.5.2 实现保存/加载功能
-- [ ] 3.5.3 实现撤销/重做按钮
-- [ ] 3.5.4 实现代码视图切换
+- [x] 3.5.3 实现撤销/重做按钮
+- [x] 3.5.4 实现代码视图切换
 
 ## 阶段4: 脚本转换
 
 ### 4.1 脚本解析器
-- [ ] 4.1.1 创建ScriptParser类 (`services/ScriptParser.ts`)
-- [ ] 4.1.2 实现AST解析
-- [ ] 4.1.3 实现模式识别（goto, click, evaluate等）
-- [ ] 4.1.4 实现Block生成
-- [ ] 4.1.5 实现连接关系构建
+- [x] 4.1.1 创建ScriptParser类 (`services/ScriptParser.ts`)
+- [x] 4.1.2 实现AST解析
+- [x] 4.1.3 实现模式识别（goto, click, evaluate等）
+- [x] 4.1.4 实现Block生成
+- [x] 4.1.5 实现连接关系构建
 
 ### 4.2 Block编译器
-- [ ] 4.2.1 创建BlockCompiler类 (`services/BlockCompiler.ts`)
-- [ ] 4.2.2 实现工作流验证
-- [ ] 4.2.3 实现拓扑排序
-- [ ] 4.2.4 实现代码生成（各种Block类型）
-- [ ] 4.2.5 实现代码组装
+- [x] 4.2.1 创建BlockCompiler类 (`services/BlockCompiler.ts`)
+- [x] 4.2.2 实现工作流验证
+- [x] 4.2.3 实现拓扑排序
+- [x] 4.2.4 实现代码生成（各种Block类型）
+- [x] 4.2.5 实现代码组装
 
 ### 4.3 代码模板
-- [ ] 4.3.1 创建代码模板系统 (`templates/`)
-- [ ] 4.3.2 实现Navigate模板
-- [ ] 4.3.3 实现Scroll模板
-- [ ] 4.3.4 实现Extract模板
-- [ ] 4.3.5 实现其他Block模板
+- [x] 4.3.1 创建代码模板系统 (`templates/`)
+- [x] 4.3.2 实现Navigate模板
+- [x] 4.3.3 实现Scroll模板
+- [x] 4.3.4 实现Extract模板
+- [x] 4.3.5 实现其他Block模板
 
 ## 阶段5: 后端集成
 
