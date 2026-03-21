@@ -65,7 +65,10 @@
             <option value="innerHTML">HTML内容</option>
             <option value="href">链接地址 (href)</option>
             <option value="src">图片/资源地址 (src)</option>
+            <option value="poster">视频封面 (poster)</option>
             <option value="value">表单值 (value)</option>
+            <option value="alt">替代文本 (alt)</option>
+            <option value="title">标题 (title)</option>
             <option value="data-*">自定义属性</option>
           </select>
         </div>

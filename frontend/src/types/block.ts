@@ -3,6 +3,8 @@
 export type BlockType =
   // 浏览器控制类
   | 'navigate'
+  | 'back'
+  | 'forward'
   | 'scroll'
   | 'wait'
   // 页面交互类

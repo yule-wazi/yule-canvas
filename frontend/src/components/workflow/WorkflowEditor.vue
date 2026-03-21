@@ -22,6 +22,14 @@
             <span class="block-icon">🌐</span>
             <span>访问页面</span>
           </div>
+          <div class="palette-block" @click="addBlock('back')">
+            <span class="block-icon">⬅️</span>
+            <span>返回</span>
+          </div>
+          <div class="palette-block" @click="addBlock('forward')">
+            <span class="block-icon">➡️</span>
+            <span>前进</span>
+          </div>
           <div class="palette-block" @click="addBlock('scroll')">
             <span class="block-icon">📜</span>
             <span>滚动页面</span>
@@ -183,6 +191,8 @@ import '@vue-flow/minimap/dist/style.css';
 
 // 动态导入属性组件
 const NavigateProperty = defineAsyncComponent(() => import('./properties/NavigateProperty.vue'));
+const BackProperty = defineAsyncComponent(() => import('./properties/BackProperty.vue'));
+const ForwardProperty = defineAsyncComponent(() => import('./properties/ForwardProperty.vue'));
 const ScrollProperty = defineAsyncComponent(() => import('./properties/ScrollProperty.vue'));
 const WaitProperty = defineAsyncComponent(() => import('./properties/WaitProperty.vue'));
 const ClickProperty = defineAsyncComponent(() => import('./properties/ClickProperty.vue'));
@@ -362,6 +372,12 @@ function autoSave() {
 const elements = computed({
   get() {
     const nodes = workflowStore.blocks.map(block => {
+      // 安全检查
+      if (!block || !block.label) {
+        console.error('Block 数据不完整:', block);
+        return null;
+      }
+      
       // 检查该节点的连接状态
       const hasSourceConnection = workflowStore.connections.some(c => c.source === block.id);
       const hasTargetConnection = workflowStore.connections.some(c => c.target === block.id);
@@ -387,7 +403,7 @@ const elements = computed({
           textAlign: 'center' as const
         }
       };
-    });
+    }).filter(node => node !== null);
 
     const edges = workflowStore.connections.map(conn => ({
       id: conn.id,
@@ -442,6 +458,8 @@ function getMinimapNodeColor(node: any) {
   if (blockType) {
     const colorMap: Record<string, string> = {
       navigate: '#1f6feb',
+      back: '#1f6feb',
+      forward: '#1f6feb',
       scroll: '#1f6feb',
       wait: '#1f6feb',
       click: '#238636',
@@ -524,6 +542,59 @@ function onConnect(connection: any) {
     }
   }
   
+  // 检测循环体交叉
+  if (sourceBlock?.type === 'loop' && connection.sourceHandle === 'loop-start') {
+    // 这是一个循环的开始连接，检查是否会导致循环体交叉
+    const loopId = sourceBlock.id;
+    
+    // 找到这个循环的结束连接
+    const loopEndConn = workflowStore.connections.find(c => 
+      c.target === loopId && c.targetHandle === 'loop-end'
+    );
+    
+    if (loopEndConn) {
+      // 已经有循环体了，检查新的起始点是否会导致交叉
+      const currentLoopBody = findLoopBody(loopId, connection.target, loopEndConn.source);
+      
+      // 检查当前循环体是否包含其他循环的循环体块
+      const hasIntersection = checkLoopIntersection(currentLoopBody, loopId);
+      
+      if (hasIntersection) {
+        toast.value?.show({ 
+          message: '不允许循环体交叉！当前循环体包含了其他循环的循环体块，这会导致循环嵌套冲突。请调整连接，确保循环体之间不会交叉。', 
+          type: 'warning' 
+        });
+        return;
+      }
+    }
+  }
+  
+  if (targetBlock?.type === 'loop' && connection.targetHandle === 'loop-end') {
+    // 这是一个循环的结束连接，检查是否会导致循环体交叉
+    const loopId = targetBlock.id;
+    
+    // 找到这个循环的开始连接
+    const loopStartConn = workflowStore.connections.find(c => 
+      c.source === loopId && c.sourceHandle === 'loop-start'
+    );
+    
+    if (loopStartConn) {
+      // 已经有循环体了，检查新的结束点是否会导致交叉
+      const currentLoopBody = findLoopBody(loopId, loopStartConn.target, connection.source);
+      
+      // 检查当前循环体是否包含其他循环的循环体块
+      const hasIntersection = checkLoopIntersection(currentLoopBody, loopId);
+      
+      if (hasIntersection) {
+        toast.value?.show({ 
+          message: '不允许循环体交叉！当前循环体包含了其他循环的循环体块，这会导致循环嵌套冲突。请调整连接，确保循环体之间不会交叉。', 
+          type: 'warning' 
+        });
+        return;
+      }
+    }
+  }
+  
   workflowStore.addConnection({
     source: connection.source,
     sourceHandle: connection.sourceHandle || 'source-right',
@@ -531,6 +602,79 @@ function onConnect(connection: any) {
     targetHandle: connection.targetHandle || 'target-left'
   });
   updateHandleStyles();
+}
+
+// 查找循环体内的所有块ID
+function findLoopBody(loopId: string, startBlockId: string, endBlockId: string): Set<string> {
+  const bodyBlockIds = new Set<string>();
+  const visited = new Set<string>();
+  let currentId = startBlockId;
+  
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    bodyBlockIds.add(currentId);
+    
+    if (currentId === endBlockId) {
+      break;
+    }
+    
+    // 找到下一个连接（排除循环的特殊连接）
+    const nextConn = workflowStore.connections.find(c => 
+      c.source === currentId && 
+      c.sourceHandle !== 'loop-start' &&
+      c.targetHandle !== 'loop-end'
+    );
+    
+    if (nextConn) {
+      currentId = nextConn.target;
+    } else {
+      break;
+    }
+  }
+  
+  return bodyBlockIds;
+}
+
+// 检查循环体是否与其他循环体交叉
+function checkLoopIntersection(currentLoopBody: Set<string>, currentLoopId: string): boolean {
+  // 获取所有其他循环模块
+  const otherLoops = workflowStore.blocks.filter(b => 
+    b.type === 'loop' && b.id !== currentLoopId
+  );
+  
+  for (const otherLoop of otherLoops) {
+    // 找到其他循环的循环体
+    const loopStartConn = workflowStore.connections.find(c => 
+      c.source === otherLoop.id && c.sourceHandle === 'loop-start'
+    );
+    const loopEndConn = workflowStore.connections.find(c => 
+      c.target === otherLoop.id && c.targetHandle === 'loop-end'
+    );
+    
+    if (loopStartConn && loopEndConn) {
+      const otherLoopBody = findLoopBody(otherLoop.id, loopStartConn.target, loopEndConn.source);
+      
+      // 检查是否有交叉：当前循环体包含其他循环体的部分块（但不是全部）
+      let intersectionCount = 0;
+      for (const blockId of otherLoopBody) {
+        if (currentLoopBody.has(blockId)) {
+          intersectionCount++;
+        }
+      }
+      
+      // 如果有部分交叉（不是0也不是全部），则认为是交叉
+      if (intersectionCount > 0 && intersectionCount < otherLoopBody.size) {
+        return true;
+      }
+      
+      // 如果当前循环体完全包含其他循环体的所有块，也认为是交叉（不允许嵌套）
+      if (intersectionCount === otherLoopBody.size) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
 }
 
 function onNodesChange(changes: any[]) {
@@ -562,6 +706,8 @@ function updateBlockData(data: any) {
 function getPropertyComponent(type: BlockType) {
   const components: Record<string, any> = {
     navigate: NavigateProperty,
+    back: BackProperty,
+    forward: ForwardProperty,
     scroll: ScrollProperty,
     wait: WaitProperty,
     click: ClickProperty,
@@ -839,6 +985,19 @@ async function executeWorkflow() {
       executionLogs.value.push(`[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`);
     });
 
+    // 监听实时数据保存
+    socketService.on('saveData', (data: any) => {
+      if (data.type === 'data' && data.tableId && data.rows) {
+        // 立即保存提取的数据
+        dataTableStore.insertRows(data.tableId, data.rows);
+        executionLogs.value.push(`💾 已保存 ${data.rows.length} 行数据到数据表`);
+      } else if (data.type === 'images' && data.tableId && data.rows) {
+        // 立即保存提取的图片
+        dataTableStore.insertRows(data.tableId, data.rows);
+        executionLogs.value.push(`💾 已保存 ${data.rows.length} 张图片到数据表`);
+      }
+    });
+
     // 监听完成
     socketService.onComplete((result) => {
       executionLogs.value.push(`\n✅ 执行完成！`);
@@ -910,6 +1069,10 @@ async function parseScript() {
     
     // 加载解析的blocks和connections
     workflow.blocks.forEach((block: any) => {
+      console.log('加载 block:', block.type, block.data);
+      if (block.type === 'extract') {
+        console.log('提取模块的 extractions:', JSON.stringify(block.data.extractions, null, 2));
+      }
       workflowStore.blocks.push(block);
     });
     
@@ -924,6 +1087,7 @@ async function parseScript() {
     
     toast.value?.show({ message: `成功解析 ${workflow.blocks.length} 个功能块`, type: 'success' });
   } catch (error: any) {
+    console.error('解析错误:', error);
     toast.value?.show({ message: '解析失败: ' + (error.response?.data?.error || error.message), type: 'error' });
   }
 }

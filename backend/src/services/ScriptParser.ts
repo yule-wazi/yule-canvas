@@ -18,26 +18,53 @@ export class ScriptParser {
       // 使用正则表达式和代码模式匹配来解析
       // 这比AST解析更适合我们生成的特定格式的代码
 
+      // 创建一个数组来存储所有匹配项及其位置
+      const matches: Array<{ index: number; block: any }> = [];
+
       // 1. 解析 navigate (访问页面)
       const navigatePattern = /await page\.goto\('([^']+)',\s*\{[^}]*waitUntil:\s*'([^']+)'[^}]*timeout:\s*(\d+)[^}]*\}\);/g;
       let match;
       while ((match = navigatePattern.exec(code)) !== null) {
-        blocks.push(this.createNavigateBlock(match[1], match[2], parseInt(match[3]), xPosition));
-        xPosition += 250; // 水平间距
+        matches.push({
+          index: match.index,
+          block: this.createNavigateBlock(match[1], match[2], parseInt(match[3]), 0)
+        });
+      }
+
+      // 1b. 解析 back (返回)
+      const backPattern = /await page\.goBack\(\);/g;
+      while ((match = backPattern.exec(code)) !== null) {
+        matches.push({
+          index: match.index,
+          block: this.createBackBlock(0)
+        });
+      }
+
+      // 1c. 解析 forward (前进)
+      const forwardPattern = /await page\.goForward\(\);/g;
+      while ((match = forwardPattern.exec(code)) !== null) {
+        matches.push({
+          index: match.index,
+          block: this.createForwardBlock(0)
+        });
       }
 
       // 2. 解析 waitForSelector + click (点击元素)
       const clickPattern = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
       while ((match = clickPattern.exec(code)) !== null) {
-        blocks.push(this.createClickBlock(match[1], parseInt(match[2]), xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createClickBlock(match[1], parseInt(match[2]), 0)
+        });
       }
 
       // 3. 解析 waitForTimeout (等待)
       const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
       while ((match = waitPattern.exec(code)) !== null) {
-        blocks.push(this.createWaitBlock(parseInt(match[1]), xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createWaitBlock(parseInt(match[1]), 0)
+        });
       }
 
       // 4. 解析 scroll (滚动) - 分别匹配页面滚动和元素滚动
@@ -51,8 +78,10 @@ export class ScriptParser {
         const distance = parseInt(match[8]);
         const delay = parseInt(match[9]);
         
-        blocks.push(this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0)
+        });
       }
 
       // 4b. 页面滚动 - 没有 waitForSelector
@@ -62,8 +91,10 @@ export class ScriptParser {
         const distance = parseInt(match[3]);
         const delay = parseInt(match[4]);
         
-        blocks.push(this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0)
+        });
       }
 
       // 5. 解析 extract (提取数据) - 匹配新的多提取项格式
@@ -78,8 +109,10 @@ export class ScriptParser {
         // 解析 extractions 数组
         const extractions = this.parseExtractions(extractionsStr);
         
-        blocks.push(this.createExtractBlock(extractions, multiple, saveToTable, xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createExtractBlock(extractions, multiple, saveToTable, 0)
+        });
       }
 
       // 6. 解析 extract-images (提取图片)
@@ -92,17 +125,30 @@ export class ScriptParser {
         
         const attributes = attrsStr.split(',').map(s => s.trim().replace(/'/g, ''));
         
-        blocks.push(this.createExtractImagesBlock(selector, timeout, attributes, filterInvalid, xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createExtractImagesBlock(selector, timeout, attributes, filterInvalid, 0)
+        });
       }
 
       // 7. 解析 logUser（用户日志）
       const logUserPattern = /logUser\('([^']+)'\);/g;
       while ((match = logUserPattern.exec(code)) !== null) {
         const message = match[1].replace(/\\'/g, "'"); // 反转义单引号
-        blocks.push(this.createLogBlock(message, xPosition));
-        xPosition += 250;
+        matches.push({
+          index: match.index,
+          block: this.createLogBlock(message, 0)
+        });
       }
+
+      // 按照代码中的位置排序
+      matches.sort((a, b) => a.index - b.index);
+
+      // 设置正确的 x 位置并添加到 blocks 数组
+      matches.forEach((item, idx) => {
+        item.block.position.x = 100 + idx * 250;
+        blocks.push(item.block);
+      });
 
       // 创建顺序连接
       for (let i = 0; i < blocks.length - 1; i++) {
@@ -374,6 +420,20 @@ export class ScriptParser {
       xPosition += 250;
     }
 
+    // 1b. 解析 back (返回)
+    const backPattern = /await page\.goBack\(\);/g;
+    while ((match = backPattern.exec(code)) !== null) {
+      blocks.push(this.createBackBlock(xPosition));
+      xPosition += 250;
+    }
+
+    // 1c. 解析 forward (前进)
+    const forwardPattern = /await page\.goForward\(\);/g;
+    while ((match = forwardPattern.exec(code)) !== null) {
+      blocks.push(this.createForwardBlock(xPosition));
+      xPosition += 250;
+    }
+
     // 2. 解析 wait
     const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
     while ((match = waitPattern.exec(code)) !== null) {
@@ -414,32 +474,57 @@ export class ScriptParser {
 
   private parseLoopBody(bodyCode: string, startX: number): any[] {
     const blocks: any[] = [];
-    let xPosition = startX;
+    const matches: Array<{ index: number; block: any }> = [];
 
     // 解析循环体内的各种模块
+    let match;
+    
     // 1. 解析 navigate
     const navigatePattern = /await page\.goto\('([^']+)',\s*\{[^}]*waitUntil:\s*'([^']+)'[^}]*timeout:\s*(\d+)[^}]*\}\);/g;
-    let match;
     while ((match = navigatePattern.exec(bodyCode)) !== null) {
-      blocks.push(this.createNavigateBlock(match[1], match[2], parseInt(match[3]), xPosition));
-      xPosition += 250;
+      matches.push({
+        index: match.index,
+        block: this.createNavigateBlock(match[1], match[2], parseInt(match[3]), 0)
+      });
+    }
+
+    // 1b. 解析 back (返回)
+    const backPattern = /await page\.goBack\(\);/g;
+    while ((match = backPattern.exec(bodyCode)) !== null) {
+      matches.push({
+        index: match.index,
+        block: this.createBackBlock(0)
+      });
+    }
+
+    // 1c. 解析 forward (前进)
+    const forwardPattern = /await page\.goForward\(\);/g;
+    while ((match = forwardPattern.exec(bodyCode)) !== null) {
+      matches.push({
+        index: match.index,
+        block: this.createForwardBlock(0)
+      });
     }
 
     // 2. 解析 wait
     const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
     while ((match = waitPattern.exec(bodyCode)) !== null) {
-      blocks.push(this.createWaitBlock(parseInt(match[1]), xPosition));
-      xPosition += 250;
+      matches.push({
+        index: match.index,
+        block: this.createWaitBlock(parseInt(match[1]), 0)
+      });
     }
 
     // 3. 解析 click
     const clickPattern = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
     while ((match = clickPattern.exec(bodyCode)) !== null) {
-      blocks.push(this.createClickBlock(match[1], parseInt(match[2]), xPosition));
-      xPosition += 250;
+      matches.push({
+        index: match.index,
+        block: this.createClickBlock(match[1], parseInt(match[2]), 0)
+      });
     }
 
-    // 4. 解析 scroll - 元素滚动（简化正则）
+    // 4. 解析 scroll - 元素滚动
     const elementScrollPattern = /await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
     while ((match = elementScrollPattern.exec(bodyCode)) !== null) {
       const selector = match[1];
@@ -448,17 +533,62 @@ export class ScriptParser {
       const distance = parseInt(match[5]);
       const delay = parseInt(match[6]);
       
-      blocks.push(this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, xPosition));
-      xPosition += 250;
+      matches.push({
+        index: match.index,
+        block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0)
+      });
     }
 
-    // 5. 解析 log（用户日志）
+    // 4b. 解析页面滚动（智能滚动和固定滚动）
+    const pageScrollPattern = /await page\.evaluate\(async \(\{ maxScrolls, distance, delay \}\)[\s\S]*?\},\s*\{\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+    while ((match = pageScrollPattern.exec(bodyCode)) !== null) {
+      const maxScrolls = parseInt(match[1]);
+      const distance = parseInt(match[2]);
+      const delay = parseInt(match[3]);
+      
+      matches.push({
+        index: match.index,
+        block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0)
+      });
+    }
+
+    // 5. 解析 extract (提取数据)
+    const extractPattern = /const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
+    while ((match = extractPattern.exec(bodyCode)) !== null) {
+      const extractionsStr = match[1];
+      const multiple = match[2] === 'true';
+      
+      // 查找 saveToTable
+      const tableMatch = /_table:\s*'([^']+)'/.exec(bodyCode.substring(match.index));
+      const saveToTable = tableMatch ? tableMatch[1] : '';
+      
+      // 解析 extractions 数组
+      const extractions = this.parseExtractions(extractionsStr);
+      
+      matches.push({
+        index: match.index,
+        block: this.createExtractBlock(extractions, multiple, saveToTable, 0)
+      });
+    }
+
+    // 6. 解析 log（用户日志）
     const logPattern = /logUser\('([^']+)'\);/g;
     while ((match = logPattern.exec(bodyCode)) !== null) {
-      const message = match[1].replace(/\\'/g, "'"); // 反转义单引号
-      blocks.push(this.createLogBlock(message, xPosition));
-      xPosition += 250;
+      const message = match[1].replace(/\\'/g, "'");
+      matches.push({
+        index: match.index,
+        block: this.createLogBlock(message, 0)
+      });
     }
+
+    // 按照代码中的位置排序
+    matches.sort((a, b) => a.index - b.index);
+
+    // 设置正确的 x 位置并添加到 blocks 数组
+    matches.forEach((item, idx) => {
+      item.block.position.x = startX + idx * 250;
+      blocks.push(item.block);
+    });
 
     return blocks;
   }
@@ -481,16 +611,23 @@ export class ScriptParser {
   private parseExtractions(extractionsStr: string): any[] {
     const extractions: any[] = [];
     
-    // 匹配每个提取项对象
-    const extractionPattern = /\{\s*selector:\s*'([^']+)',\s*attribute:\s*'([^']+)',\s*saveToColumn:\s*'([^']*)'\s*\}/g;
+    // 匹配每个提取项对象（包含 customAttribute 字段）
+    const extractionPattern = /\{\s*selector:\s*'([^']+)',\s*attribute:\s*'([^']+)',\s*customAttribute:\s*'([^']*)',\s*saveToColumn:\s*'([^']*)'\s*\}/g;
     let match;
     
     while ((match = extractionPattern.exec(extractionsStr)) !== null) {
+      const attribute = match[2];
+      const customAttribute = match[3];
+      
+      // 如果 customAttribute 有值，说明原始的 attribute 是 'data-*'
+      // 否则，attribute 就是标准属性
+      const finalAttribute = customAttribute ? 'data-*' : attribute;
+      
       extractions.push({
         selector: match[1],
-        attribute: match[2],
-        customAttribute: '',
-        saveToColumn: match[3]
+        attribute: finalAttribute,
+        customAttribute: customAttribute,
+        saveToColumn: match[4]
       });
     }
     
@@ -509,6 +646,32 @@ export class ScriptParser {
         waitUntil,
         timeout
       },
+      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+      outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+    };
+  }
+
+  private createBackBlock(xPosition: number): any {
+    return {
+      id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'back',
+      label: '返回',
+      category: 'browser',
+      position: { x: xPosition, y: 200 },
+      data: {},
+      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+      outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+    };
+  }
+
+  private createForwardBlock(xPosition: number): any {
+    return {
+      id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'forward',
+      label: '前进',
+      category: 'browser',
+      position: { x: xPosition, y: 200 },
+      data: {},
       inputs: [{ id: 'in', name: '输入', type: 'flow' }],
       outputs: [{ id: 'out', name: '输出', type: 'flow' }]
     };

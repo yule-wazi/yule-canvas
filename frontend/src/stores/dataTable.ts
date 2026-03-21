@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 
 export interface DataTableColumn {
   key: string;
-  type: 'text' | 'number' | 'url' | 'image' | 'date';
+  type: 'text' | 'number' | 'url' | 'image' | 'video' | 'date';
 }
 
 export interface DataTable {

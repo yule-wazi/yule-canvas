@@ -69,6 +69,11 @@ export const useWorkflowStore = defineStore('workflow', {
       const id = `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const blockConfig = this.getBlockConfig(type);
       
+      if (!blockConfig) {
+        console.error('未找到 block 配置:', type);
+        throw new Error(`未找到 block 类型 "${type}" 的配置`);
+      }
+      
       return {
         id,
         type,
@@ -88,6 +93,20 @@ export const useWorkflowStore = defineStore('workflow', {
           label: '访问页面',
           category: 'browser',
           defaultData: { url: '', waitUntil: 'domcontentloaded', timeout: 60000 },
+          inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+          outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+        },
+        back: {
+          label: '返回',
+          category: 'browser',
+          defaultData: {},
+          inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+          outputs: [{ id: 'out', name: '输出', type: 'flow' }]
+        },
+        forward: {
+          label: '前进',
+          category: 'browser',
+          defaultData: {},
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },

@@ -326,6 +326,10 @@ log('循环完成，共执行 ' + __loopIndex + ' 次');
     switch (block.type) {
       case 'navigate':
         return this.generateNavigateCode(block);
+      case 'back':
+        return this.generateBackCode(block);
+      case 'forward':
+        return this.generateForwardCode(block);
       case 'scroll':
         return this.generateScrollCode(block);
       case 'wait':
@@ -358,6 +362,18 @@ await page.goto('${url}', {
 `;
   }
 
+  private generateBackCode(block: any): string {
+    return `log('返回上一页');
+await page.goBack();
+`;
+  }
+
+  private generateForwardCode(block: any): string {
+    return `log('前进下一页');
+await page.goForward();
+`;
+  }
+
   private generateScrollCode(block: any): string {
     const { target, selector, timeout, mode, maxScrolls, scrollDistance, delay } = block.data;
     const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
@@ -365,7 +381,8 @@ await page.goto('${url}', {
     
     if (target === 'element') {
       // 元素滚动 - 先等待元素出现
-      const escapedSelector = selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      // 手动转义：只转义单引号，保持反斜杠不变
+      const escapedSelector = selector.replace(/'/g, "\\'");
       
       if (mode === 'smart') {
         return `log('等待元素出现: ${escapedSelector}');
@@ -505,7 +522,8 @@ await page.type('${selector}', '${text}', { delay: ${delay} });
     const { selector, filterInvalid, attributes, timeout, saveToTable, saveToColumn } = block.data;
     const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
     const imgSelector = selector || 'img';
-    const escapedSelector = imgSelector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    // 手动转义：只转义单引号，保持反斜杠不变
+    const escapedSelector = imgSelector.replace(/'/g, "\\'");
     const attrsStr = attributes.map((a: string) => `'${a}'`).join(', ');
     
     let code = `log('等待图片元素出现');
@@ -552,6 +570,17 @@ images.forEach(img => {
     ...img
   });
 });
+
+// 立即保存图片数据到数据表
+saveDataImmediately({
+  type: 'images',
+  tableId: '${saveToTable}',
+  column: '${saveToColumn}',
+  rows: images.map(img => ({
+    ['${saveToColumn}']: img.src
+  }))
+});
+
 log('找到 ' + images.length + ' 张图片，已保存到数据表');
 `;
     } else {
@@ -587,11 +616,19 @@ log('找到 ' + images.length + ' 张图片');
     // 生成提取配置
     const extractionsConfig = validExtractions.map((extraction: any, idx: number) => {
       const attr = extraction.attribute === 'data-*' ? extraction.customAttribute : extraction.attribute;
-      const escapedSelector = extraction.selector.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      // 手动转义：只转义单引号，保持反斜杠不变
+      const escapedSelector = extraction.selector.replace(/'/g, "\\'");
+      const escapedAttr = attr.replace(/'/g, "\\'");
+      const escapedColumn = (extraction.saveToColumn || '').replace(/'/g, "\\'");
+      // 只有当 attribute 是 'data-*' 时才输出 customAttribute 的值，否则为空字符串
+      const escapedCustomAttr = extraction.attribute === 'data-*' 
+        ? (extraction.customAttribute || '').replace(/'/g, "\\'")
+        : '';
       return `{
     selector: '${escapedSelector}',
-    attribute: '${attr}',
-    saveToColumn: '${extraction.saveToColumn || ''}'
+    attribute: '${escapedAttr}',
+    customAttribute: '${escapedCustomAttr}',
+    saveToColumn: '${escapedColumn}'
   }`;
     }).join(',\n  ');
 
@@ -669,6 +706,22 @@ extractedData.forEach(row => {
   }).filter(Boolean).join('\n  ')}
   
   extractedResults.data.push(rowData);
+});
+
+// 立即保存数据到数据表
+saveDataImmediately({
+  type: 'data',
+  tableId: '${saveToTable}',
+  rows: extractedData.map(row => {
+    const rowData = {};
+    ${validExtractions.map((extraction: any, idx: number) => {
+      if (extraction.saveToColumn) {
+        return `rowData['${extraction.saveToColumn}'] = row.field_${idx};`;
+      }
+      return '';
+    }).filter(Boolean).join('\n    ')}
+    return rowData;
+  })
 });
 
 log('提取完成，共获得 ' + extractedData.length + ' 行数据');

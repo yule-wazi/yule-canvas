@@ -3,7 +3,7 @@
     <div class="manager-header">
       <h2>数据表管理</h2>
       <div class="header-actions">
-        <button @click="$emit('close')" class="btn-icon">✕</button>
+        <button @click="emit('close')" class="btn-icon">✕</button>
       </div>
     </div>
 
@@ -95,6 +95,9 @@
                   <span v-if="column.type === 'image' && row[column.key]">
                     <img :src="row[column.key]" alt="" class="table-image" />
                   </span>
+                  <span v-else-if="column.type === 'video' && row[column.key]">
+                    <video :src="row[column.key]" controls class="table-video"></video>
+                  </span>
                   <span v-else-if="column.type === 'url' && row[column.key]">
                     <a :href="row[column.key]" target="_blank" class="table-link">{{ row[column.key] }}</a>
                   </span>
@@ -136,6 +139,7 @@
               <option value="number">数字</option>
               <option value="url">链接</option>
               <option value="image">图片</option>
+              <option value="video">视频</option>
               <option value="date">日期</option>
             </select>
             <button @click="newTableColumns.splice(index, 1)" class="btn-icon-small">×</button>
@@ -165,6 +169,7 @@
             <option value="number">数字</option>
             <option value="url">链接</option>
             <option value="image">图片</option>
+            <option value="video">视频</option>
             <option value="date">日期</option>
           </select>
         </div>
@@ -188,6 +193,11 @@ import { ref, computed, onMounted } from 'vue';
 import { useDataTableStore } from '../stores/dataTable';
 import ConfirmDialog from './ConfirmDialog.vue';
 import Toast from './Toast.vue';
+
+// 定义 emits
+const emit = defineEmits<{
+  close: [];
+}>();
 
 const dataTableStore = useDataTableStore();
 const selectedTableId = ref<string | null>(null);
@@ -624,6 +634,12 @@ function onColumnDrop(dropIndex: number) {
   max-width: 100px;
   max-height: 60px;
   object-fit: cover;
+  border-radius: 4px;
+}
+
+.table-video {
+  max-width: 200px;
+  max-height: 120px;
   border-radius: 4px;
 }
 

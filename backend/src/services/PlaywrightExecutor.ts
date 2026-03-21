@@ -208,9 +208,14 @@ export class PlaywrightExecutor {
       this.log(`[用户] ${message}`);
     };
 
+    // 创建实时保存数据的函数
+    const saveDataImmediately = (data: any) => {
+      this.io.to(this.socketId).emit('saveData', data);
+    };
+
     // 使用AsyncFunction构造器执行代码
     const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-    const scriptFunction = new AsyncFunction('page', 'log', 'logUser', code);
+    const scriptFunction = new AsyncFunction('page', 'log', 'logUser', 'saveDataImmediately', code);
 
     // 设置超时
     const timeoutPromise = new Promise((_, reject) => {
@@ -219,7 +224,7 @@ export class PlaywrightExecutor {
 
     // 执行脚本
     const result = await Promise.race([
-      scriptFunction(page, log, logUser),
+      scriptFunction(page, log, logUser, saveDataImmediately),
       timeoutPromise
     ]);
 

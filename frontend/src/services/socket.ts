@@ -51,6 +51,16 @@ class SocketClient {
     this.socket?.on('error', callback);
   }
 
+  // 通用的事件监听方法
+  on(event: string, callback: (data: any) => void) {
+    this.socket?.on(event, callback);
+  }
+
+  // 通用的事件取消监听方法
+  off(event: string) {
+    this.socket?.off(event);
+  }
+
   executeScript(scriptId: string, code: string) {
     this.socket?.emit('execute-script', { scriptId, code });
   }
@@ -60,6 +70,7 @@ class SocketClient {
     this.socket?.off('progress');
     this.socket?.off('complete');
     this.socket?.off('error');
+    this.socket?.off('saveData');
   }
 }
 
