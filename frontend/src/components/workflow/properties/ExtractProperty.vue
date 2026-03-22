@@ -38,7 +38,6 @@
     <div class="extractions-section">
       <div class="section-header">
         <h4>提取项</h4>
-        <button @click="addExtraction" class="btn-small btn-primary">+ 添加提取项</button>
       </div>
 
       <div v-for="(extraction, index) in localData.extractions" :key="index" class="extraction-item">
@@ -97,6 +96,8 @@
       <div v-if="localData.extractions.length === 0" class="empty-extractions">
         点击"+ 添加提取项"开始配置
       </div>
+
+      <button @click="addExtraction" class="btn-add-extraction">+ 添加提取项</button>
     </div>
   </div>
 </template>
@@ -318,5 +319,26 @@ function emitUpdate() {
   background: #0d1117;
   border: 1px dashed #30363d;
   border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.btn-add-extraction {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 0.9rem;
+  border: 1px dashed #30363d;
+  border-radius: 6px;
+  background: transparent;
+  color: #58a6ff;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.btn-add-extraction:hover {
+  background: #238636;
+  border-color: #238636;
+  color: white;
+  border-style: solid;
 }
 </style>

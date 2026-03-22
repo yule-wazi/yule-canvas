@@ -42,7 +42,11 @@ router.post('/compile', async (req, res) => {
       return res.status(400).json({ error: 'workflow.connections 必须是数组' });
     }
 
-    const code = compiler.compile(workflow.blocks, workflow.connections);
+    const code = compiler.compile(
+      workflow.blocks, 
+      workflow.connections,
+      workflow.variables || {}
+    );
     console.log('编译成功，代码长度:', code.length);
     res.json({ code });
   } catch (error: any) {
@@ -61,7 +65,11 @@ router.post('/execute', async (req, res) => {
     }
 
     // 先编译为代码
-    const code = compiler.compile(workflow.blocks, workflow.connections);
+    const code = compiler.compile(
+      workflow.blocks, 
+      workflow.connections,
+      workflow.variables || {}
+    );
     
     // 注意：工作流执行应该通过 Socket.io 进行，这里只返回编译后的代码
     // 实际执行由前端通过 socket 'execute-script' 事件触发

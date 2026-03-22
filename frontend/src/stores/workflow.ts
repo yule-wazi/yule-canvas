@@ -35,6 +35,10 @@ export const useWorkflowStore = defineStore('workflow', {
 
     canRedo(state): boolean {
       return state.historyIndex < state.history.length - 1;
+    },
+
+    variables(state): Record<string, any> {
+      return state.currentWorkflow?.variables || {};
     }
   },
 
@@ -158,16 +162,6 @@ export const useWorkflowStore = defineStore('workflow', {
           outputs: [
             { id: 'out', name: '输出', type: 'flow' },
             { id: 'data', name: '数据', type: 'data' }
-          ]
-        },
-        'extract-images': {
-          label: '提取图片',
-          category: 'extraction',
-          defaultData: { selector: 'img', filterInvalid: true, attributes: ['src', 'data-src'], timeout: DEFAULT_SELECTOR_TIMEOUT },
-          inputs: [{ id: 'in', name: '输入', type: 'flow' }],
-          outputs: [
-            { id: 'out', name: '输出', type: 'flow' },
-            { id: 'data', name: '图片列表', type: 'data' }
           ]
         },
         'extract-links': {
@@ -352,6 +346,26 @@ export const useWorkflowStore = defineStore('workflow', {
       this.selectedBlockId = null;
       this.history = [];
       this.historyIndex = -1;
+    },
+
+    // 设置变量
+    setVariable(name: string, value: string, description: string = '') {
+      if (!this.currentWorkflow) {
+        this.initWorkflow();
+      }
+      if (!this.currentWorkflow!.variables) {
+        this.currentWorkflow!.variables = {};
+      }
+      this.currentWorkflow!.variables[name] = { value, description };
+      this.saveToHistory();
+    },
+
+    // 删除变量
+    deleteVariable(name: string) {
+      if (this.currentWorkflow?.variables) {
+        delete this.currentWorkflow.variables[name];
+        this.saveToHistory();
+      }
     }
   }
 });

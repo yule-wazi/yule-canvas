@@ -42,11 +42,33 @@
       <div class="table-detail" v-if="selectedTable">
         <div class="detail-header">
           <h3>{{ selectedTable.name }}</h3>
-          <div class="detail-actions">
-            <button @click="clearTableData(selectedTable.id)" class="btn-danger">清空数据</button>
-            <button @click="exportJSON" class="btn-secondary">导出 JSON</button>
-            <button @click="exportCSV" class="btn-secondary">导出 CSV</button>
+          <div class="header-right">
+            <!-- 搜索栏 -->
+            <div class="search-bar-compact">
+              <input 
+                v-model="searchQuery" 
+                type="text" 
+                placeholder="搜索数据..." 
+                class="search-input-compact"
+              />
+              <select v-model="searchColumn" class="search-column-select-compact">
+                <option value="">全部列</option>
+                <option v-for="column in selectedTable.columns" :key="column.key" :value="column.key">
+                  {{ column.key }}
+                </option>
+              </select>
+              <button v-if="searchQuery" @click="clearSearch" class="btn-icon-small" title="清除搜索">✕</button>
+            </div>
+            <div class="detail-actions">
+              <button @click="clearTableData(selectedTable.id)" class="btn-danger">清空数据</button>
+              <button @click="exportJSON" class="btn-secondary">导出 JSON</button>
+              <button @click="exportCSV" class="btn-secondary">导出 CSV</button>
+            </div>
           </div>
+        </div>
+
+        <div v-if="searchQuery" class="search-info-compact">
+          找到 {{ filteredRows.length }} 条结果
         </div>
 
         <!-- 列定义 -->
@@ -89,14 +111,25 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, index) in selectedTable.rows" :key="row._id">
+              <tr v-for="(row, index) in filteredRows" :key="row._id">
                 <td>{{ index + 1 }}</td>
                 <td v-for="column in selectedTable.columns" :key="column.key">
                   <span v-if="column.type === 'image' && row[column.key]">
                     <img :src="row[column.key]" alt="" class="table-image" />
                   </span>
                   <span v-else-if="column.type === 'video' && row[column.key]">
-                    <video :src="row[column.key]" controls class="table-video"></video>
+                    <div 
+                      class="video-thumbnail" 
+                      @click="openVideoModal(row[column.key])"
+                      :style="getVideoThumbnailStyle(row)"
+                    >
+                      <div class="play-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                          <circle cx="24" cy="24" r="24" fill="rgba(0, 0, 0, 0.6)"/>
+                          <path d="M18 14L34 24L18 34V14Z" fill="white"/>
+                        </svg>
+                      </div>
+                    </div>
                   </span>
                   <span v-else-if="column.type === 'url' && row[column.key]">
                     <a :href="row[column.key]" target="_blank" class="table-link">{{ row[column.key] }}</a>
@@ -110,8 +143,8 @@
             </tbody>
           </table>
 
-          <div v-if="selectedTable.rows.length === 0" class="empty-data">
-            暂无数据
+          <div v-if="filteredRows.length === 0" class="empty-data">
+            {{ searchQuery ? '没有找到匹配的数据' : '暂无数据' }}
           </div>
         </div>
       </div>
@@ -186,6 +219,25 @@
   
   <!-- Toast 提示 -->
   <Toast ref="toast" />
+
+  <!-- 视频预览弹窗 -->
+  <div v-if="showVideoModal" class="modal-overlay" @click="closeVideoModal">
+    <div class="modal-content video-modal" @click.stop>
+      <div class="video-modal-header">
+        <h3>视频预览</h3>
+        <button @click="closeVideoModal" class="btn-icon">✕</button>
+      </div>
+      <div class="video-modal-body">
+        <video 
+          v-if="currentVideoUrl" 
+          :src="getProxyVideoUrl(currentVideoUrl)" 
+          controls 
+          autoplay
+          class="video-player"
+        ></video>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -203,6 +255,8 @@ const dataTableStore = useDataTableStore();
 const selectedTableId = ref<string | null>(null);
 const showCreateModal = ref(false);
 const showAddColumnModal = ref(false);
+const showVideoModal = ref(false);
+const currentVideoUrl = ref<string>('');
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 
@@ -213,6 +267,10 @@ const newTableColumns = ref<Array<{ key: string; type: string }>>([
 
 const newColumnKey = ref('');
 const newColumnType = ref('text');
+
+// 搜索相关状态
+const searchQuery = ref('');
+const searchColumn = ref('');
 
 // 拖动相关状态
 const draggedColumnIndex = ref<number | null>(null);
@@ -227,8 +285,45 @@ const selectedTable = computed(() => {
   return dataTableStore.getTableById(selectedTableId.value);
 });
 
+// 过滤后的行数据
+const filteredRows = computed(() => {
+  if (!selectedTable.value) return [];
+  
+  const rows = selectedTable.value.rows;
+  
+  // 如果没有搜索条件，返回所有行
+  if (!searchQuery.value.trim()) {
+    return rows;
+  }
+  
+  const query = searchQuery.value.toLowerCase();
+  
+  return rows.filter(row => {
+    // 如果指定了搜索列
+    if (searchColumn.value) {
+      const value = row[searchColumn.value];
+      if (value === null || value === undefined) return false;
+      return String(value).toLowerCase().includes(query);
+    }
+    
+    // 搜索所有列
+    return selectedTable.value!.columns.some(column => {
+      const value = row[column.key];
+      if (value === null || value === undefined) return false;
+      return String(value).toLowerCase().includes(query);
+    });
+  });
+});
+
 function selectTable(id: string) {
   selectedTableId.value = id;
+  // 切换表时清空搜索
+  clearSearch();
+}
+
+function clearSearch() {
+  searchQuery.value = '';
+  searchColumn.value = '';
 }
 
 function addNewColumn() {
@@ -348,6 +443,45 @@ function downloadFile(content: string, filename: string, type: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function openVideoModal(videoUrl: string) {
+  currentVideoUrl.value = videoUrl;
+  showVideoModal.value = true;
+}
+
+function getVideoThumbnailStyle(row: any) {
+  // 尝试从同一行中找到图片类型的列作为预览图
+  const imageColumn = selectedTable.value?.columns.find(col => col.type === 'image');
+  const posterUrl = imageColumn ? row[imageColumn.key] : null;
+  
+  if (posterUrl) {
+    return {
+      backgroundImage: `url(${posterUrl})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center'
+    };
+  }
+  
+  // 如果没有找到预览图，使用默认渐变背景
+  return {
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+  };
+}
+
+function closeVideoModal() {
+  showVideoModal.value = false;
+  // 延迟清空 URL，避免关闭动画时视频消失
+  setTimeout(() => {
+    currentVideoUrl.value = '';
+  }, 300);
+}
+
+function getProxyVideoUrl(originalUrl: string): string {
+  if (!originalUrl) return '';
+  // 通过后端代理访问视频，绕过防盗链限制
+  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  return `${apiUrl}/proxy/video?url=${encodeURIComponent(originalUrl)}`;
 }
 
 function formatDate(timestamp: number): string {
@@ -495,11 +629,76 @@ function onColumnDrop(dropIndex: number) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1rem;
+  gap: 1rem;
 }
 
 .detail-header h3 {
   margin: 0;
   color: #58a6ff;
+  flex-shrink: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.search-bar-compact {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  transition: border-color 0.2s;
+}
+
+.search-bar-compact:focus-within {
+  border-color: #58a6ff;
+}
+
+.search-input-compact {
+  background: transparent;
+  border: none;
+  color: #c9d1d9;
+  font-size: 0.85rem;
+  outline: none;
+  width: 180px;
+  padding: 0;
+}
+
+.search-input-compact::placeholder {
+  color: #6e7681;
+}
+
+.search-column-select-compact {
+  background: transparent;
+  border: none;
+  color: #c9d1d9;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.search-column-select-compact option {
+  background: #161b22;
+  color: #c9d1d9;
+}
+
+.search-column-select-compact:hover {
+  color: #58a6ff;
+}
+
+.search-info-compact {
+  font-size: 0.8rem;
+  color: #8b949e;
+  margin-bottom: 0.5rem;
+  padding-left: 0.25rem;
 }
 
 .detail-actions {
@@ -780,5 +979,101 @@ function onColumnDrop(dropIndex: number) {
   gap: 1rem;
   margin-top: 1.5rem;
   justify-content: flex-end;
+}
+
+.video-preview-btn {
+  background: #238636;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.video-preview-btn:hover {
+  background: #2ea043;
+  transform: translateY(-1px);
+}
+
+.video-thumbnail {
+  position: relative;
+  width: 200px;
+  height: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.video-thumbnail:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.video-thumbnail:hover .play-icon {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.play-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: transform 0.3s ease;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+.play-icon svg {
+  display: block;
+}
+
+.play-icon circle {
+  transition: fill 0.3s ease;
+}
+
+.video-thumbnail:hover .play-icon circle {
+  fill: rgba(0, 0, 0, 0.8);
+}
+
+.video-modal {
+  max-width: 90vw;
+  max-height: 90vh;
+  width: auto;
+  padding: 0;
+  overflow: hidden;
+}
+
+.video-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #30363d;
+  background: #161b22;
+}
+
+.video-modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #c9d1d9;
+}
+
+.video-modal-body {
+  padding: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.video-player {
+  width: 100%;
+  max-width: 1200px;
+  max-height: 80vh;
+  outline: none;
 }
 </style>

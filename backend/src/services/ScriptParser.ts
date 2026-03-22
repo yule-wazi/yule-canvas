@@ -49,17 +49,26 @@ export class ScriptParser {
         });
       }
 
-      // 2. 解析 waitForSelector + click (点击元素)
-      const clickPattern = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
+      // 2. 解析 waitForSelector + click (点击元素) - 支持模板字符串
+      const clickPattern = /await page\.waitForSelector\(`([^`]+)`,\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\(`([^`]+)`\);/g;
       while ((match = clickPattern.exec(code)) !== null) {
         matches.push({
           index: match.index,
           block: this.createClickBlock(match[1], parseInt(match[2]), 0)
         });
       }
+      
+      // 2b. 解析 waitForSelector + click (点击元素) - 单引号版本
+      const clickPatternSingle = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
+      while ((match = clickPatternSingle.exec(code)) !== null) {
+        matches.push({
+          index: match.index,
+          block: this.createClickBlock(match[1], parseInt(match[2]), 0)
+        });
+      }
 
-      // 3. 解析 waitForTimeout (等待)
-      const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
+      // 3. 解析 waitForTimeout (等待) - 使用特殊标记避免误匹配
+      const waitPattern = /log\('【等待模块】等待 (\d+)ms'\);[\s\S]*?await page\.waitForTimeout\((\d+)\);[\s\S]*?log\('【等待模块】等待完成'\);/g;
       while ((match = waitPattern.exec(code)) !== null) {
         matches.push({
           index: match.index,
@@ -69,8 +78,38 @@ export class ScriptParser {
 
       // 4. 解析 scroll (滚动) - 分别匹配页面滚动和元素滚动
       
-      // 4a. 元素滚动 - 有 waitForSelector 和 log
-      const elementScrollPattern = /log\('等待元素出现:\s*([^']+)'\);[\s\S]*?await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?log\('滚动元素\s+(\d+)\s+次:\s*([^']+)'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+      // 4a. 元素滚动 - 智能滚动 - 模板字符串版本
+      const elementSmartScrollPattern = /log\('等待元素出现:\s*([^']+)'\);[\s\S]*?await page\.waitForSelector\(`([^`]+)`,\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?log\('智能滚动元素:\s*([^']+)'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*`([^`]*)`,\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+      while ((match = elementSmartScrollPattern.exec(code)) !== null) {
+        const selector = match[2];
+        const timeout = parseInt(match[3]);
+        const maxScrolls = parseInt(match[6]);
+        const distance = parseInt(match[7]);
+        const delay = parseInt(match[8]);
+        
+        matches.push({
+          index: match.index,
+          block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0, 'smart')
+        });
+      }
+      
+      // 4a2. 元素滚动 - 智能滚动 - 单引号版本
+      const elementSmartScrollPatternSingle = /log\('等待元素出现:\s*([^']+)'\);[\s\S]*?await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?log\('智能滚动元素:\s*([^']+)'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+      while ((match = elementSmartScrollPatternSingle.exec(code)) !== null) {
+        const selector = match[2];
+        const timeout = parseInt(match[3]);
+        const maxScrolls = parseInt(match[6]);
+        const distance = parseInt(match[7]);
+        const delay = parseInt(match[8]);
+        
+        matches.push({
+          index: match.index,
+          block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0, 'smart')
+        });
+      }
+      
+      // 4b. 元素滚动 - 固定次数 - 模板字符串版本
+      const elementScrollPattern = /log\('等待元素出现:\s*([^']+)'\);[\s\S]*?await page\.waitForSelector\(`([^`]+)`,\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?log\('滚动元素\s+(\d+)\s+次:\s*([^']+)'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*`([^`]*)`,\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
       while ((match = elementScrollPattern.exec(code)) !== null) {
         const selector = match[2];
         const timeout = parseInt(match[3]);
@@ -80,11 +119,39 @@ export class ScriptParser {
         
         matches.push({
           index: match.index,
-          block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0)
+          block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0, 'fixed')
+        });
+      }
+      
+      // 4b2. 元素滚动 - 固定次数 - 单引号版本
+      const elementScrollPatternSingle = /log\('等待元素出现:\s*([^']+)'\);[\s\S]*?await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?log\('滚动元素\s+(\d+)\s+次:\s*([^']+)'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+      while ((match = elementScrollPatternSingle.exec(code)) !== null) {
+        const selector = match[2];
+        const timeout = parseInt(match[3]);
+        const maxScrolls = parseInt(match[7]);
+        const distance = parseInt(match[8]);
+        const delay = parseInt(match[9]);
+        
+        matches.push({
+          index: match.index,
+          block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0, 'fixed')
         });
       }
 
-      // 4b. 页面滚动 - 没有 waitForSelector
+      // 4c. 页面滚动 - 智能滚动
+      const pageSmartScrollPattern = /log\('智能滚动页面'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+      while ((match = pageSmartScrollPattern.exec(code)) !== null) {
+        const maxScrolls = parseInt(match[1]);
+        const distance = parseInt(match[2]);
+        const delay = parseInt(match[3]);
+        
+        matches.push({
+          index: match.index,
+          block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0, 'smart')
+        });
+      }
+
+      // 4d. 页面滚动 - 固定次数
       const pageScrollPattern = /log\('滚动页面\s+(\d+)\s+次'\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
       while ((match = pageScrollPattern.exec(code)) !== null) {
         const maxScrolls = parseInt(match[2]);
@@ -93,18 +160,23 @@ export class ScriptParser {
         
         matches.push({
           index: match.index,
-          block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0)
+          block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0, 'fixed')
         });
       }
 
       // 5. 解析 extract (提取数据) - 匹配新的多提取项格式
-      const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[^{]*\{[\s\S]*?\}, \{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);[\s\S]*?_table:\s*'([^']+)'[\s\S]*?_rowData:\s*\{([\s\S]*?)\}/g;
+      const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[^{]*\{[\s\S]*?\}, \{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
       while ((match = extractPattern.exec(code)) !== null) {
         const extractionCount = parseInt(match[1]);
         const extractionsStr = match[2];
         const multiple = match[3] === 'true';
-        const saveToTable = match[4];
-        const rowDataStr = match[5];
+
+        // 查找 saveToTable - 从 saveDataImmediately 调用中提取
+        let saveToTable = '';
+        const saveDataMatch = /saveDataImmediately\(\{[\s\S]*?tableId:\s*'([^']+)'/.exec(code.substring(match.index));
+        if (saveDataMatch) {
+          saveToTable = saveDataMatch[1];
+        }
 
         // 解析 extractions 数组
         const extractions = this.parseExtractions(extractionsStr);
@@ -115,21 +187,7 @@ export class ScriptParser {
         });
       }
 
-      // 6. 解析 extract-images (提取图片)
-      const extractImagesPattern = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*log\('提取图片'\);[\s\S]*?const images = await page\.evaluate[\s\S]*?attrs:\s*\[([^\]]+)\][^}]*filter:\s*(true|false)[^}]*\}\);/g;
-      while ((match = extractImagesPattern.exec(code)) !== null) {
-        const selector = match[1];
-        const timeout = parseInt(match[2]);
-        const attrsStr = match[3];
-        const filterInvalid = match[4] === 'true';
-        
-        const attributes = attrsStr.split(',').map(s => s.trim().replace(/'/g, ''));
-        
-        matches.push({
-          index: match.index,
-          block: this.createExtractImagesBlock(selector, timeout, attributes, filterInvalid, 0)
-        });
-      }
+
 
       // 7. 解析 logUser（用户日志）
       const logUserPattern = /logUser\('([^']+)'\);/g;
@@ -188,35 +246,94 @@ export class ScriptParser {
       count?: number;
       condition?: string;
       maxIterations?: number;
+      variableName?: string;
+      startValue?: number;
+      startValueType?: string;
       bodyCode: string;
       startIndex: number;
       endIndex: number;
     }> = [];
 
-    // 匹配所有固定次数循环
-    const countLoopPattern = /log\('开始循环，共 (\d+) 次'\);[\s\S]*?for \(let __loopIndex = 0; __loopIndex < (\d+); __loopIndex\+\+\) \{([\s\S]*?)\n\}[\s\S]*?log\('循环完成'\);/g;
-    let match;
+    // 匹配所有固定次数循环（包含变量名和起始值）
+    const countLoopPattern = /log\('开始循环，共 (\d+) 次'\);[\s\S]*?for \(let __loopIndex = 0; __loopIndex < (\d+); __loopIndex\+\+\) \{\s*const (\w+) = __loopIndex \+ (\d+);[\s\S]*?([\s\S]*?)\n\}[\s\S]*?log\('循环完成'\);/g;
+    let match: RegExpExecArray | null;
     while ((match = countLoopPattern.exec(code)) !== null) {
+      const startValue = parseInt(match[4]);
       loopMatches.push({
         mode: 'count',
         count: parseInt(match[2]),
-        bodyCode: match[3],
+        variableName: match[3],
+        startValue: startValue,
+        startValueType: 'variable', // 假设使用全局变量
+        bodyCode: match[5],
         startIndex: match.index,
         endIndex: match.index + match[0].length
       });
     }
+    
+    // 匹配所有固定次数循环（不带变量名）
+    const countLoopNoVarPattern = /log\('开始循环，共 (\d+) 次'\);[\s\S]*?for \(let __loopIndex = 0; __loopIndex < (\d+); __loopIndex\+\+\) \{\s*log\('循环第[\s\S]*?([\s\S]*?)\n\}[\s\S]*?log\('循环完成'\);/g;
+    while ((match = countLoopNoVarPattern.exec(code)) !== null) {
+      // 检查是否已经被带变量的模式匹配过
+      const matchIndex = match.index;
+      const matchLength = match[0].length;
+      const alreadyMatched = loopMatches.some(m => 
+        m.startIndex <= matchIndex && m.endIndex >= matchIndex + matchLength
+      );
+      
+      if (!alreadyMatched) {
+        loopMatches.push({
+          mode: 'count',
+          count: parseInt(match[2]),
+          variableName: '',
+          startValue: undefined,
+          startValueType: undefined,
+          bodyCode: match[3],
+          startIndex: matchIndex,
+          endIndex: matchIndex + matchLength
+        });
+      }
+    }
 
-    // 匹配所有条件循环
-    const conditionLoopPattern = /log\('开始条件循环'\);[\s\S]*?let __loopIndex = 0;[\s\S]*?while \((.+?) && __loopIndex < (\d+)\) \{([\s\S]*?)__loopIndex\+\+;[\s\S]*?\n\}[\s\S]*?log\('循环完成，共执行 ' \+ __loopIndex \+ ' 次'\);/g;
-    while ((match = conditionLoopPattern.exec(code)) !== null) {
+    // 匹配所有条件循环（包含变量名和起始值）
+    const conditionLoopPattern = /log\('开始条件循环'\);[\s\S]*?let __loopIndex = 0;[\s\S]*?while \((.+?) && __loopIndex < (\d+)\) \{\s*const (\w+) = __loopIndex \+ (\d+);[\s\S]*?([\s\S]*?)__loopIndex\+\+;[\s\S]*?\n\}[\s\S]*?log\('循环完成，共执行 ' \+ __loopIndex \+ ' 次'\);/g;
+    let conditionMatch: RegExpExecArray | null;
+    while ((conditionMatch = conditionLoopPattern.exec(code)) !== null) {
+      const startValue = parseInt(conditionMatch[4]);
       loopMatches.push({
         mode: 'condition',
-        condition: match[1],
-        maxIterations: parseInt(match[2]),
-        bodyCode: match[3],
-        startIndex: match.index,
-        endIndex: match.index + match[0].length
+        condition: conditionMatch[1],
+        maxIterations: parseInt(conditionMatch[2]),
+        variableName: conditionMatch[3],
+        startValue: startValue,
+        startValueType: 'variable',
+        bodyCode: conditionMatch[5],
+        startIndex: conditionMatch.index,
+        endIndex: conditionMatch.index + conditionMatch[0].length
       });
+    }
+    
+    // 匹配所有条件循环（不带变量名）
+    const conditionLoopNoVarPattern = /log\('开始条件循环'\);[\s\S]*?let __loopIndex = 0;[\s\S]*?while \((.+?) && __loopIndex < (\d+)\) \{\s*log\('循环第[\s\S]*?([\s\S]*?)__loopIndex\+\+;[\s\S]*?\n\}[\s\S]*?log\('循环完成，共执行 ' \+ __loopIndex \+ ' 次'\);/g;
+    let conditionNoVarMatch: RegExpExecArray | null;
+    while ((conditionNoVarMatch = conditionLoopNoVarPattern.exec(code)) !== null) {
+      const alreadyMatched = loopMatches.some(m => 
+        m.startIndex <= conditionNoVarMatch!.index && m.endIndex >= conditionNoVarMatch!.index + conditionNoVarMatch![0].length
+      );
+      
+      if (!alreadyMatched) {
+        loopMatches.push({
+          mode: 'condition',
+          condition: conditionNoVarMatch[1],
+          maxIterations: parseInt(conditionNoVarMatch[2]),
+          variableName: '',
+          startValue: undefined,
+          startValueType: undefined,
+          bodyCode: conditionNoVarMatch[3],
+          startIndex: conditionNoVarMatch.index,
+          endIndex: conditionNoVarMatch.index + conditionNoVarMatch[0].length
+        });
+      }
     }
 
     // 按照出现顺序排序
@@ -296,7 +413,13 @@ export class ScriptParser {
             mode: segment.loopInfo.mode,
             count: segment.loopInfo.count || 10,
             condition: segment.loopInfo.condition || '',
-            maxIterations: segment.loopInfo.maxIterations || 1000
+            maxIterations: segment.loopInfo.maxIterations || 1000,
+            useVariable: !!segment.loopInfo.variableName,
+            variableName: segment.loopInfo.variableName || '',
+            startValueType: segment.loopInfo.startValueType || 'variable',
+            startValue: segment.loopInfo.startValue && segment.loopInfo.variableName 
+              ? `{{${segment.loopInfo.variableName}}}` 
+              : ''
           },
           inputs: [{ id: 'loop-end', name: '循环结束', type: 'flow' }],
           outputs: [{ id: 'loop-start', name: '循环开始', type: 'flow' }]
@@ -434,8 +557,8 @@ export class ScriptParser {
       xPosition += 250;
     }
 
-    // 2. 解析 wait
-    const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
+    // 2. 解析 wait - 使用特殊标记避免误匹配
+    const waitPattern = /log\('【等待模块】等待 (\d+)ms'\);[\s\S]*?await page\.waitForTimeout\((\d+)\);[\s\S]*?log\('【等待模块】等待完成'\);/g;
     while ((match = waitPattern.exec(code)) !== null) {
       blocks.push(this.createWaitBlock(parseInt(match[1]), xPosition));
       xPosition += 250;
@@ -457,7 +580,11 @@ export class ScriptParser {
       const distance = parseInt(match[5]);
       const delay = parseInt(match[6]);
       
-      blocks.push(this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, xPosition));
+      // 检查是否为智能滚动（通过查找日志判断）
+      const logBeforeMatch = code.substring(Math.max(0, match.index - 200), match.index);
+      const mode = logBeforeMatch.includes('智能滚动') ? 'smart' : 'fixed';
+      
+      blocks.push(this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, xPosition, mode));
       xPosition += 250;
     }
 
@@ -506,8 +633,8 @@ export class ScriptParser {
       });
     }
 
-    // 2. 解析 wait
-    const waitPattern = /await page\.waitForTimeout\((\d+)\);/g;
+    // 2. 解析 wait - 使用特殊标记避免误匹配
+    const waitPattern = /log\('【等待模块】等待 (\d+)ms'\);[\s\S]*?await page\.waitForTimeout\((\d+)\);[\s\S]*?log\('【等待模块】等待完成'\);/g;
     while ((match = waitPattern.exec(bodyCode)) !== null) {
       matches.push({
         index: match.index,
@@ -515,17 +642,26 @@ export class ScriptParser {
       });
     }
 
-    // 3. 解析 click
-    const clickPattern = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
+    // 3. 解析 click - 支持模板字符串
+    const clickPattern = /await page\.waitForSelector\(`([^`]+)`,\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\(`([^`]+)`\);/g;
     while ((match = clickPattern.exec(bodyCode)) !== null) {
       matches.push({
         index: match.index,
         block: this.createClickBlock(match[1], parseInt(match[2]), 0)
       });
     }
+    
+    // 3b. 解析 click - 单引号版本
+    const clickPatternSingle = /await page\.waitForSelector\('([^']+)',\s*\{[^}]*timeout:\s*(\d+)[^}]*\}\);\s*await page\.click\('([^']+)'\);/g;
+    while ((match = clickPatternSingle.exec(bodyCode)) !== null) {
+      matches.push({
+        index: match.index,
+        block: this.createClickBlock(match[1], parseInt(match[2]), 0)
+      });
+    }
 
-    // 4. 解析 scroll - 元素滚动
-    const elementScrollPattern = /await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+    // 4. 解析 scroll - 元素滚动 - 模板字符串版本
+    const elementScrollPattern = /await page\.waitForSelector\(`([^`]+)`,\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*`([^`]*)`,\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
     while ((match = elementScrollPattern.exec(bodyCode)) !== null) {
       const selector = match[1];
       const timeout = parseInt(match[2]);
@@ -533,9 +669,32 @@ export class ScriptParser {
       const distance = parseInt(match[5]);
       const delay = parseInt(match[6]);
       
+      // 检查是否为智能滚动（通过查找日志判断）
+      const logBeforeMatch = bodyCode.substring(Math.max(0, match.index - 200), match.index);
+      const mode = logBeforeMatch.includes('智能滚动') ? 'smart' : 'fixed';
+      
       matches.push({
         index: match.index,
-        block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0)
+        block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0, mode)
+      });
+    }
+    
+    // 4b. 解析 scroll - 元素滚动 - 单引号版本
+    const elementScrollPatternSingle = /await page\.waitForSelector\('([^']+)',\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*'([^']*)',\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
+    while ((match = elementScrollPatternSingle.exec(bodyCode)) !== null) {
+      const selector = match[1];
+      const timeout = parseInt(match[2]);
+      const maxScrolls = parseInt(match[4]);
+      const distance = parseInt(match[5]);
+      const delay = parseInt(match[6]);
+      
+      // 检查是否为智能滚动（通过查找日志判断）
+      const logBeforeMatch = bodyCode.substring(Math.max(0, match.index - 200), match.index);
+      const mode = logBeforeMatch.includes('智能滚动') ? 'smart' : 'fixed';
+      
+      matches.push({
+        index: match.index,
+        block: this.createScrollBlock('element', selector, timeout, maxScrolls, distance, delay, 0, mode)
       });
     }
 
@@ -546,21 +705,29 @@ export class ScriptParser {
       const distance = parseInt(match[2]);
       const delay = parseInt(match[3]);
       
+      // 检查是否为智能滚动（通过查找日志判断）
+      const logBeforeMatch = bodyCode.substring(Math.max(0, match.index - 200), match.index);
+      const mode = logBeforeMatch.includes('智能滚动') ? 'smart' : 'fixed';
+      
       matches.push({
         index: match.index,
-        block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0)
+        block: this.createScrollBlock('page', '', 5000, maxScrolls, distance, delay, 0, mode)
       });
     }
 
     // 5. 解析 extract (提取数据)
-    const extractPattern = /const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
+    const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
     while ((match = extractPattern.exec(bodyCode)) !== null) {
-      const extractionsStr = match[1];
-      const multiple = match[2] === 'true';
+      const extractionCount = parseInt(match[1]);
+      const extractionsStr = match[2];
+      const multiple = match[3] === 'true';
       
-      // 查找 saveToTable
-      const tableMatch = /_table:\s*'([^']+)'/.exec(bodyCode.substring(match.index));
-      const saveToTable = tableMatch ? tableMatch[1] : '';
+      // 查找 saveToTable - 从 saveDataImmediately 调用中提取
+      let saveToTable = '';
+      const saveDataMatch = /saveDataImmediately\(\{[\s\S]*?tableId:\s*'([^']+)'/.exec(bodyCode.substring(match.index));
+      if (saveDataMatch) {
+        saveToTable = saveDataMatch[1];
+      }
       
       // 解析 extractions 数组
       const extractions = this.parseExtractions(extractionsStr);
@@ -612,7 +779,8 @@ export class ScriptParser {
     const extractions: any[] = [];
     
     // 匹配每个提取项对象（包含 customAttribute 字段）
-    const extractionPattern = /\{\s*selector:\s*'([^']+)',\s*attribute:\s*'([^']+)',\s*customAttribute:\s*'([^']*)',\s*saveToColumn:\s*'([^']*)'\s*\}/g;
+    // 支持单引号和反引号（模板字符串）
+    const extractionPattern = /\{\s*selector:\s*[`']([^`']+)[`'],\s*attribute:\s*'([^']+)',\s*customAttribute:\s*'([^']*)',\s*saveToColumn:\s*'([^']*)'\s*\}/g;
     let match;
     
     while ((match = extractionPattern.exec(extractionsStr)) !== null) {
@@ -693,6 +861,9 @@ export class ScriptParser {
   }
 
   private createClickBlock(selector: string, timeout: number, xPosition: number): any {
+    // 将模板字符串变量 ${variableName} 转换回 {{variableName}}
+    const convertedSelector = selector.replace(/\$\{(\w+)\}/g, '{{$1}}');
+    
     return {
       id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'click',
@@ -700,7 +871,7 @@ export class ScriptParser {
       category: 'interaction',
       position: { x: xPosition, y: 200 },
       data: {
-        selector,
+        selector: convertedSelector,
         waitForElement: true,
         timeout
       },
@@ -709,7 +880,10 @@ export class ScriptParser {
     };
   }
 
-  private createScrollBlock(target: string, selector: string, timeout: number, maxScrolls: number, distance: number, delay: number, xPosition: number): any {
+  private createScrollBlock(target: string, selector: string, timeout: number, maxScrolls: number, distance: number, delay: number, xPosition: number, mode: string = 'fixed'): any {
+    // 将模板字符串变量 ${variableName} 转换回 {{variableName}}
+    const convertedSelector = selector.replace(/\$\{(\w+)\}/g, '{{$1}}');
+    
     return {
       id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'scroll',
@@ -718,9 +892,9 @@ export class ScriptParser {
       position: { x: xPosition, y: 200 },
       data: {
         target,
-        selector,
+        selector: convertedSelector,
         timeout,
-        mode: 'fixed',
+        mode,
         maxScrolls,
         scrollDistance: distance,
         delay
@@ -731,6 +905,12 @@ export class ScriptParser {
   }
 
   private createExtractBlock(extractions: any[], multiple: boolean, saveToTable: string, xPosition: number): any {
+    // 将所有提取项的选择器中的模板字符串变量转换回 {{variableName}}
+    const convertedExtractions = extractions.map(ext => ({
+      ...ext,
+      selector: ext.selector.replace(/\$\{(\w+)\}/g, '{{$1}}')
+    }));
+    
     return {
       id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       type: 'extract',
@@ -738,7 +918,7 @@ export class ScriptParser {
       category: 'extraction',
       position: { x: xPosition, y: 200 },
       data: {
-        extractions,
+        extractions: convertedExtractions,
         multiple,
         timeout: 5000,
         saveToTable
@@ -751,26 +931,5 @@ export class ScriptParser {
     };
   }
 
-  private createExtractImagesBlock(selector: string, timeout: number, attributes: string[], filterInvalid: boolean, xPosition: number): any {
-    return {
-      id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      type: 'extract-images',
-      label: '提取图片',
-      category: 'extraction',
-      position: { x: xPosition, y: 200 },
-      data: {
-        selector,
-        timeout,
-        attributes,
-        filterInvalid,
-        saveToTable: '',
-        saveToColumn: ''
-      },
-      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
-      outputs: [
-        { id: 'out', name: '输出', type: 'flow' },
-        { id: 'data', name: '图片列表', type: 'data' }
-      ]
-    };
-  }
+
 }

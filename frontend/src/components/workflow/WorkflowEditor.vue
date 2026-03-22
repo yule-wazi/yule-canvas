@@ -7,6 +7,7 @@
       <button @click="showParseModal = true" class="btn-secondary">🔍 解析脚本</button>
       <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
       <button @click="showDataTableModal = true" class="btn-secondary">📊 数据表</button>
+      <button @click="showVariablesModal = true" class="btn-secondary">🔢 变量</button>
       <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
       <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
       <button @click="clear" class="btn-danger">🗑️ 清空</button>
@@ -61,10 +62,6 @@
           <div class="palette-block" @click="addBlock('extract')">
             <span class="block-icon">📊</span>
             <span>提取数据</span>
-          </div>
-          <div class="palette-block" @click="addBlock('extract-images')">
-            <span class="block-icon">🖼️</span>
-            <span>提取图片</span>
           </div>
         </div>
 
@@ -162,6 +159,72 @@
       </div>
     </div>
 
+    <!-- 变量管理弹窗 -->
+    <div v-if="showVariablesModal" class="modal-overlay" @click="showVariablesModal = false">
+      <div class="modal-content variables-modal" @click.stop>
+        <h3>全局变量管理</h3>
+        <div class="variables-content">
+          <div class="variables-list">
+            <div v-if="workflowVariables.length === 0" class="empty-state">
+              暂无变量，点击下方按钮添加
+            </div>
+            <div v-for="(variable, index) in workflowVariables" :key="index" class="variable-item">
+              <div class="variable-info">
+                <span class="variable-name">{{variable.name}}</span>
+                <span class="variable-value">= {{variable.value}}</span>
+                <span class="variable-desc" v-if="variable.description">{{variable.description}}</span>
+              </div>
+              <div class="variable-actions">
+                <button @click="editVariable(index)" class="btn-icon-small">✏️</button>
+                <button @click="deleteVariable(index)" class="btn-icon-small">🗑️</button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="variable-form" v-if="showVariableForm">
+            <h4>{{ editingVariableIndex !== null ? '编辑变量' : '添加变量' }}</h4>
+            <div class="form-group">
+              <label>变量名</label>
+              <input 
+                v-model="newVariable.name" 
+                placeholder="例如: pageUrl, userName"
+                @input="validateVariableName"
+              />
+              <small v-if="variableNameError" class="error">{{ variableNameError }}</small>
+            </div>
+            <div class="form-group">
+              <label>默认值</label>
+              <input 
+                v-model="newVariable.value" 
+                placeholder="变量的默认值"
+              />
+            </div>
+            <div class="form-group">
+              <label>描述（可选）</label>
+              <input 
+                v-model="newVariable.description" 
+                placeholder="变量的用途说明"
+              />
+            </div>
+            <div class="form-actions">
+              <button @click="saveVariable" class="btn-primary" :disabled="!isVariableValid">保存</button>
+              <button @click="cancelVariableEdit" class="btn-secondary">取消</button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-actions">
+          <button v-if="!showVariableForm" @click="addNewVariable" class="btn-primary">➕ 添加变量</button>
+          <button @click="closeVariablesModal" class="btn-secondary">关闭</button>
+        </div>
+        
+        <div class="variables-help">
+          <p>💡 使用提示：在选择器或文本中使用 <code v-text="'{{变量名}}'"></code> 引用变量</p>
+          <p>例如：<code v-text="'{{pageUrl}}'"></code> 会被替换为变量的值</p>
+        </div>
+      </div>
+    </div>
+
     <!-- 确认对话框 -->
     <ConfirmDialog ref="confirmDialog" />
     
@@ -198,7 +261,6 @@ const WaitProperty = defineAsyncComponent(() => import('./properties/WaitPropert
 const ClickProperty = defineAsyncComponent(() => import('./properties/ClickProperty.vue'));
 const TypeProperty = defineAsyncComponent(() => import('./properties/TypeProperty.vue'));
 const ExtractProperty = defineAsyncComponent(() => import('./properties/ExtractProperty.vue'));
-const ExtractImagesProperty = defineAsyncComponent(() => import('./properties/ExtractImagesProperty.vue'));
 const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.vue'));
 const LoopProperty = defineAsyncComponent(() => import('./properties/LoopProperty.vue'));
 const DataTableManager = defineAsyncComponent(() => import('../DataTableManager.vue'));
@@ -217,6 +279,11 @@ const showCodeModal = ref(false);
 const showParseModal = ref(false);
 const showExecutionModal = ref(false);
 const showDataTableModal = ref(false);
+const showVariablesModal = ref(false);
+const showVariableForm = ref(false);
+const editingVariableIndex = ref<number | null>(null);
+const newVariable = ref({ name: '', value: '', description: '' });
+const variableNameError = ref('');
 const generatedCode = ref('');
 const scriptToParse = ref('');
 const isExecuting = ref(false);
@@ -224,6 +291,148 @@ const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
+
+// 工作流变量
+const workflowVariables = computed(() => {
+  const vars = workflowStore.variables;
+  return Object.entries(vars).map(([name, data]: [string, any]) => ({
+    name,
+    value: data.value || '',
+    description: data.description || ''
+  }));
+});
+
+// 验证变量名
+function validateVariableName() {
+  const name = newVariable.value.name.trim();
+  
+  if (!name) {
+    variableNameError.value = '';
+    return;
+  }
+  
+  // 检查变量名格式（只允许字母、数字、下划线，且不能以数字开头）
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    variableNameError.value = '变量名只能包含字母、数字和下划线，且不能以数字开头';
+    return;
+  }
+  
+  // 检查是否与循环变量冲突
+  const loopBlocks = workflowStore.blocks.filter(b => b.type === 'loop');
+  const loopVariableNames = loopBlocks.map(b => b.data.variableName || 'index');
+  if (loopVariableNames.includes(name)) {
+    variableNameError.value = '变量名与循环变量冲突';
+    return;
+  }
+  
+  // 检查是否已存在（编辑时排除自己）
+  const existingNames = Object.keys(workflowStore.variables);
+  if (editingVariableIndex.value !== null) {
+    const editingName = workflowVariables.value[editingVariableIndex.value]?.name;
+    if (name !== editingName && existingNames.includes(name)) {
+      variableNameError.value = '变量名已存在';
+      return;
+    }
+  } else {
+    if (existingNames.includes(name)) {
+      variableNameError.value = '变量名已存在';
+      return;
+    }
+  }
+  
+  variableNameError.value = '';
+}
+
+// 变量是否有效
+const isVariableValid = computed(() => {
+  return newVariable.value.name.trim() !== '' && 
+         newVariable.value.value.trim() !== '' && 
+         variableNameError.value === '';
+});
+
+// 添加新变量
+function addNewVariable() {
+  newVariable.value = { name: '', value: '', description: '' };
+  editingVariableIndex.value = null;
+  variableNameError.value = '';
+  showVariableForm.value = true;
+}
+
+// 编辑变量
+function editVariable(index: number) {
+  const variable = workflowVariables.value[index];
+  newVariable.value = { ...variable };
+  editingVariableIndex.value = index;
+  variableNameError.value = '';
+  showVariableForm.value = true;
+}
+
+// 保存变量
+function saveVariable() {
+  if (!isVariableValid.value) return;
+  
+  const name = newVariable.value.name.trim();
+  const value = newVariable.value.value.trim();
+  const description = newVariable.value.description.trim();
+  
+  // 如果是编辑模式，先删除旧的变量名
+  if (editingVariableIndex.value !== null) {
+    const oldName = workflowVariables.value[editingVariableIndex.value].name;
+    if (oldName !== name) {
+      workflowStore.deleteVariable(oldName);
+    }
+  }
+  
+  // 保存变量
+  workflowStore.setVariable(name, value, description);
+  
+  // 重置表单
+  showVariableForm.value = false;
+  editingVariableIndex.value = null;
+  newVariable.value = { name: '', value: '', description: '' };
+  
+  toast.value?.show({
+    message: '变量保存成功',
+    type: 'success'
+  });
+}
+
+// 删除变量
+async function deleteVariable(index: number) {
+  const variable = workflowVariables.value[index];
+  
+  const confirmed = await confirmDialog.value?.show({
+    title: '确认删除',
+    message: `确定要删除变量 "${variable.name}" 吗？`,
+    confirmText: '删除',
+    cancelText: '取消'
+  });
+  
+  if (confirmed) {
+    workflowStore.deleteVariable(variable.name);
+    toast.value?.show({
+      message: '变量已删除',
+      type: 'success'
+    });
+  }
+}
+
+// 取消编辑
+function cancelVariableEdit() {
+  showVariableForm.value = false;
+  editingVariableIndex.value = null;
+  newVariable.value = { name: '', value: '', description: '' };
+  variableNameError.value = '';
+}
+
+// 关闭变量管理弹窗
+function closeVariablesModal() {
+  showVariablesModal.value = false;
+  showVariableForm.value = false;
+  editingVariableIndex.value = null;
+  newVariable.value = { name: '', value: '', description: '' };
+  variableNameError.value = '';
+}
 
 // 初始化工作流 - 尝试从localStorage加载
 const WORKFLOWS_KEY = 'saved_workflows';
@@ -465,7 +674,6 @@ function getMinimapNodeColor(node: any) {
       click: '#238636',
       type: '#238636',
       extract: '#f85149',
-      'extract-images': '#f85149',
       loop: '#8957e5',
       log: '#8957e5'
     };
@@ -713,7 +921,6 @@ function getPropertyComponent(type: BlockType) {
     click: ClickProperty,
     type: TypeProperty,
     extract: ExtractProperty,
-    'extract-images': ExtractImagesProperty,
     loop: LoopProperty,
     log: LogProperty
   };
@@ -795,6 +1002,7 @@ async function compile() {
     console.log('Blocks:', JSON.stringify(workflowStore.blocks, null, 2));
     console.log('Connections 数量:', workflowStore.connections.length);
     console.log('Connections:', JSON.stringify(workflowStore.connections, null, 2));
+    console.log('Variables:', JSON.stringify(workflowStore.variables, null, 2));
     
     if (workflowStore.blocks.length === 0) {
       toast.value?.show({ message: '工作流为空，请先添加一些功能块', type: 'warning' });
@@ -804,7 +1012,8 @@ async function compile() {
     const response: any = await api.post('/workflow/compile', {
       workflow: {
         blocks: workflowStore.blocks,
-        connections: workflowStore.connections
+        connections: workflowStore.connections,
+        variables: workflowStore.variables
       }
     });
     
@@ -962,7 +1171,8 @@ async function executeWorkflow() {
     const response: any = await api.post('/workflow/compile', {
       workflow: {
         blocks: workflowStore.blocks,
-        connections: workflowStore.connections
+        connections: workflowStore.connections,
+        variables: workflowStore.variables
       }
     });
 
@@ -1355,6 +1565,182 @@ async function parseScript() {
   max-height: 85vh;
   padding: 0;
   overflow: hidden;
+}
+
+.variables-modal {
+  width: 90%;
+  max-width: 700px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.variables-content {
+  margin: 1.5rem 0;
+}
+
+.variables-list {
+  margin-bottom: 1.5rem;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+  color: #8b949e;
+  font-size: 0.9rem;
+}
+
+.variable-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+}
+
+.variable-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.variable-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #58a6ff;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.variable-value {
+  font-size: 0.9rem;
+  color: #c9d1d9;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.variable-desc {
+  font-size: 0.85rem;
+  color: #8b949e;
+  font-style: italic;
+}
+
+.variable-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-icon-small {
+  padding: 0.4rem 0.6rem;
+  background: transparent;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.btn-icon-small:hover {
+  background: #21262d;
+  border-color: #58a6ff;
+}
+
+.variable-form {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.variable-form h4 {
+  margin: 0 0 1rem 0;
+  color: #c9d1d9;
+  font-size: 1rem;
+}
+
+.variable-form .form-group {
+  margin-bottom: 1rem;
+}
+
+.variable-form .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.variable-form label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #8b949e;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.variable-form input {
+  width: 100%;
+  padding: 0.6rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.variable-form input:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.variable-form small {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: #8b949e;
+}
+
+.variable-form small.error {
+  color: #f85149;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.variables-help {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  border-left: 3px solid #58a6ff;
+}
+
+.variables-help p {
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+.variables-help p:first-child {
+  margin-top: 0;
+}
+
+.variables-help p:last-child {
+  margin-bottom: 0;
+}
+
+.variables-help code {
+  padding: 0.2rem 0.4rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 3px;
+  color: #58a6ff;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.85rem;
 }
 
 /* 自定义 MiniMap 样式 */

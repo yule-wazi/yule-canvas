@@ -1,8 +1,14 @@
 export class BlockCompiler {
   // 默认超时时间常量（毫秒）
   private readonly DEFAULT_TIMEOUT = 5000;
+  
+  // 全局变量
+  private globalVariables: Record<string, any> = {};
 
-  compile(blocks: any[], connections: any[]): string {
+  compile(blocks: any[], connections: any[], variables: Record<string, any> = {}): string {
+    // 保存全局变量
+    this.globalVariables = variables;
+    
     if (blocks.length === 0) {
       return '// 工作流为空\nreturn { success: false, message: "工作流为空" };';
     }
@@ -59,7 +65,8 @@ export class BlockCompiler {
           loopBodyBlocks,
           loopBodyBlockIds: new Set(loopBodyBlocks.map(b => b.id)),
           loopStartTarget: loopStartConn.target,
-          loopEndSource: loopEndConn.source
+          loopEndSource: loopEndConn.source,
+          variableName: loopBlock.data.variableName || 'index'
         });
       }
     });
@@ -173,9 +180,9 @@ export class BlockCompiler {
       if (block.type === 'loop') {
         const loopInfo = loopInfoMap.get(block.id);
         if (loopInfo) {
-          // 生成循环体代码
+          // 生成循环体代码，传入变量名用于替换
           const loopBodyCode = loopInfo.loopBodyBlocks.map((b: any) => 
-            this.generateBlockCode(b)
+            this.generateBlockCode(b, loopInfo.variableName)
           ).filter(Boolean).join('\n');
           
           // 生成循环代码
@@ -239,26 +246,118 @@ export class BlockCompiler {
   }
 
   private generateLoopCode(loopBlock: any, bodyCode: string): string {
-    const { mode, count, condition, maxIterations } = loopBlock.data;
+    const { mode, count, condition, maxIterations, variableName, startValueType, startValue } = loopBlock.data;
     const maxIter = maxIterations || 1000;
+    const varName = variableName || '';
     
     if (mode === 'count') {
-      // 固定次数循环
-      return `log('开始循环，共 ${count} 次');
-for (let __loopIndex = 0; __loopIndex < ${count}; __loopIndex++) {
+      // 固定次数循环 - 替换全局变量
+      // 注意：此方法已正确处理全局变量替换
+      // 当 count 包含 {{variableName}} 时，会自动替换为实际值
+      let loopCount = count;
+      
+      // 检查 count 是否包含变量引用
+      if (typeof count === 'string' && count.includes('{{')) {
+        // 替换全局变量
+        loopCount = this.replaceGlobalVariables(count);
+        
+        // 尝试转换为数字
+        const numCount = parseInt(loopCount);
+        if (!isNaN(numCount)) {
+          loopCount = numCount;
+        }
+      }
+      
+      // 处理循环变量的起始值
+      let startVal = 1; // 默认从1开始
+      let startValCode = '1';
+      
+      if (startValueType === 'custom' && startValue !== undefined) {
+        // 自定义数值
+        startVal = startValue;
+        startValCode = String(startValue);
+      } else if (startValueType === 'variable' && startValue) {
+        // 使用全局变量
+        const processedStartValue = this.replaceGlobalVariables(startValue);
+        const numStartValue = parseInt(processedStartValue);
+        if (!isNaN(numStartValue)) {
+          startVal = numStartValue;
+          startValCode = String(numStartValue);
+        } else {
+          startValCode = processedStartValue;
+        }
+      }
+      
+      // 如果没有定义循环变量名，不创建循环变量
+      if (!varName) {
+        return `log('开始循环，共 ${loopCount} 次');
+for (let __loopIndex = 0; __loopIndex < ${loopCount}; __loopIndex++) {
   log('循环第 ' + (__loopIndex + 1) + ' 次');
   
 ${bodyCode.split('\n').map(line => '  ' + line).join('\n')}
 }
 log('循环完成');
 `;
+      }
+      
+      // 有循环变量名，创建循环变量
+      return `log('开始循环，共 ${loopCount} 次');
+for (let __loopIndex = 0; __loopIndex < ${loopCount}; __loopIndex++) {
+  const ${varName} = __loopIndex + ${startValCode}; // 循环变量从${startValCode}开始
+  log('循环第 ' + (__loopIndex + 1) + ' 次，${varName} = ' + ${varName});
+  
+${bodyCode.split('\n').map(line => '  ' + line).join('\n')}
+}
+log('循环完成');
+`;
     } else if (mode === 'condition') {
-      // 条件循环
-      const safeCondition = condition || 'false';
+      // 条件循环 - 替换全局变量
+      // 注意：此方法已正确处理全局变量替换
+      // 当 condition 包含 {{variableName}} 时，会自动替换为实际值
+      let loopCondition = condition || 'false';
+      
+      // 替换全局变量
+      if (loopCondition.includes('{{')) {
+        loopCondition = this.replaceGlobalVariables(loopCondition);
+      }
+      
+      // 处理循环变量的起始值
+      let startVal = 1;
+      let startValCode = '1';
+      
+      if (startValueType === 'custom' && startValue !== undefined) {
+        startVal = startValue;
+        startValCode = String(startValue);
+      } else if (startValueType === 'variable' && startValue) {
+        const processedStartValue = this.replaceGlobalVariables(startValue);
+        const numStartValue = parseInt(processedStartValue);
+        if (!isNaN(numStartValue)) {
+          startVal = numStartValue;
+          startValCode = String(numStartValue);
+        } else {
+          startValCode = processedStartValue;
+        }
+      }
+      
+      if (!varName) {
+        return `log('开始条件循环');
+let __loopIndex = 0;
+while (${loopCondition} && __loopIndex < ${maxIter}) {
+  log('循环第 ' + (__loopIndex + 1) + ' 次');
+  
+${bodyCode.split('\n').map(line => '  ' + line).join('\n')}
+  
+  __loopIndex++;
+}
+log('循环完成，共执行 ' + __loopIndex + ' 次');
+`;
+      }
+      
       return `log('开始条件循环');
 let __loopIndex = 0;
-while (${safeCondition} && __loopIndex < ${maxIter}) {
-  log('循环第 ' + (__loopIndex + 1) + ' 次');
+while (${loopCondition} && __loopIndex < ${maxIter}) {
+  const ${varName} = __loopIndex + ${startValCode}; // 循环变量从${startValCode}开始
+  log('循环第 ' + (__loopIndex + 1) + ' 次，${varName} = ' + ${varName});
   
 ${bodyCode.split('\n').map(line => '  ' + line).join('\n')}
   
@@ -322,7 +421,7 @@ log('循环完成，共执行 ' + __loopIndex + ' 次');
     return result;
   }
 
-  private generateBlockCode(block: any): string {
+  private generateBlockCode(block: any, variableName?: string): string {
     switch (block.type) {
       case 'navigate':
         return this.generateNavigateCode(block);
@@ -331,19 +430,17 @@ log('循环完成，共执行 ' + __loopIndex + ' 次');
       case 'forward':
         return this.generateForwardCode(block);
       case 'scroll':
-        return this.generateScrollCode(block);
+        return this.generateScrollCode(block, variableName);
       case 'wait':
         return this.generateWaitCode(block);
       case 'click':
-        return this.generateClickCode(block);
+        return this.generateClickCode(block, variableName);
       case 'type':
-        return this.generateTypeCode(block);
-      case 'extract-images':
-        return this.generateExtractImagesCode(block);
+        return this.generateTypeCode(block, variableName);
       case 'extract':
-        return this.generateExtractCode(block);
+        return this.generateExtractCode(block, variableName);
       case 'log':
-        return this.generateLogCode(block);
+        return this.generateLogCode(block, variableName);
       case 'loop':
         // 循环模块在 compileWithLoop 中处理，这里返回空
         return '';
@@ -352,10 +449,45 @@ log('循环完成，共执行 ' + __loopIndex + ' 次');
     }
   }
 
+  // 替换选择器中的变量
+  private replaceVariables(text: string, variableName?: string): string {
+    if (!text) return text;
+    
+    let result = text;
+    
+    // 1. 替换循环变量 {{variableName}} 为 ${variableName}
+    if (variableName) {
+      const regex = new RegExp(`\\{\\{${variableName}\\}\\}`, 'g');
+      result = result.replace(regex, `\${${variableName}}`);
+    }
+    
+    // 2. 替换全局变量 {{globalVar}} 为实际值
+    result = this.replaceGlobalVariables(result);
+    
+    return result;
+  }
+
+  // 替换全局变量（不处理循环变量）
+  private replaceGlobalVariables(text: string): string {
+    if (!text) return text;
+    
+    let result = text;
+    
+    Object.entries(this.globalVariables).forEach(([name, data]) => {
+      const value = data.value || '';
+      const regex = new RegExp(`\\{\\{${name}\\}\\}`, 'g');
+      result = result.replace(regex, value);
+    });
+    
+    return result;
+  }
+
   private generateNavigateCode(block: any): string {
     const { url, waitUntil, timeout } = block.data;
-    return `log('访问页面: ${url}');
-await page.goto('${url}', { 
+    // 替换 URL 中的全局变量
+    const processedUrl = this.replaceGlobalVariables(url);
+    return `log('访问页面: ${processedUrl}');
+await page.goto('${processedUrl}', { 
   waitUntil: '${waitUntil}', 
   timeout: ${timeout} 
 });
@@ -374,19 +506,60 @@ await page.goForward();
 `;
   }
 
-  private generateScrollCode(block: any): string {
+  private generateScrollCode(block: any, variableName?: string): string {
     const { target, selector, timeout, mode, maxScrolls, scrollDistance, delay } = block.data;
     const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
     const distance = scrollDistance || 800; // 默认800像素
     
     if (target === 'element') {
       // 元素滚动 - 先等待元素出现
-      // 手动转义：只转义单引号，保持反斜杠不变
-      const escapedSelector = selector.replace(/'/g, "\\'");
+      const processedSelector = this.replaceVariables(selector, variableName);
+      const escapedSelector = processedSelector.replace(/'/g, "\\'");
+      
+      // 检查选择器是否包含模板字符串变量
+      const hasTemplateVar = processedSelector.includes('${');
       
       if (mode === 'smart') {
-        return `log('等待元素出现: ${escapedSelector}');
-await page.waitForSelector('${escapedSelector}', { timeout: ${timeoutValue} });
+        if (hasTemplateVar) {
+          // 使用模板字符串，这样 ${variableName} 会在运行时被求值
+          return `log(\`等待元素出现: ${escapedSelector}\`);
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
+
+log(\`智能滚动元素: ${escapedSelector}\`);
+await page.evaluate(async ({ sel, maxScrolls, distance, delay }) => {
+  const container = document.querySelector(sel);
+  if (!container) {
+    throw new Error('找不到元素: ' + sel);
+  }
+  
+  const delayFn = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  let lastScrollTop = container.scrollTop;
+  let scrollAttempts = 0;
+  const scrollAmount = distance || 800;
+  
+  while (scrollAttempts < maxScrolls) {
+    // 直接滚动容器
+    container.scrollBy(0, scrollAmount);
+    await delayFn(delay);
+    
+    const newScrollTop = container.scrollTop;
+    // 如果滚动位置没有变化，说明已经到底了
+    if (newScrollTop === lastScrollTop) {
+      console.log('已到达底部，停止滚动');
+      break;
+    }
+    
+    lastScrollTop = newScrollTop;
+    scrollAttempts++;
+  }
+  
+  console.log('滚动完成，共滚动', scrollAttempts, '次');
+}, { sel: \`${escapedSelector}\`, maxScrolls: ${maxScrolls}, distance: ${distance}, delay: ${delay} });
+`;
+        } else {
+          // 使用普通字符串
+          return `log('等待元素出现: ${escapedSelector}');
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
 
 log('智能滚动元素: ${escapedSelector}');
 await page.evaluate(async ({ sel, maxScrolls, distance, delay }) => {
@@ -417,11 +590,38 @@ await page.evaluate(async ({ sel, maxScrolls, distance, delay }) => {
   }
   
   console.log('滚动完成，共滚动', scrollAttempts, '次');
-}, { sel: '${escapedSelector}', maxScrolls: ${maxScrolls}, distance: ${distance}, delay: ${delay} });
+}, { sel: \`${escapedSelector}\`, maxScrolls: ${maxScrolls}, distance: ${distance}, delay: ${delay} });
 `;
+        }
       } else {
-        return `log('等待元素出现: ${escapedSelector}');
-await page.waitForSelector('${escapedSelector}', { timeout: ${timeoutValue} });
+        if (hasTemplateVar) {
+          // 使用模板字符串，这样 ${variableName} 会在运行时被求值
+          return `log(\`等待元素出现: ${escapedSelector}\`);
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
+
+log(\`滚动元素 ${maxScrolls} 次: ${escapedSelector}\`);
+await page.evaluate(async ({ sel, maxScrolls, distance, delay }) => {
+  const container = document.querySelector(sel);
+  if (!container) {
+    throw new Error('找不到元素: ' + sel);
+  }
+  
+  const delayFn = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const scrollAmount = distance || 800;
+  
+  // 直接滚动容器指定次数
+  for (let i = 0; i < maxScrolls; i++) {
+    container.scrollBy(0, scrollAmount);
+    await delayFn(delay);
+  }
+  
+  console.log('滚动完成，共滚动', maxScrolls, '次');
+}, { sel: \`${escapedSelector}\`, maxScrolls: ${maxScrolls}, distance: ${distance}, delay: ${delay} });
+`;
+        } else {
+          // 使用普通字符串
+          return `log('等待元素出现: ${escapedSelector}');
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
 
 log('滚动元素 ${maxScrolls} 次: ${escapedSelector}');
 await page.evaluate(async ({ sel, maxScrolls, distance, delay }) => {
@@ -440,11 +640,12 @@ await page.evaluate(async ({ sel, maxScrolls, distance, delay }) => {
   }
   
   console.log('滚动完成，共滚动', maxScrolls, '次');
-}, { sel: '${escapedSelector}', maxScrolls: ${maxScrolls}, distance: ${distance}, delay: ${delay} });
+}, { sel: \`${escapedSelector}\`, maxScrolls: ${maxScrolls}, distance: ${distance}, delay: ${delay} });
 `;
+        }
       }
     } else {
-      // 页面滚动
+      // 页面滚动 - 不涉及选择器，不需要修改
       if (mode === 'smart') {
         return `log('智能滚动页面');
 await page.evaluate(async ({ maxScrolls, distance, delay }) => {
@@ -485,115 +686,84 @@ await page.evaluate(async ({ maxScrolls, distance, delay }) => {
 
   private generateWaitCode(block: any): string {
     const { duration } = block.data;
-    return `log('等待 ${duration}ms');
+    return `log('【等待模块】等待 ${duration}ms');
 await page.waitForTimeout(${duration});
+log('【等待模块】等待完成');
 `;
   }
 
-  private generateClickCode(block: any): string {
+  private generateClickCode(block: any, variableName?: string): string {
     const { selector, waitForElement, timeout } = block.data;
     const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
+    const processedSelector = this.replaceVariables(selector, variableName);
+    const escapedSelector = processedSelector.replace(/'/g, "\\'");
+    
+    // 检查选择器是否包含模板字符串变量
+    const hasTemplateVar = processedSelector.includes('${');
     
     if (waitForElement) {
-      return `log('等待并点击元素: ${selector}');
-await page.waitForSelector('${selector}', { timeout: ${timeoutValue} });
-await page.click('${selector}');
+      if (hasTemplateVar) {
+        // 使用模板字符串，这样 ${variableName} 会在运行时被求值
+        return `log(\`等待并点击元素: ${escapedSelector}\`);
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
+await page.click(\`${escapedSelector}\`);
 `;
+      } else {
+        // 使用普通字符串
+        return `log('等待并点击元素: ${escapedSelector}');
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
+await page.click(\`${escapedSelector}\`);
+`;
+      }
     } else {
-      return `log('点击元素: ${selector}');
-await page.click('${selector}');
+      if (hasTemplateVar) {
+        // 使用模板字符串，这样 ${variableName} 会在运行时被求值
+        return `log(\`点击元素: ${escapedSelector}\`);
+await page.click(\`${escapedSelector}\`);
 `;
+      } else {
+        // 使用普通字符串
+        return `log('点击元素: ${escapedSelector}');
+await page.click(\`${escapedSelector}\`);
+`;
+      }
     }
   }
 
-  private generateTypeCode(block: any): string {
+  private generateTypeCode(block: any, variableName?: string): string {
     const { selector, text, delay, timeout } = block.data;
     const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
+    const processedSelector = this.replaceVariables(selector, variableName);
+    const escapedSelector = processedSelector.replace(/'/g, "\\'");
+    // 替换文本中的全局变量
+    const processedText = this.replaceGlobalVariables(text);
+    const escapedText = processedText.replace(/'/g, "\\'");
     
-    return `log('等待元素出现: ${selector}');
-await page.waitForSelector('${selector}', { timeout: ${timeoutValue} });
-
-log('输入文本到: ${selector}');
-await page.type('${selector}', '${text}', { delay: ${delay} });
-`;
-  }
-
-  private generateExtractImagesCode(block: any): string {
-    const { selector, filterInvalid, attributes, timeout, saveToTable, saveToColumn } = block.data;
-    const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
-    const imgSelector = selector || 'img';
-    // 手动转义：只转义单引号，保持反斜杠不变
-    const escapedSelector = imgSelector.replace(/'/g, "\\'");
-    const attrsStr = attributes.map((a: string) => `'${a}'`).join(', ');
+    // 检查选择器是否包含模板字符串变量
+    const hasTemplateVar = processedSelector.includes('${');
     
-    let code = `log('等待图片元素出现');
-await page.waitForSelector('${escapedSelector}', { timeout: ${timeoutValue} });
+    if (hasTemplateVar) {
+      // 使用模板字符串，这样 ${variableName} 会在运行时被求值
+      return `log(\`等待元素出现: ${escapedSelector}\`);
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
 
-log('提取图片');
-const images = await page.evaluate(({ sel, attrs, filter }) => {
-  const imgElements = document.querySelectorAll(sel);
-  const imageData = [];
-  
-  imgElements.forEach((img, index) => {
-    let src = null;
-    for (const attr of attrs) {
-      src = img.getAttribute(attr);
-      if (src) break;
-    }
-    
-    if (src) {
-      if (filter && (!src.startsWith('http') || src.includes('data:image'))) {
-        return;
-      }
-      
-      imageData.push({
-        index: index + 1,
-        src: src,
-        alt: img.alt || '',
-        title: img.title || ''
-      });
-    }
-  });
-  
-  return imageData;
-}, { sel: '${escapedSelector}', attrs: [${attrsStr}], filter: ${filterInvalid} });
-
-`;
-
-    // 如果配置了保存到数据表
-    if (saveToTable && saveToColumn) {
-      code += `// 保存到数据表
-images.forEach(img => {
-  extractedResults.images.push({
-    _table: '${saveToTable}',
-    _column: '${saveToColumn}',
-    ...img
-  });
-});
-
-// 立即保存图片数据到数据表
-saveDataImmediately({
-  type: 'images',
-  tableId: '${saveToTable}',
-  column: '${saveToColumn}',
-  rows: images.map(img => ({
-    ['${saveToColumn}']: img.src
-  }))
-});
-
-log('找到 ' + images.length + ' 张图片，已保存到数据表');
+log(\`输入文本到: ${escapedSelector}\`);
+await page.type(\`${escapedSelector}\`, '${escapedText}', { delay: ${delay} });
 `;
     } else {
-      code += `// 保存提取的图片
-extractedResults.images.push(...images);
-log('找到 ' + images.length + ' 张图片');
+      // 使用普通字符串
+      return `log('等待元素出现: ${escapedSelector}');
+await page.waitForSelector(\`${escapedSelector}\`, { timeout: ${timeoutValue} });
+
+log('输入文本到: ${escapedSelector}');
+await page.type(\`${escapedSelector}\`, '${escapedText}', { delay: ${delay} });
 `;
     }
-
-    return code;
   }
 
-  private generateExtractCode(block: any): string {
+
+
+  private generateExtractCode(block: any, variableName?: string): string {
     const { extractions, multiple, timeout, saveToTable } = block.data;
     const timeoutValue = timeout || this.DEFAULT_TIMEOUT;
     
@@ -617,7 +787,8 @@ log('找到 ' + images.length + ' 张图片');
     const extractionsConfig = validExtractions.map((extraction: any, idx: number) => {
       const attr = extraction.attribute === 'data-*' ? extraction.customAttribute : extraction.attribute;
       // 手动转义：只转义单引号，保持反斜杠不变
-      const escapedSelector = extraction.selector.replace(/'/g, "\\'");
+      const processedSelector = this.replaceVariables(extraction.selector, variableName);
+      const escapedSelector = processedSelector.replace(/'/g, "\\'");
       const escapedAttr = attr.replace(/'/g, "\\'");
       const escapedColumn = (extraction.saveToColumn || '').replace(/'/g, "\\'");
       // 只有当 attribute 是 'data-*' 时才输出 customAttribute 的值，否则为空字符串
@@ -625,14 +796,59 @@ log('找到 ' + images.length + ' 张图片');
         ? (extraction.customAttribute || '').replace(/'/g, "\\'")
         : '';
       return `{
-    selector: '${escapedSelector}',
+    selector: \`${escapedSelector}\`,
     attribute: '${escapedAttr}',
     customAttribute: '${escapedCustomAttr}',
     saveToColumn: '${escapedColumn}'
   }`;
     }).join(',\n  ');
 
+    const firstProcessedSelector = this.replaceVariables(validExtractions[0].selector, variableName);
+    const firstEscapedSelector = firstProcessedSelector.replace(/'/g, "\\'");
+    
+    // 检查第一个选择器是否包含模板字符串变量
+    const hasTemplateVar = firstProcessedSelector.includes('${');
+
     code += `log('开始提取数据，共 ${validExtractions.length} 个提取项');
+
+// 等待第一个提取项的所有元素加载完成
+try {
+  const firstSelector = \`${firstEscapedSelector}\`;
+  ${hasTemplateVar 
+    ? `log(\`等待目标元素加载: \${firstSelector}\`);` 
+    : `log('等待目标元素加载: ' + firstSelector);`}
+  
+  // 等待至少一个元素出现
+  await page.waitForSelector(firstSelector, { timeout: ${timeoutValue}, state: 'attached' });
+  
+  // 如果是多元素提取，等待元素数量稳定
+  if (${multiple}) {
+    let lastCount = 0;
+    let stableCount = 0;
+    const maxAttempts = 10;
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const currentCount = await page.locator(firstSelector).count();
+      
+      if (currentCount === lastCount && currentCount > 0) {
+        stableCount++;
+        if (stableCount >= 2) {
+          log('元素数量已稳定: ' + currentCount + ' 个');
+          break;
+        }
+      } else {
+        stableCount = 0;
+      }
+      
+      lastCount = currentCount;
+      await page.waitForTimeout(300);
+    }
+  }
+  
+  log('目标元素已就绪，开始提取');
+} catch (e) {
+  log('警告: 等待目标元素超时 - ' + e.message);
+}
 
 // 提取所有数据
 const extractedData = await page.evaluate(({ extractions, multiple }) => {
@@ -691,24 +907,6 @@ const extractedData = await page.evaluate(({ extractions, multiple }) => {
     // 如果配置了保存到数据表
     if (saveToTable) {
       code += `// 保存到数据表
-extractedData.forEach(row => {
-  const rowData = {
-    _table: '${saveToTable}',
-    _rowData: {}
-  };
-  
-  // 组装每一行的数据
-  ${validExtractions.map((extraction: any, idx: number) => {
-    if (extraction.saveToColumn) {
-      return `rowData._rowData['${extraction.saveToColumn}'] = row.field_${idx};`;
-    }
-    return '';
-  }).filter(Boolean).join('\n  ')}
-  
-  extractedResults.data.push(rowData);
-});
-
-// 立即保存数据到数据表
 saveDataImmediately({
   type: 'data',
   tableId: '${saveToTable}',
@@ -736,11 +934,27 @@ log('提取完成，共获得 ' + extractedData.length + ' 条数据');
     return code;
   }
 
-  private generateLogCode(block: any): string {
+  private generateLogCode(block: any, variableName?: string): string {
     const { message } = block.data;
-    const escapedMessage = message.replace(/'/g, "\\'");
-    return `logUser('${escapedMessage}');
+    // 先替换循环变量，再替换全局变量
+    const processedMessage = this.replaceVariables(message, variableName);
+    
+    // 检查是否包含模板字符串变量（如 ${index}）
+    // 注意：此方法已正确处理模板字符串
+    // 当消息包含 ${variableName} 时，会使用模板字符串语法以便运行时求值
+    const hasTemplateVar = processedMessage.includes('${');
+    
+    if (hasTemplateVar) {
+      // 使用模板字符串，这样 ${variableName} 会在运行时被求值
+      const escapedMessage = processedMessage.replace(/'/g, "\\'");
+      return `logUser(\`${escapedMessage}\`);
 `;
+    } else {
+      // 使用普通字符串
+      const escapedMessage = processedMessage.replace(/'/g, "\\'");
+      return `logUser('${escapedMessage}');
+`;
+    }
   }
 
   private assembleCode(fragments: string[]): string {

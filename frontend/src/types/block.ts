@@ -13,7 +13,6 @@ export type BlockType =
   | 'select'
   // 数据提取类
   | 'extract'
-  | 'extract-images'
   | 'extract-links'
   // 逻辑控制类
   | 'condition'
@@ -85,11 +84,6 @@ export interface ExtractBlockData extends BlockData {
   selector: string;
   attribute: 'text' | 'src' | 'href' | 'value';
   multiple: boolean;
-}
-
-export interface ExtractImagesBlockData extends BlockData {
-  filterInvalid: boolean;
-  attributes: string[];
 }
 
 export interface ExtractLinksBlockData extends BlockData {

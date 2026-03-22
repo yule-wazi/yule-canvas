@@ -93,8 +93,6 @@ export class BlockCompiler {
         return this.generateTypeCode(block);
       case 'extract':
         return this.generateExtractCode(block);
-      case 'extract-images':
-        return this.generateExtractImagesCode(block);
       case 'extract-links':
         return this.generateExtractLinksCode(block);
       case 'log':
@@ -205,42 +203,6 @@ const extractedData = await page.evaluate((sel, attr) => {
     }
   }
 
-  private generateExtractImagesCode(block: Block): string {
-    const { filterInvalid, attributes } = block.data;
-    const attrsStr = attributes.map((a: string) => `'${a}'`).join(', ');
-    
-    return `log('提取图片');
-const images = await page.evaluate((attrs, filter) => {
-  const imgElements = document.querySelectorAll('img');
-  const imageData: any[] = [];
-  
-  imgElements.forEach((img, index) => {
-    let src = null;
-    for (const attr of attrs) {
-      src = img.getAttribute(attr);
-      if (src) break;
-    }
-    
-    if (src) {
-      if (filter && (!src.startsWith('http') || src.includes('data:image'))) {
-        return;
-      }
-      
-      imageData.push({
-        index: index + 1,
-        src: src,
-        alt: img.alt || '',
-        title: img.title || ''
-      });
-    }
-  });
-  
-  return imageData;
-}, [${attrsStr}], ${filterInvalid});
-
-log(\`找到 \${images.length} 张图片\`);
-`;
-  }
 
   private generateExtractLinksCode(block: Block): string {
     const { filterPattern } = block.data;

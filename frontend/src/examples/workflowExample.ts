@@ -48,29 +48,13 @@ export const taobaoWorkflowExample = {
       outputs: [{ id: 'out', name: '输出', type: 'flow' }]
     },
     {
-      id: 'block-4',
-      type: 'extract-images',
-      label: '提取图片',
-      category: 'extraction',
-      position: { x: 100, y: 400 },
-      data: {
-        filterInvalid: true,
-        attributes: ['src', 'data-src']
-      },
-      inputs: [{ id: 'in', name: '输入', type: 'flow' }],
-      outputs: [
-        { id: 'out', name: '输出', type: 'flow' },
-        { id: 'data', name: '图片列表', type: 'data' }
-      ]
-    },
-    {
       id: 'block-5',
       type: 'log',
       label: '日志输出',
       category: 'logic',
-      position: { x: 100, y: 500 },
+      position: { x: 100, y: 400 },
       data: {
-        message: '图片提取完成'
+        message: '工作流完成'
       },
       inputs: [{ id: 'in', name: '输入', type: 'flow' }],
       outputs: [{ id: 'out', name: '输出', type: 'flow' }]
@@ -96,14 +80,6 @@ export const taobaoWorkflowExample = {
     {
       id: 'conn-3',
       source: 'block-3',
-      sourceHandle: 'out',
-      target: 'block-4',
-      targetHandle: 'in',
-      type: 'flow'
-    },
-    {
-      id: 'conn-4',
-      source: 'block-4',
       sourceHandle: 'out',
       target: 'block-5',
       targetHandle: 'in',
