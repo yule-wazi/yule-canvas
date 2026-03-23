@@ -115,7 +115,7 @@
                 <td>{{ index + 1 }}</td>
                 <td v-for="column in selectedTable.columns" :key="column.key">
                   <span v-if="column.type === 'image' && row[column.key]">
-                    <img :src="row[column.key]" alt="" class="table-image" />
+                    <img :src="normalizeUrl(row[column.key])" alt="" class="table-image" />
                   </span>
                   <span v-else-if="column.type === 'video' && row[column.key]">
                     <div 
@@ -132,7 +132,7 @@
                     </div>
                   </span>
                   <span v-else-if="column.type === 'url' && row[column.key]">
-                    <a :href="row[column.key]" target="_blank" class="table-link">{{ row[column.key] }}</a>
+                    <a :href="normalizeUrl(row[column.key])" target="_blank" class="table-link">{{ row[column.key] }}</a>
                   </span>
                   <span v-else>{{ row[column.key] }}</span>
                 </td>
@@ -275,6 +275,19 @@ const searchColumn = ref('');
 // 拖动相关状态
 const draggedColumnIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
+
+// 辅助函数：补全相对协议URL
+function normalizeUrl(url: string | null | undefined): string {
+  if (!url) return '';
+  if (typeof url !== 'string') return '';
+  
+  // 如果是相对协议URL（以//开头），补全为https
+  if (url.startsWith('//')) {
+    return 'https:' + url;
+  }
+  
+  return url;
+}
 
 onMounted(() => {
   dataTableStore.init();
@@ -453,7 +466,7 @@ function openVideoModal(videoUrl: string) {
 function getVideoThumbnailStyle(row: any) {
   // 尝试从同一行中找到图片类型的列作为预览图
   const imageColumn = selectedTable.value?.columns.find(col => col.type === 'image');
-  const posterUrl = imageColumn ? row[imageColumn.key] : null;
+  const posterUrl = imageColumn ? normalizeUrl(row[imageColumn.key]) : null;
   
   if (posterUrl) {
     return {
@@ -478,10 +491,12 @@ function closeVideoModal() {
 }
 
 function getProxyVideoUrl(originalUrl: string): string {
-  if (!originalUrl) return '';
+  const fullUrl = normalizeUrl(originalUrl);
+  if (!fullUrl) return '';
+  
   // 通过后端代理访问视频，绕过防盗链限制
   const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-  return `${apiUrl}/proxy/video?url=${encodeURIComponent(originalUrl)}`;
+  return `${apiUrl}/proxy/video?url=${encodeURIComponent(fullUrl)}`;
 }
 
 function formatDate(timestamp: number): string {
