@@ -272,10 +272,22 @@ export class BlockCompiler {
       let startVal = 1; // 默认从1开始
       let startValCode = '1';
       
-      if (startValueType === 'custom' && startValue !== undefined) {
+      if (startValueType === 'custom' && startValue !== undefined && startValue !== '') {
         // 自定义数值
-        startVal = startValue;
-        startValCode = String(startValue);
+        if (typeof startValue === 'number') {
+          startVal = startValue;
+          startValCode = String(startValue);
+        } else if (typeof startValue === 'string') {
+          // 如果是字符串，尝试解析
+          const numStartValue = parseInt(startValue);
+          if (!isNaN(numStartValue)) {
+            startVal = numStartValue;
+            startValCode = String(numStartValue);
+          } else {
+            // 如果无法解析，使用默认值
+            startValCode = '1';
+          }
+        }
       } else if (startValueType === 'variable' && startValue) {
         // 使用全局变量
         const processedStartValue = this.replaceGlobalVariables(startValue);
@@ -284,7 +296,8 @@ export class BlockCompiler {
           startVal = numStartValue;
           startValCode = String(numStartValue);
         } else {
-          startValCode = processedStartValue;
+          // 如果替换后仍然不是数字，使用默认值1
+          startValCode = '1';
         }
       }
       
@@ -325,9 +338,19 @@ log('循环完成');
       let startVal = 1;
       let startValCode = '1';
       
-      if (startValueType === 'custom' && startValue !== undefined) {
-        startVal = startValue;
-        startValCode = String(startValue);
+      if (startValueType === 'custom' && startValue !== undefined && startValue !== '') {
+        if (typeof startValue === 'number') {
+          startVal = startValue;
+          startValCode = String(startValue);
+        } else if (typeof startValue === 'string') {
+          const numStartValue = parseInt(startValue);
+          if (!isNaN(numStartValue)) {
+            startVal = numStartValue;
+            startValCode = String(numStartValue);
+          } else {
+            startValCode = '1';
+          }
+        }
       } else if (startValueType === 'variable' && startValue) {
         const processedStartValue = this.replaceGlobalVariables(startValue);
         const numStartValue = parseInt(processedStartValue);
@@ -335,7 +358,7 @@ log('循环完成');
           startVal = numStartValue;
           startValCode = String(numStartValue);
         } else {
-          startValCode = processedStartValue;
+          startValCode = '1';
         }
       }
       

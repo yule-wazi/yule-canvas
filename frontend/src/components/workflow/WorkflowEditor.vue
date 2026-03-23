@@ -1,16 +1,23 @@
 <template>
   <div class="workflow-editor">
     <div class="editor-toolbar">
-      <button @click="save" class="btn-primary">💾 保存</button>
-      <button @click="executeWorkflow" class="btn-success">▶️ 执行</button>
-      <button @click="compile" class="btn-secondary">📝 生成代码</button>
-      <button @click="showParseModal = true" class="btn-secondary">🔍 解析脚本</button>
-      <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
-      <button @click="showDataTableModal = true" class="btn-secondary">📊 数据表</button>
-      <button @click="showVariablesModal = true" class="btn-secondary">🔢 变量</button>
-      <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
-      <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
-      <button @click="clear" class="btn-danger">🗑️ 清空</button>
+      <div class="toolbar-left">
+        <button @click="showWorkflowManager = true" class="btn-workflow">
+          📁 {{ currentWorkflowName }}
+        </button>
+        <button @click="save" class="btn-primary">💾 保存</button>
+        <button @click="executeWorkflow" class="btn-success">▶️ 执行</button>
+        <button @click="compile" class="btn-secondary">📝 生成代码</button>
+        <button @click="showParseModal = true" class="btn-secondary">🔍 解析脚本</button>
+      </div>
+      <div class="toolbar-right">
+        <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
+        <button @click="showDataTableModal = true" class="btn-secondary">📊 数据表</button>
+        <button @click="showVariablesModal = true" class="btn-secondary">🔢 变量</button>
+        <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
+        <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
+        <button @click="clear" class="btn-danger">🗑️ 清空</button>
+      </div>
     </div>
 
     <div class="editor-content">
@@ -230,6 +237,19 @@
     
     <!-- Toast 提示 -->
     <Toast ref="toast" />
+    
+    <!-- 工作流管理弹窗 -->
+    <WorkflowManager 
+      :show="showWorkflowManager"
+      :current-workflow-id="workflowStore.currentWorkflow?.id"
+      @close="showWorkflowManager = false"
+      @select="loadWorkflow"
+      @create="createNewWorkflow"
+      @delete="onWorkflowDeleted"
+      @rename="onWorkflowRenamed"
+      @duplicate="onWorkflowDuplicated"
+      @error="(msg) => toast?.show({ message: msg, type: 'error' })"
+    />
   </div>
 </template>
 
@@ -266,6 +286,7 @@ const LoopProperty = defineAsyncComponent(() => import('./properties/LoopPropert
 const DataTableManager = defineAsyncComponent(() => import('../DataTableManager.vue'));
 const ConfirmDialog = defineAsyncComponent(() => import('../ConfirmDialog.vue'));
 const Toast = defineAsyncComponent(() => import('../Toast.vue'));
+const WorkflowManager = defineAsyncComponent(() => import('./WorkflowManager.vue'));
 
 // 定义节点类型
 const nodeTypes = {
@@ -281,6 +302,7 @@ const showExecutionModal = ref(false);
 const showDataTableModal = ref(false);
 const showVariablesModal = ref(false);
 const showVariableForm = ref(false);
+const showWorkflowManager = ref(false);
 const editingVariableIndex = ref<number | null>(null);
 const newVariable = ref({ name: '', value: '', description: '' });
 const variableNameError = ref('');
@@ -300,6 +322,11 @@ const workflowVariables = computed(() => {
     value: data.value || '',
     description: data.description || ''
   }));
+});
+
+// 当前工作流名称
+const currentWorkflowName = computed(() => {
+  return workflowStore.currentWorkflow?.name || '未命名工作流';
 });
 
 // 验证变量名
@@ -448,7 +475,6 @@ function initializeWorkflow() {
     
     if (savedWorkflow) {
       workflowStore.loadWorkflow(savedWorkflow);
-      console.log('已加载上次的工作流:', savedWorkflow.name);
       return;
     }
   }
@@ -570,8 +596,6 @@ function autoSave() {
     
     localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(workflows));
     localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
-    
-    console.log('自动保存成功');
   } catch (error) {
     console.error('自动保存失败:', error);
   }
@@ -995,15 +1019,47 @@ async function save() {
   }
 }
 
+// 工作流管理相关函数
+function loadWorkflow(workflowId: string) {
+  const workflows = JSON.parse(localStorage.getItem(WORKFLOWS_KEY) || '[]');
+  const workflow = workflows.find((w: any) => w.id === workflowId);
+  
+  if (workflow) {
+    workflowStore.loadWorkflow(workflow);
+    localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflowId);
+    toast.value?.show({ message: `已加载工作流: ${workflow.name}`, type: 'success' });
+  } else {
+    toast.value?.show({ message: '未找到该工作流', type: 'error' });
+  }
+}
+
+function createNewWorkflow(workflow: any) {
+  workflowStore.loadWorkflow(workflow);
+  localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
+  toast.value?.show({ message: `已创建工作流: ${workflow.name}`, type: 'success' });
+}
+
+function onWorkflowDeleted(workflowId: string) {
+  // 如果删除的是当前工作流，清空编辑器
+  if (workflowStore.currentWorkflow?.id === workflowId) {
+    workflowStore.initWorkflow();
+    localStorage.removeItem(CURRENT_WORKFLOW_ID_KEY);
+  }
+}
+
+function onWorkflowRenamed(workflowId: string, newName: string) {
+  // 如果重命名的是当前工作流，更新名称
+  if (workflowStore.currentWorkflow?.id === workflowId) {
+    workflowStore.currentWorkflow.name = newName;
+  }
+}
+
+function onWorkflowDuplicated(workflow: any) {
+  toast.value?.show({ message: `已复制工作流: ${workflow.name}`, type: 'success' });
+}
+
 async function compile() {
   try {
-    console.log('开始编译工作流');
-    console.log('Blocks 数量:', workflowStore.blocks.length);
-    console.log('Blocks:', JSON.stringify(workflowStore.blocks, null, 2));
-    console.log('Connections 数量:', workflowStore.connections.length);
-    console.log('Connections:', JSON.stringify(workflowStore.connections, null, 2));
-    console.log('Variables:', JSON.stringify(workflowStore.variables, null, 2));
-    
     if (workflowStore.blocks.length === 0) {
       toast.value?.show({ message: '工作流为空，请先添加一些功能块', type: 'warning' });
       return;
@@ -1017,9 +1073,6 @@ async function compile() {
       }
     });
     
-    console.log('编译响应:', response);
-    
-    // 注意：api 拦截器已经返回了 response.data，所以这里直接访问 response.code
     if (!response || !response.code) {
       throw new Error('后端返回的数据格式不正确');
     }
@@ -1049,17 +1102,19 @@ function redo() {
 function clear() {
   confirmDialog.value?.show({
     title: '清空工作流',
-    message: '确定要清空工作流吗？',
+    message: '确定要清空当前工作流的所有模块吗？',
     confirmText: '清空',
     cancelText: '取消',
     type: 'danger'
   }).then((confirmed) => {
     if (confirmed) {
-      workflowStore.clearWorkflow();
-      // 清除当前工作流ID记录
-      localStorage.removeItem(CURRENT_WORKFLOW_ID_KEY);
-      // 重新初始化
-      workflowStore.initWorkflow();
+      // 只清空 blocks 和 connections，保留当前工作流信息
+      workflowStore.blocks = [];
+      workflowStore.connections = [];
+      workflowStore.selectedBlockId = null;
+      workflowStore.saveToHistory();
+      
+      toast.value?.show({ message: '工作流已清空', type: 'success' });
     }
   });
 }
@@ -1279,10 +1334,6 @@ async function parseScript() {
     
     // 加载解析的blocks和connections
     workflow.blocks.forEach((block: any) => {
-      console.log('加载 block:', block.type, block.data);
-      if (block.type === 'extract') {
-        console.log('提取模块的 extractions:', JSON.stringify(block.data.extractions, null, 2));
-      }
       workflowStore.blocks.push(block);
     });
     
@@ -1314,13 +1365,44 @@ async function parseScript() {
 
 .editor-toolbar {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 0.5rem;
   padding: 1rem;
   background: #161b22;
   border-bottom: 1px solid #30363d;
 }
 
-.btn-primary, .btn-secondary, .btn-danger, .btn-icon {
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.btn-workflow {
+  padding: 0.5rem 1rem;
+  border: 2px solid #58a6ff;
+  border-radius: 6px;
+  background: #0d1117;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.3s;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-workflow:hover {
+  background: #1c2d3f;
+  border-color: #79c0ff;
+  color: #79c0ff;
+}
+
+.btn-primary, .btn-secondary, .btn-danger, .btn-icon, .btn-success {
   padding: 0.5rem 1rem;
   border: none;
   border-radius: 6px;

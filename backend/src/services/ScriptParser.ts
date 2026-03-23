@@ -66,6 +66,24 @@ export class ScriptParser {
           block: this.createClickBlock(match[1], parseInt(match[2]), 0)
         });
       }
+      
+      // 2c. 解析 click without wait (点击元素 - 不等待) - 模板字符串版本
+      const clickNoWaitPattern = /log\('点击元素:\s*([^']+)'\);[\s\S]*?await page\.click\(`([^`]+)`\);/g;
+      while ((match = clickNoWaitPattern.exec(code)) !== null) {
+        matches.push({
+          index: match.index,
+          block: this.createClickBlock(match[2], 5000, 0, false)
+        });
+      }
+      
+      // 2d. 解析 click without wait (点击元素 - 不等待) - 单引号版本
+      const clickNoWaitPatternSingle = /log\('点击元素:\s*([^']+)'\);[\s\S]*?await page\.click\('([^']+)'\);/g;
+      while ((match = clickNoWaitPatternSingle.exec(code)) !== null) {
+        matches.push({
+          index: match.index,
+          block: this.createClickBlock(match[2], 5000, 0, false)
+        });
+      }
 
       // 3. 解析 waitForTimeout (等待) - 使用特殊标记避免误匹配
       const waitPattern = /log\('【等待模块】等待 (\d+)ms'\);[\s\S]*?await page\.waitForTimeout\((\d+)\);[\s\S]*?log\('【等待模块】等待完成'\);/g;
@@ -165,11 +183,12 @@ export class ScriptParser {
       }
 
       // 5. 解析 extract (提取数据) - 匹配新的多提取项格式
-      const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[^{]*\{[\s\S]*?\}, \{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
+      const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?await page\.waitForSelector\([^,]+,\s*\{\s*timeout:\s*(\d+)[^}]*\}\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[^{]*\{[\s\S]*?\}, \{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
       while ((match = extractPattern.exec(code)) !== null) {
         const extractionCount = parseInt(match[1]);
-        const extractionsStr = match[2];
-        const multiple = match[3] === 'true';
+        const timeout = parseInt(match[2]);
+        const extractionsStr = match[3];
+        const multiple = match[4] === 'true';
 
         // 查找 saveToTable - 从 saveDataImmediately 调用中提取
         let saveToTable = '';
@@ -183,16 +202,27 @@ export class ScriptParser {
         
         matches.push({
           index: match.index,
-          block: this.createExtractBlock(extractions, multiple, saveToTable, 0)
+          block: this.createExtractBlock(extractions, multiple, saveToTable, 0, timeout)
         });
       }
 
 
 
-      // 7. 解析 logUser（用户日志）
-      const logUserPattern = /logUser\('([^']+)'\);/g;
+      // 7. 解析 logUser（用户日志）- 支持转义的单引号
+      const logUserPattern = /logUser\('((?:[^'\\]|\\.)*)'\);/g;
       while ((match = logUserPattern.exec(code)) !== null) {
         const message = match[1].replace(/\\'/g, "'"); // 反转义单引号
+        matches.push({
+          index: match.index,
+          block: this.createLogBlock(message, 0)
+        });
+      }
+      
+      // 7b. 解析 logUser（用户日志）- 模板字符串版本
+      const logUserTemplatePattern = /logUser\(`([^`]*)`\);/g;
+      while ((match = logUserTemplatePattern.exec(code)) !== null) {
+        // 将模板字符串变量 ${variableName} 转换回 {{variableName}}
+        const message = match[1].replace(/\$\{(\w+)\}/g, '{{$1}}');
         matches.push({
           index: match.index,
           block: this.createLogBlock(message, 0)
@@ -659,6 +689,24 @@ export class ScriptParser {
         block: this.createClickBlock(match[1], parseInt(match[2]), 0)
       });
     }
+    
+    // 3c. 解析 click without wait - 模板字符串版本
+    const clickNoWaitPattern = /log\('点击元素:\s*([^']+)'\);[\s\S]*?await page\.click\(`([^`]+)`\);/g;
+    while ((match = clickNoWaitPattern.exec(bodyCode)) !== null) {
+      matches.push({
+        index: match.index,
+        block: this.createClickBlock(match[2], 5000, 0, false)
+      });
+    }
+    
+    // 3d. 解析 click without wait - 单引号版本
+    const clickNoWaitPatternSingle = /log\('点击元素:\s*([^']+)'\);[\s\S]*?await page\.click\('([^']+)'\);/g;
+    while ((match = clickNoWaitPatternSingle.exec(bodyCode)) !== null) {
+      matches.push({
+        index: match.index,
+        block: this.createClickBlock(match[2], 5000, 0, false)
+      });
+    }
 
     // 4. 解析 scroll - 元素滚动 - 模板字符串版本
     const elementScrollPattern = /await page\.waitForSelector\(`([^`]+)`,\s*\{\s*timeout:\s*(\d+)\s*\}\);[\s\S]*?await page\.evaluate\([\s\S]*?\},\s*\{\s*sel:\s*`([^`]*)`,\s*maxScrolls:\s*(\d+),\s*distance:\s*(\d+),\s*delay:\s*(\d+)\s*\}\);/g;
@@ -716,11 +764,12 @@ export class ScriptParser {
     }
 
     // 5. 解析 extract (提取数据)
-    const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
+    const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?await page\.waitForSelector\([^,]+,\s*\{\s*timeout:\s*(\d+)[^}]*\}\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
     while ((match = extractPattern.exec(bodyCode)) !== null) {
       const extractionCount = parseInt(match[1]);
-      const extractionsStr = match[2];
-      const multiple = match[3] === 'true';
+      const timeout = parseInt(match[2]);
+      const extractionsStr = match[3];
+      const multiple = match[4] === 'true';
       
       // 查找 saveToTable - 从 saveDataImmediately 调用中提取
       let saveToTable = '';
@@ -734,14 +783,25 @@ export class ScriptParser {
       
       matches.push({
         index: match.index,
-        block: this.createExtractBlock(extractions, multiple, saveToTable, 0)
+        block: this.createExtractBlock(extractions, multiple, saveToTable, 0, timeout)
       });
     }
 
-    // 6. 解析 log（用户日志）
-    const logPattern = /logUser\('([^']+)'\);/g;
+    // 6. 解析 log（用户日志）- 支持转义的单引号和模板字符串
+    const logPattern = /logUser\('((?:[^'\\]|\\.)*)'\);/g;
     while ((match = logPattern.exec(bodyCode)) !== null) {
       const message = match[1].replace(/\\'/g, "'");
+      matches.push({
+        index: match.index,
+        block: this.createLogBlock(message, 0)
+      });
+    }
+    
+    // 6b. 解析 log（用户日志）- 模板字符串版本
+    const logTemplatePattern = /logUser\(`([^`]*)`\);/g;
+    while ((match = logTemplatePattern.exec(bodyCode)) !== null) {
+      // 将模板字符串变量 ${variableName} 转换回 {{variableName}}
+      const message = match[1].replace(/\$\{(\w+)\}/g, '{{$1}}');
       matches.push({
         index: match.index,
         block: this.createLogBlock(message, 0)
@@ -860,7 +920,7 @@ export class ScriptParser {
     };
   }
 
-  private createClickBlock(selector: string, timeout: number, xPosition: number): any {
+  private createClickBlock(selector: string, timeout: number, xPosition: number, waitForElement: boolean = true): any {
     // 将模板字符串变量 ${variableName} 转换回 {{variableName}}
     const convertedSelector = selector.replace(/\$\{(\w+)\}/g, '{{$1}}');
     
@@ -872,7 +932,7 @@ export class ScriptParser {
       position: { x: xPosition, y: 200 },
       data: {
         selector: convertedSelector,
-        waitForElement: true,
+        waitForElement,
         timeout
       },
       inputs: [{ id: 'in', name: '输入', type: 'flow' }],
@@ -904,7 +964,7 @@ export class ScriptParser {
     };
   }
 
-  private createExtractBlock(extractions: any[], multiple: boolean, saveToTable: string, xPosition: number): any {
+  private createExtractBlock(extractions: any[], multiple: boolean, saveToTable: string, xPosition: number, timeout: number = 5000): any {
     // 将所有提取项的选择器中的模板字符串变量转换回 {{variableName}}
     const convertedExtractions = extractions.map(ext => ({
       ...ext,
@@ -920,7 +980,7 @@ export class ScriptParser {
       data: {
         extractions: convertedExtractions,
         multiple,
-        timeout: 5000,
+        timeout,
         saveToTable
       },
       inputs: [{ id: 'in', name: '输入', type: 'flow' }],

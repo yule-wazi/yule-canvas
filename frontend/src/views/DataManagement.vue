@@ -48,18 +48,24 @@
         </div>
       </div>
     </div>
+    
+    <!-- 确认对话框 -->
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, defineAsyncComponent } from 'vue';
 import DataPreview from '../components/DataPreview.vue';
 import storageManager, { type ScrapedData } from '../services/storage';
+
+const ConfirmDialog = defineAsyncComponent(() => import('../components/ConfirmDialog.vue'));
 
 const dataList = ref<ScrapedData[]>([]);
 const selectedId = ref('');
 const selectedData = ref<any>(null);
 const selectedLogs = ref<string[]>([]);
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 
 const loadData = () => {
   dataList.value = storageManager.getAllData().sort((a, b) => b.executedAt - a.executedAt);
@@ -71,8 +77,15 @@ const selectData = (item: ScrapedData) => {
   selectedLogs.value = item.logs || [];
 };
 
-const deleteData = (id: string) => {
-  if (confirm('确定要删除这条数据记录吗？')) {
+const deleteData = async (id: string) => {
+  const confirmed = await confirmDialog.value?.show({
+    title: '确认删除',
+    message: '确定要删除这条数据记录吗？',
+    confirmText: '删除',
+    cancelText: '取消'
+  });
+  
+  if (confirmed) {
     storageManager.deleteData(id);
     loadData();
     

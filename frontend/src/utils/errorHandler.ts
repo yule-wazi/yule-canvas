@@ -30,8 +30,8 @@ export class ErrorHandler {
   }
 
   private static showNotification(message: string, type: 'success' | 'error' | 'warning') {
-    // 简单的通知实现
-    alert(message);
+    // 使用 console 输出，实际项目中应该使用 Toast 组件
+    console.warn(`[${type.toUpperCase()}]`, message);
   }
 
   static async wrapAsync<T>(

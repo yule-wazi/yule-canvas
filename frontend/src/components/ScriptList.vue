@@ -40,13 +40,18 @@
         {{ searchQuery ? '未找到匹配的脚本' : '暂无脚本，快去生成一个吧！' }}
       </div>
     </div>
+    
+    <!-- 确认对话框 -->
+    <ConfirmDialog ref="confirmDialog" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, defineAsyncComponent } from 'vue';
 import storageManager from '../services/storage';
 import type { Script } from '../stores/script';
+
+const ConfirmDialog = defineAsyncComponent(() => import('./ConfirmDialog.vue'));
 
 interface Emits {
   (e: 'select', script: Script): void;
@@ -59,6 +64,7 @@ const emit = defineEmits<Emits>();
 const scripts = ref<Script[]>([]);
 const searchQuery = ref('');
 const selectedId = ref('');
+const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 
 const filteredScripts = computed(() => {
   if (!searchQuery.value) return scripts.value;
@@ -87,8 +93,15 @@ const editScript = (script: Script) => {
   emit('edit', script);
 };
 
-const deleteScript = (id: string) => {
-  if (confirm('确定要删除这个脚本吗？')) {
+const deleteScript = async (id: string) => {
+  const confirmed = await confirmDialog.value?.show({
+    title: '确认删除',
+    message: '确定要删除这个脚本吗？',
+    confirmText: '删除',
+    cancelText: '取消'
+  });
+  
+  if (confirmed) {
     storageManager.deleteScript(id);
     loadScripts();
     emit('delete', id);
