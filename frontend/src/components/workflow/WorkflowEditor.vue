@@ -7,8 +7,8 @@
         </button>
         <button @click="save" class="btn-primary">💾 保存</button>
         <button @click="executeWorkflow" class="btn-success">▶️ 执行</button>
-        <button @click="compile" class="btn-secondary">📝 生成代码</button>
-        <button @click="showParseModal = true" class="btn-secondary">🔍 解析脚本</button>
+        <button @click="exportJson" class="btn-secondary">📤 导出JSON</button>
+        <button @click="showImportModal = true" class="btn-secondary">📥 导入JSON</button>
       </div>
       <div class="toolbar-right">
         <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
@@ -120,26 +120,21 @@
       </div>
     </div>
 
-    <!-- 代码预览弹窗 -->
-    <div v-if="showCodeModal" class="modal-overlay" @click="showCodeModal = false">
-      <div class="modal-content" @click.stop>
-        <h3>生成的代码</h3>
-        <textarea v-model="generatedCode" readonly class="code-preview"></textarea>
-        <div class="modal-actions">
-          <button @click="copyCode" class="btn-primary">复制代码</button>
-          <button @click="showCodeModal = false" class="btn-secondary">关闭</button>
+    <!-- 导入 JSON 弹窗 -->
+    <div v-if="showImportModal" class="modal-overlay" @click="showImportModal = false">
+      <div class="modal-content import-modal" @click.stop>
+        <h3>导入 Workflow JSON</h3>
+        <textarea 
+          v-model="importJsonText" 
+          placeholder="粘贴 Workflow JSON..."
+          class="json-textarea"
+        ></textarea>
+        <div v-if="importJsonError" class="json-error">
+          ❌ {{ importJsonError }}
         </div>
-      </div>
-    </div>
-
-    <!-- 解析脚本弹窗 -->
-    <div v-if="showParseModal" class="modal-overlay" @click="showParseModal = false">
-      <div class="modal-content" @click.stop>
-        <h3>解析Playwright脚本</h3>
-        <textarea v-model="scriptToParse" placeholder="粘贴Playwright脚本代码..." class="code-preview"></textarea>
         <div class="modal-actions">
-          <button @click="parseScript" class="btn-primary">解析</button>
-          <button @click="showParseModal = false" class="btn-secondary">取消</button>
+          <button @click="importJson" class="btn-primary">导入</button>
+          <button @click="showImportModal = false" class="btn-secondary">取消</button>
         </div>
       </div>
     </div>
@@ -296,18 +291,17 @@ const nodeTypes = {
 
 const workflowStore = useWorkflowStore();
 const dataTableStore = useDataTableStore();
-const showCodeModal = ref(false);
-const showParseModal = ref(false);
 const showExecutionModal = ref(false);
 const showDataTableModal = ref(false);
 const showVariablesModal = ref(false);
 const showVariableForm = ref(false);
 const showWorkflowManager = ref(false);
+const showImportModal = ref(false);
+const importJsonText = ref('');
+const importJsonError = ref('');
 const editingVariableIndex = ref<number | null>(null);
 const newVariable = ref({ name: '', value: '', description: '' });
 const variableNameError = ref('');
-const generatedCode = ref('');
-const scriptToParse = ref('');
 const isExecuting = ref(false);
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
@@ -836,7 +830,7 @@ function onConnect(connection: any) {
   updateHandleStyles();
 }
 
-// 查找循环体内的所有块ID
+// 查找循环体内的所有块ID（包括嵌套的循环模块）
 function findLoopBody(loopId: string, startBlockId: string, endBlockId: string): Set<string> {
   const bodyBlockIds = new Set<string>();
   const visited = new Set<string>();
@@ -850,11 +844,10 @@ function findLoopBody(loopId: string, startBlockId: string, endBlockId: string):
       break;
     }
     
-    // 找到下一个连接（排除循环的特殊连接）
+    // 找到下一个连接（使用 source-right 或 out handle）
     const nextConn = workflowStore.connections.find(c => 
       c.source === currentId && 
-      c.sourceHandle !== 'loop-start' &&
-      c.targetHandle !== 'loop-end'
+      (c.sourceHandle === 'source-right' || c.sourceHandle === 'out')
     );
     
     if (nextConn) {
@@ -867,7 +860,7 @@ function findLoopBody(loopId: string, startBlockId: string, endBlockId: string):
   return bodyBlockIds;
 }
 
-// 检查循环体是否与其他循环体交叉
+// 检查循环体是否与其他循环体交叉（允许完全嵌套，但不允许部分交叉）
 function checkLoopIntersection(currentLoopBody: Set<string>, currentLoopId: string): boolean {
   // 获取所有其他循环模块
   const otherLoops = workflowStore.blocks.filter(b => 
@@ -886,23 +879,59 @@ function checkLoopIntersection(currentLoopBody: Set<string>, currentLoopId: stri
     if (loopStartConn && loopEndConn) {
       const otherLoopBody = findLoopBody(otherLoop.id, loopStartConn.target, loopEndConn.source);
       
-      // 检查是否有交叉：当前循环体包含其他循环体的部分块（但不是全部）
-      let intersectionCount = 0;
+      // 检查交叉情况
+      let currentContainsOther = 0; // 当前循环体包含其他循环体的块数
+      let otherContainsCurrent = 0; // 其他循环体包含当前循环体的块数
+      
       for (const blockId of otherLoopBody) {
         if (currentLoopBody.has(blockId)) {
-          intersectionCount++;
+          currentContainsOther++;
         }
       }
       
-      // 如果有部分交叉（不是0也不是全部），则认为是交叉
-      if (intersectionCount > 0 && intersectionCount < otherLoopBody.size) {
-        return true;
+      for (const blockId of currentLoopBody) {
+        if (otherLoopBody.has(blockId)) {
+          otherContainsCurrent++;
+        }
       }
       
-      // 如果当前循环体完全包含其他循环体的所有块，也认为是交叉（不允许嵌套）
-      if (intersectionCount === otherLoopBody.size) {
-        return true;
+      // 情况1：完全不相交 - 允许
+      if (currentContainsOther === 0 && otherContainsCurrent === 0) {
+        continue;
       }
+      
+      // 情况2：当前循环完全包含其他循环（嵌套） - 允许
+      // 需要包含其他循环的所有循环体块
+      // 注意：其他循环模块本身不在循环体内，所以不需要检查 currentLoopBody.has(otherLoop.id)
+      // 只要当前循环体包含了其他循环的所有循环体块，就说明其他循环被完全嵌套在当前循环内
+      if (currentContainsOther === otherLoopBody.size) {
+        // 额外检查：其他循环的起始块和结束块都应该在当前循环体内
+        if (currentLoopBody.has(loopStartConn.target) && currentLoopBody.has(loopEndConn.source)) {
+          continue; // 合法嵌套
+        }
+      }
+      
+      // 情况3：其他循环完全包含当前循环（被嵌套） - 允许
+      // 需要包含当前循环的所有循环体块
+      if (otherContainsCurrent === currentLoopBody.size) {
+        // 额外检查：当前循环的起始块和结束块都应该在其他循环体内
+        // 找到当前循环的起始和结束连接
+        const currentLoopStartConn = workflowStore.connections.find(c => 
+          c.source === currentLoopId && c.sourceHandle === 'loop-start'
+        );
+        const currentLoopEndConn = workflowStore.connections.find(c => 
+          c.target === currentLoopId && c.targetHandle === 'loop-end'
+        );
+        
+        if (currentLoopStartConn && currentLoopEndConn) {
+          if (otherLoopBody.has(currentLoopStartConn.target) && otherLoopBody.has(currentLoopEndConn.source)) {
+            continue; // 合法嵌套
+          }
+        }
+      }
+      
+      // 情况4：部分交叉 - 不允许
+      return true;
     }
   }
   
@@ -1058,37 +1087,84 @@ function onWorkflowDuplicated(workflow: any) {
   toast.value?.show({ message: `已复制工作流: ${workflow.name}`, type: 'success' });
 }
 
-async function compile() {
+function exportJson() {
   try {
     if (workflowStore.blocks.length === 0) {
-      toast.value?.show({ message: '工作流为空，请先添加一些功能块', type: 'warning' });
+      toast.value?.show({ message: '工作流为空，无法导出', type: 'warning' });
       return;
     }
-    
-    const response: any = await api.post('/workflow/compile', {
-      workflow: {
-        blocks: workflowStore.blocks,
-        connections: workflowStore.connections,
-        variables: workflowStore.variables
-      }
-    });
-    
-    if (!response || !response.code) {
-      throw new Error('后端返回的数据格式不正确');
-    }
-    
-    generatedCode.value = response.code;
-    showCodeModal.value = true;
+
+    const workflowJson = {
+      blocks: workflowStore.blocks,
+      connections: workflowStore.connections,
+      variables: workflowStore.variables
+    };
+
+    const jsonString = JSON.stringify(workflowJson, null, 2);
+    navigator.clipboard.writeText(jsonString);
+    toast.value?.show({ message: '✅ Workflow JSON 已复制到剪贴板', type: 'success' });
   } catch (error: any) {
-    console.error('编译失败:', error);
-    const errorMessage = error.response?.data?.error || error.message || '未知错误';
-    toast.value?.show({ message: '生成代码失败: ' + errorMessage, type: 'error' });
+    console.error('导出失败:', error);
+    toast.value?.show({ message: '导出失败: ' + error.message, type: 'error' });
   }
 }
 
-function copyCode() {
-  navigator.clipboard.writeText(generatedCode.value);
-  toast.value?.show({ message: '代码已复制到剪贴板', type: 'success' });
+function importJson() {
+  try {
+    importJsonError.value = '';
+
+    if (!importJsonText.value.trim()) {
+      importJsonError.value = '请输入 JSON 内容';
+      return;
+    }
+
+    // 解析 JSON
+    const workflow = JSON.parse(importJsonText.value);
+
+    // 验证格式
+    if (!workflow.blocks || !Array.isArray(workflow.blocks)) {
+      importJsonError.value = 'JSON 格式错误：缺少 blocks 数组';
+      return;
+    }
+
+    if (!workflow.connections || !Array.isArray(workflow.connections)) {
+      importJsonError.value = 'JSON 格式错误：缺少 connections 数组';
+      return;
+    }
+
+    // 清空当前工作流
+    workflowStore.blocks = [];
+    workflowStore.connections = [];
+
+    // 导入 blocks
+    workflow.blocks.forEach((block: any) => {
+      workflowStore.blocks.push(block);
+    });
+
+    // 导入 connections
+    workflow.connections.forEach((conn: any) => {
+      workflowStore.connections.push(conn);
+    });
+
+    // 导入 variables
+    if (workflow.variables) {
+      if (workflowStore.currentWorkflow) {
+        workflowStore.currentWorkflow.variables = workflow.variables;
+      }
+    }
+
+    workflowStore.saveToHistory();
+
+    showImportModal.value = false;
+    importJsonText.value = '';
+    toast.value?.show({ 
+      message: `✅ 成功导入 ${workflow.blocks.length} 个模块`, 
+      type: 'success' 
+    });
+  } catch (error: any) {
+    console.error('导入失败:', error);
+    importJsonError.value = error.message;
+  }
 }
 
 function undo() {
@@ -1222,20 +1298,12 @@ async function executeWorkflow() {
       return;
     }
 
-    // 编译工作流为代码
-    const response: any = await api.post('/workflow/compile', {
-      workflow: {
-        blocks: workflowStore.blocks,
-        connections: workflowStore.connections,
-        variables: workflowStore.variables
-      }
-    });
-
-    if (!response || !response.code) {
-      throw new Error('编译失败');
-    }
-
-    const code = response.code;
+    // 准备工作流 JSON（直接执行，不再编译为代码）
+    const workflow = {
+      blocks: workflowStore.blocks,
+      connections: workflowStore.connections,
+      variables: workflowStore.variables
+    };
     
     // 清空日志
     executionLogs.value = [];
@@ -1247,7 +1315,7 @@ async function executeWorkflow() {
 
     // 监听日志
     socketService.onLog((log) => {
-      executionLogs.value.push(`[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`);
+      executionLogs.value.push(log.timestamp ? `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}` : log.message);
     });
 
     // 监听实时数据保存
@@ -1267,15 +1335,12 @@ async function executeWorkflow() {
     socketService.onComplete((result) => {
       executionLogs.value.push(`\n✅ 执行完成！`);
       
-      // 注意：PlaywrightExecutor 返回的格式是 { success, data, duration }
-      // 实际的脚本结果在 result.data 中
-      const scriptResult = result.data;
-      executionResult.value = scriptResult;
+      // WorkflowExecutor 返回的格式是 { success, data, logs, duration }
+      executionResult.value = result.data;
       
       // 显示提取的数据统计
-      if (scriptResult && scriptResult.results) {
-        saveToDataTables(scriptResult.results);
-        const { images, data, links } = scriptResult.results;
+      if (result.data && result.data.results) {
+        const { images, data, links } = result.data.results;
         if (images && images.length > 0) {
           executionLogs.value.push(`� 提取了 ${images.length} 张图片`);
         }
@@ -1298,58 +1363,15 @@ async function executeWorkflow() {
       socketService.offAll();
     });
 
-    // 执行脚本
-    const scriptId = `workflow-${Date.now()}`;
-    socketService.executeScript(scriptId, code);
+    // 执行工作流（使用新的 execute-workflow 事件）
+    const workflowId = `workflow-${Date.now()}`;
+    socketService.executeWorkflow(workflowId, workflow);
     
     executionLogs.value.push('🚀 开始执行工作流...\n');
   } catch (error: any) {
     console.error('执行失败:', error);
     toast.value?.show({ message: '执行失败: ' + (error.response?.data?.error || error.message), type: 'error' });
     isExecuting.value = false;
-  }
-}
-
-async function parseScript() {
-  try {
-    if (!scriptToParse.value.trim()) {
-      toast.value?.show({ message: '请输入要解析的脚本', type: 'warning' });
-      return;
-    }
-
-    const response: any = await api.post('/workflow/parse', {
-      code: scriptToParse.value
-    });
-    
-    // 注意：api 拦截器已经返回了 response.data，所以这里直接访问 response.workflow
-    const workflow = response.workflow;
-    
-    if (!workflow || !workflow.blocks || workflow.blocks.length === 0) {
-      toast.value?.show({ message: '未能解析出任何block，请检查脚本格式', type: 'warning' });
-      return;
-    }
-
-    // 清空当前工作流
-    workflowStore.clearWorkflow();
-    
-    // 加载解析的blocks和connections
-    workflow.blocks.forEach((block: any) => {
-      workflowStore.blocks.push(block);
-    });
-    
-    workflow.connections.forEach((conn: any) => {
-      workflowStore.connections.push(conn);
-    });
-    
-    workflowStore.saveToHistory();
-    
-    showParseModal.value = false;
-    scriptToParse.value = '';
-    
-    toast.value?.show({ message: `成功解析 ${workflow.blocks.length} 个功能块`, type: 'success' });
-  } catch (error: any) {
-    console.error('解析错误:', error);
-    toast.value?.show({ message: '解析失败: ' + (error.response?.data?.error || error.message), type: 'error' });
   }
 }
 </script>
@@ -1564,6 +1586,37 @@ async function parseScript() {
 
 .execution-modal {
   max-width: 900px;
+}
+
+.import-modal {
+  max-width: 700px;
+}
+
+.json-textarea {
+  flex: 1;
+  background: #0d1117;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 1rem;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.9rem;
+  resize: vertical;
+  min-height: 400px;
+}
+
+.json-textarea:focus {
+  outline: none;
+  border-color: #58a6ff;
+}
+
+.json-error {
+  padding: 0.75rem;
+  background: #da3633;
+  color: white;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin-top: 1rem;
 }
 
 .modal-content h3 {

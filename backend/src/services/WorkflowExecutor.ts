@@ -1,11 +1,67 @@
-import { chromium, Browser, Page } from 'playwright';
+import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import { WorkflowInterpreter, Workflow } from './WorkflowInterpreter';
+
+interface WorkflowExecutorCallbacks {
+  onLog?: (entry: { timestamp: number; message: string }) => void;
+  onSaveData?: (data: any) => void;
+}
 
 export class WorkflowExecutor {
   private browser: Browser | null = null;
+  private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private callbacks: WorkflowExecutorCallbacks;
 
+  constructor(callbacks: WorkflowExecutorCallbacks = {}) {
+    this.callbacks = callbacks;
+  }
+
+  /**
+   * 执行工作流 JSON（新方法）
+   */
+  async executeWorkflow(workflow: Workflow): Promise<any> {
+    const startTime = Date.now();
+
+    try {
+      // 启动浏览器
+      await this.launchBrowser();
+
+      if (!this.page) {
+        throw new Error('页面未初始化');
+      }
+
+      // 创建解释器并执行
+      const interpreter = new WorkflowInterpreter(this.page, {
+        onLog: this.callbacks.onLog,
+        onSaveData: this.callbacks.onSaveData
+      });
+      const result = await interpreter.execute(workflow);
+
+      return {
+        success: result.success,
+        data: result.result,
+        logs: result.logs,
+        error: result.error,
+        duration: Date.now() - startTime
+      };
+    } catch (error: any) {
+      console.error('执行工作流失败:', error);
+      return {
+        success: false,
+        error: error.message,
+        logs: [],
+        duration: Date.now() - startTime
+      };
+    } finally {
+      await this.cleanup();
+    }
+  }
+
+  /**
+   * 执行代码字符串（旧方法，保持向后兼容）
+   */
   async execute(code: string): Promise<any> {
     try {
       // 启动浏览器
@@ -92,11 +148,11 @@ export class WorkflowExecutor {
     }
 
     // 使用持久化上下文
-    const context = await chromium.launchPersistentContext(userDataDir, launchOptions);
+    this.context = await chromium.launchPersistentContext(userDataDir, launchOptions);
     
     // 获取或创建页面
-    const pages = context.pages();
-    this.page = pages.length > 0 ? pages[0] : await context.newPage();
+    const pages = this.context.pages();
+    this.page = pages.length > 0 ? pages[0] : await this.context.newPage();
 
     // 反自动化检测
     await this.page.addInitScript(() => {
@@ -147,6 +203,10 @@ export class WorkflowExecutor {
       if (this.page) {
         await this.page.close();
         this.page = null;
+      }
+      if (this.context) {
+        await this.context.close();
+        this.context = null;
       }
       if (this.browser) {
         await this.browser.close();

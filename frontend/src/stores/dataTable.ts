@@ -34,6 +34,50 @@ export const useDataTableStore = defineStore('dataTable', {
   },
 
   actions: {
+    ensureTable(tableId: string) {
+      let table = this.tables.find(t => t.id === tableId);
+
+      if (!table) {
+        this.init();
+        table = this.tables.find(t => t.id === tableId);
+      }
+
+      return table;
+    },
+
+    syncColumnsFromRows(table: DataTable, rows: Record<string, any>[]) {
+      const existingKeys = new Set(table.columns.map(column => column.key));
+
+      rows.forEach(row => {
+        Object.keys(row).forEach(key => {
+          if (key.startsWith('_') || existingKeys.has(key)) {
+            return;
+          }
+
+          let type: DataTableColumn['type'] = 'text';
+          const value = row[key];
+
+          if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            if (normalized.startsWith('http://') || normalized.startsWith('https://') || normalized.startsWith('//')) {
+              if (/\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i.test(value)) {
+                type = 'image';
+              } else if (/\.(mp4|webm|ogg|m3u8)(\?|$)/i.test(value)) {
+                type = 'video';
+              } else {
+                type = 'url';
+              }
+            }
+          } else if (typeof value === 'number') {
+            type = 'number';
+          }
+
+          table.columns.push({ key, type });
+          existingKeys.add(key);
+        });
+      });
+    },
+
     // 初始化 - 从 localStorage 加载
     init() {
       const saved = localStorage.getItem('data_tables');
@@ -123,8 +167,10 @@ export const useDataTableStore = defineStore('dataTable', {
 
     // 插入数据（支持 _mergeKey 合并）
     insertRow(tableId: string, row: Record<string, any>) {
-      const table = this.tables.find(t => t.id === tableId);
+      const table = this.ensureTable(tableId);
       if (table) {
+        this.syncColumnsFromRows(table, [row]);
+
         // 统一转换为字符串，避免类型比较问题
         const mergeKey = row._mergeKey !== undefined && row._mergeKey !== null 
           ? String(row._mergeKey) 
@@ -175,8 +221,10 @@ export const useDataTableStore = defineStore('dataTable', {
 
     // 批量插入数据（支持 _mergeKey 合并）
     insertRows(tableId: string, rows: Record<string, any>[]) {
-      const table = this.tables.find(t => t.id === tableId);
+      const table = this.ensureTable(tableId);
       if (table) {
+        this.syncColumnsFromRows(table, rows);
+
         rows.forEach(row => {
           // 统一转换为字符串，避免类型比较问题
           const mergeKey = row._mergeKey !== undefined && row._mergeKey !== null 
