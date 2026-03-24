@@ -119,11 +119,11 @@
                   </span>
                   <span v-else-if="column.type === 'video' && row[column.key]">
                     <div 
-                      class="video-thumbnail" 
-                      @click="openVideoModal(row[column.key])"
+                      class="video-thumbnail-wrapper" 
+                      @click="openVideoModal(row[column.key], row)"
                       :style="getVideoThumbnailStyle(row)"
                     >
-                      <div class="play-icon">
+                      <div class="play-icon-overlay">
                         <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                           <circle cx="24" cy="24" r="24" fill="rgba(0, 0, 0, 0.6)"/>
                           <path d="M18 14L34 24L18 34V14Z" fill="white"/>
@@ -230,9 +230,11 @@
       <div class="video-modal-body">
         <video 
           v-if="currentVideoUrl" 
-          :src="getProxyVideoUrl(currentVideoUrl)" 
+          :src="normalizeUrl(currentVideoUrl)"
+          :poster="currentVideoPoster || undefined"
           controls 
           autoplay
+          preload="auto"
           class="video-player"
         ></video>
       </div>
@@ -241,7 +243,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useDataTableStore } from '../stores/dataTable';
 import ConfirmDialog from './ConfirmDialog.vue';
 import Toast from './Toast.vue';
@@ -257,6 +259,7 @@ const showCreateModal = ref(false);
 const showAddColumnModal = ref(false);
 const showVideoModal = ref(false);
 const currentVideoUrl = ref<string>('');
+const currentVideoPoster = ref<string>('');
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 
@@ -458,8 +461,17 @@ function downloadFile(content: string, filename: string, type: string) {
   URL.revokeObjectURL(url);
 }
 
-function openVideoModal(videoUrl: string) {
+function openVideoModal(videoUrl: string, row: any) {
   currentVideoUrl.value = videoUrl;
+  
+  // 尝试从同一行中找到图片类型的列作为封面
+  const imageColumn = selectedTable.value?.columns.find(col => col.type === 'image');
+  if (imageColumn && row[imageColumn.key]) {
+    currentVideoPoster.value = normalizeUrl(row[imageColumn.key]);
+  } else {
+    currentVideoPoster.value = '';
+  }
+  
   showVideoModal.value = true;
 }
 
@@ -487,6 +499,7 @@ function closeVideoModal() {
   // 延迟清空 URL，避免关闭动画时视频消失
   setTimeout(() => {
     currentVideoUrl.value = '';
+    currentVideoPoster.value = '';
   }, 300);
 }
 
@@ -1012,7 +1025,7 @@ function onColumnDrop(dropIndex: number) {
   transform: translateY(-1px);
 }
 
-.video-thumbnail {
+.video-thumbnail-wrapper {
   position: relative;
   width: 200px;
   height: 120px;
@@ -1021,35 +1034,40 @@ function onColumnDrop(dropIndex: number) {
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.video-thumbnail:hover {
+.video-thumbnail-wrapper:hover {
   transform: scale(1.05);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-.video-thumbnail:hover .play-icon {
-  transform: translate(-50%, -50%) scale(1.1);
-}
-
-.play-icon {
+.play-icon-overlay {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   transition: transform 0.3s ease;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  pointer-events: none;
 }
 
-.play-icon svg {
+.video-thumbnail-wrapper:hover .play-icon-overlay {
+  transform: translate(-50%, -50%) scale(1.1);
+}
+
+.play-icon-overlay svg {
   display: block;
 }
 
-.play-icon circle {
+.play-icon-overlay circle {
   transition: fill 0.3s ease;
 }
 
-.video-thumbnail:hover .play-icon circle {
+.video-thumbnail-wrapper:hover .play-icon-overlay circle {
   fill: rgba(0, 0, 0, 0.8);
 }
 

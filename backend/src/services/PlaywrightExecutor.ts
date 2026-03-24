@@ -100,15 +100,20 @@ export class PlaywrightExecutor {
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
               '--disable-blink-features=AutomationControlled',
+              '--disable-features=IsolateOrigins,site-per-process',
               '--test-type',
               '--disable-infobars',
               '--disable-extensions',
               '--no-first-run',
-              '--no-default-browser-check'
+              '--no-default-browser-check',
+              '--disable-web-security',
+              '--disable-features=VizDisplayCompositor',
+              '--start-maximized'
             ],
             ignoreDefaultArgs: ['--enable-automation'],
             viewport: { width: 1920, height: 1080 },
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            bypassCSP: true
           }
         );
       } else {
@@ -142,18 +147,47 @@ export class PlaywrightExecutor {
       
       // 隐藏webdriver特征
       await page.addInitScript(() => {
+        // 删除 webdriver 标识
         Object.defineProperty(navigator, 'webdriver', {
           get: () => undefined
         });
+        
+        // 添加 chrome 对象
         // @ts-ignore
         window.navigator.chrome = {
-          runtime: {}
+          runtime: {},
+          loadTimes: function() {},
+          csi: function() {},
+          app: {}
         };
+        
+        // 修改 plugins
         Object.defineProperty(navigator, 'plugins', {
           get: () => [1, 2, 3, 4, 5]
         });
+        
+        // 修改 languages
         Object.defineProperty(navigator, 'languages', {
           get: () => ['zh-CN', 'zh', 'en']
+        });
+        
+        // 修改 permissions
+        const originalQuery = window.navigator.permissions.query;
+        // @ts-ignore
+        window.navigator.permissions.query = (parameters) => (
+          parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+        );
+        
+        // 伪造 battery API
+        Object.defineProperty(navigator, 'getBattery', {
+          get: () => () => Promise.resolve({
+            charging: true,
+            chargingTime: 0,
+            dischargingTime: Infinity,
+            level: 1
+          })
         });
       });
 
