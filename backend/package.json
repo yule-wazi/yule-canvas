@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test:sync": "node tests/compiler-parser-sync.test.js",
+    "test": "npm run build && npm run test:sync"
   },
   "keywords": [],
   "author": "",

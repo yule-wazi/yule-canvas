@@ -172,10 +172,12 @@ export class PlaywrightExecutor {
         });
         
         // 修改 permissions
+        // @ts-ignore - 浏览器环境中的 API
         const originalQuery = window.navigator.permissions.query;
-        // @ts-ignore
+        // @ts-ignore - 浏览器环境中的 API
         window.navigator.permissions.query = (parameters) => (
           parameters.name === 'notifications' ?
+            // @ts-ignore - 浏览器环境中的 API
             Promise.resolve({ state: Notification.permission }) :
             originalQuery(parameters)
         );

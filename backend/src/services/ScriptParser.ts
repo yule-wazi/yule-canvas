@@ -182,8 +182,8 @@ export class ScriptParser {
         });
       }
 
-      // 5. 解析 extract (提取数据) - 匹配新的多提取项格式
-      const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?await page\.waitForSelector\([^,]+,\s*\{\s*timeout:\s*(\d+)[^}]*\}\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[^{]*\{[\s\S]*?\}, \{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
+      // 5. 解析 extract (提取数据) - 匹配新的多提取项格式（支持唯一变量名）
+      const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?await page\.waitForSelector\([^,]+,\s*\{\s*timeout:\s*(\d+)[^}]*\}\);[\s\S]*?const extractedData(?:_\w+)? = await page\.evaluate\(\(\{ extractions, multiple \}\)[^{]*\{[\s\S]*?\}, \{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
       while ((match = extractPattern.exec(code)) !== null) {
         const extractionCount = parseInt(match[1]);
         const timeout = parseInt(match[2]);
@@ -310,7 +310,7 @@ export class ScriptParser {
         count: parseInt(match[2]),
         variableName: match[3],
         startValue: startValue,
-        startValueType: 'variable', // 假设使用全局变量
+        startValueType: 'custom', // 从代码中解析出的是数字，所以是 custom
         bodyCode: match[5],
         startIndex: match.index,
         endIndex: match.index + match[0].length
@@ -352,7 +352,7 @@ export class ScriptParser {
         maxIterations: parseInt(conditionMatch[2]),
         variableName: conditionMatch[3],
         startValue: startValue,
-        startValueType: 'variable',
+        startValueType: 'custom', // 从代码中解析出的是数字，所以是 custom
         bodyCode: conditionMatch[5],
         startIndex: conditionMatch.index,
         endIndex: conditionMatch.index + conditionMatch[0].length
@@ -463,8 +463,8 @@ export class ScriptParser {
             useVariable: !!segment.loopInfo.variableName,
             variableName: segment.loopInfo.variableName || '',
             startValueType: segment.loopInfo.startValueType || 'variable',
-            startValue: segment.loopInfo.startValue && segment.loopInfo.variableName 
-              ? `{{${segment.loopInfo.variableName}}}` 
+            startValue: segment.loopInfo.startValue !== undefined 
+              ? String(segment.loopInfo.startValue)
               : ''
           },
           inputs: [{ id: 'loop-end', name: '循环结束', type: 'flow' }],
@@ -779,8 +779,8 @@ export class ScriptParser {
       });
     }
 
-    // 5. 解析 extract (提取数据)
-    const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?await page\.waitForSelector\([^,]+,\s*\{\s*timeout:\s*(\d+)[^}]*\}\);[\s\S]*?const extractedData = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
+    // 5. 解析 extract (提取数据) - 支持唯一变量名
+    const extractPattern = /log\('开始提取数据，共 (\d+) 个提取项'\);[\s\S]*?await page\.waitForSelector\([^,]+,\s*\{\s*timeout:\s*(\d+)[^}]*\}\);[\s\S]*?const extractedData(?:_\w+)? = await page\.evaluate\(\(\{ extractions, multiple \}\)[\s\S]*?\},\s*\{\s*extractions:\s*\[([\s\S]*?)\],\s*multiple:\s*(true|false)\s*\}\);/g;
     while ((match = extractPattern.exec(bodyCode)) !== null) {
       const extractionCount = parseInt(match[1]);
       const timeout = parseInt(match[2]);

@@ -112,7 +112,7 @@
             </thead>
             <tbody>
               <tr v-for="(row, index) in filteredRows" :key="row._id">
-                <td>{{ index + 1 }}</td>
+                <td>{{ row._mergeKey !== undefined && row._mergeKey !== null ? row._mergeKey : index + 1 }}</td>
                 <td v-for="column in selectedTable.columns" :key="column.key">
                   <span v-if="column.type === 'image' && row[column.key]">
                     <img :src="normalizeUrl(row[column.key])" alt="" class="table-image" />

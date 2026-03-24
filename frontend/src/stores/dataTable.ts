@@ -121,31 +121,107 @@ export const useDataTableStore = defineStore('dataTable', {
       }
     },
 
-    // 插入数据
+    // 插入数据（支持 _mergeKey 合并）
     insertRow(tableId: string, row: Record<string, any>) {
       const table = this.tables.find(t => t.id === tableId);
       if (table) {
-        table.rows.push({
-          _id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          _timestamp: Date.now(),
-          ...row
-        });
-        table.updatedAt = Date.now();
-        this.save();
-      }
-    },
-
-    // 批量插入数据
-    insertRows(tableId: string, rows: Record<string, any>[]) {
-      const table = this.tables.find(t => t.id === tableId);
-      if (table) {
-        rows.forEach(row => {
+        // 统一转换为字符串，避免类型比较问题
+        const mergeKey = row._mergeKey !== undefined && row._mergeKey !== null 
+          ? String(row._mergeKey) 
+          : null;
+        
+        if (mergeKey !== null) {
+          // 使用 _mergeKey 查找现有行
+          const existingRowIndex = table.rows.findIndex(
+            r => {
+              const existingKey = r._mergeKey !== undefined && r._mergeKey !== null 
+                ? String(r._mergeKey) 
+                : null;
+              return existingKey === mergeKey;
+            }
+          );
+          
+          if (existingRowIndex !== -1) {
+            // 更新现有行（合并数据）
+            const { _mergeKey: _, ...dataWithoutMergeKey } = row;
+            table.rows[existingRowIndex] = {
+              ...table.rows[existingRowIndex],
+              ...dataWithoutMergeKey,
+              _mergeKey: mergeKey, // 使用字符串类型的键
+              _timestamp: Date.now()
+            };
+          } else {
+            // 插入新行
+            table.rows.push({
+              _id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              _timestamp: Date.now(),
+              ...row,
+              _mergeKey: mergeKey // 使用字符串类型的键
+            });
+          }
+        } else {
+          // 没有合并键，直接插入
           table.rows.push({
             _id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             _timestamp: Date.now(),
             ...row
           });
+        }
+        
+        table.updatedAt = Date.now();
+        this.save();
+      }
+    },
+
+    // 批量插入数据（支持 _mergeKey 合并）
+    insertRows(tableId: string, rows: Record<string, any>[]) {
+      const table = this.tables.find(t => t.id === tableId);
+      if (table) {
+        rows.forEach(row => {
+          // 统一转换为字符串，避免类型比较问题
+          const mergeKey = row._mergeKey !== undefined && row._mergeKey !== null 
+            ? String(row._mergeKey) 
+            : null;
+          
+          if (mergeKey !== null) {
+            // 使用 _mergeKey 查找现有行
+            const existingRowIndex = table.rows.findIndex(
+              r => {
+                const existingKey = r._mergeKey !== undefined && r._mergeKey !== null 
+                  ? String(r._mergeKey) 
+                  : null;
+                return existingKey === mergeKey;
+              }
+            );
+            
+            if (existingRowIndex !== -1) {
+              // 更新现有行（合并数据）
+              const { _mergeKey: _, ...dataWithoutMergeKey } = row;
+              table.rows[existingRowIndex] = {
+                ...table.rows[existingRowIndex],
+                ...dataWithoutMergeKey,
+                _mergeKey: mergeKey, // 使用字符串类型的键
+                _timestamp: Date.now()
+              };
+            } else {
+              // 插入新行
+              table.rows.push({
+                _id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                _timestamp: Date.now(),
+                ...row,
+                _mergeKey: mergeKey // 使用字符串类型的键
+              });
+            }
+          } else {
+            // 没有合并键，直接插入
+            table.rows.push({
+              _id: `row_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              _timestamp: Date.now(),
+              ...row
+            });
+          }
         });
+        
         table.updatedAt = Date.now();
         this.save();
       }

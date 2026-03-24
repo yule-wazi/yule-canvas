@@ -35,6 +35,17 @@
       <small>选择要保存数据的数据表</small>
     </div>
 
+    <div class="form-group" v-if="localData.saveToTable && !localData.multiple">
+      <label>合并键（可选）</label>
+      <select v-model="localData.mergeKey" @change="emitUpdate">
+        <option value="">不使用合并键</option>
+        <option v-for="(varValue, varName) in globalVariables" :key="varName" :value="varName">
+          {{ varName }} = {{ varValue }}
+        </option>
+      </select>
+      <small>💡 选择一个全局变量作为合并键，相同键值的数据会自动合并</small>
+    </div>
+
     <div class="extractions-section">
       <div class="section-header">
         <h4>提取项</h4>
@@ -106,8 +117,10 @@
 import { ref, watch, computed, onMounted } from 'vue';
 import type { Block } from '../../../types/block';
 import { useDataTableStore } from '../../../stores/dataTable';
+import { useWorkflowStore } from '../../../stores/workflow';
 
 const dataTableStore = useDataTableStore();
+const workflowStore = useWorkflowStore();
 
 // 初始化数据表 store
 onMounted(() => {
@@ -127,6 +140,7 @@ const defaultData = {
   multiple: true,
   timeout: 5000,
   saveToTable: '',
+  mergeKey: '',
   extractions: [] as Array<{
     selector: string;
     attribute: string;
@@ -151,6 +165,8 @@ watch(() => props.block.data, (newData) => {
 }, { deep: true });
 
 const dataTables = computed(() => dataTableStore.tables);
+
+const globalVariables = computed(() => workflowStore.variables);
 
 const selectedTableColumns = computed(() => {
   if (!localData.value.saveToTable) return [];

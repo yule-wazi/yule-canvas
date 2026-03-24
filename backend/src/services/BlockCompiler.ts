@@ -806,6 +806,10 @@ await page.type(\`${escapedSelector}\`, '${escapedText}', { delay: ${delay} });
 
     let code = '';
     
+    // 生成唯一的变量名，避免多个提取模块时变量名冲突
+    const uniqueId = Math.random().toString(36).substr(2, 9);
+    const extractedDataVar = `extractedData_${uniqueId}`;
+    
     // 生成提取配置
     const extractionsConfig = validExtractions.map((extraction: any, idx: number) => {
       const attr = extraction.attribute === 'data-*' ? extraction.customAttribute : extraction.attribute;
@@ -874,7 +878,7 @@ try {
 }
 
 // 提取所有数据
-const extractedData = await page.evaluate(({ extractions, multiple }) => {
+const ${extractedDataVar} = await page.evaluate(({ extractions, multiple }) => {
   // 获取第一个提取项的元素数量，作为基准
   const firstElements = multiple 
     ? document.querySelectorAll(extractions[0].selector)
@@ -929,11 +933,34 @@ const extractedData = await page.evaluate(({ extractions, multiple }) => {
 
     // 如果配置了保存到数据表
     if (saveToTable) {
+      const { mergeKey } = block.data;
+      
+      // 如果配置了合并键，添加合并键字段
+      let mergeKeyCode = '';
+      if (mergeKey) {
+        // 直接使用变量名，不需要模板字符串包装
+        // 如果在循环内，使用循环变量；否则使用全局变量
+        if (variableName && mergeKey === variableName) {
+          // 使用循环变量
+          mergeKeyCode = `rowData['_mergeKey'] = ${variableName};`;
+        } else {
+          // 使用全局变量的值
+          const globalVarValue = this.globalVariables[mergeKey]?.value;
+          if (globalVarValue !== undefined) {
+            // 如果是字符串，需要加引号
+            const valueStr = typeof globalVarValue === 'string' 
+              ? `'${globalVarValue}'` 
+              : globalVarValue;
+            mergeKeyCode = `rowData['_mergeKey'] = ${valueStr};`;
+          }
+        }
+      }
+      
       code += `// 保存到数据表
 saveDataImmediately({
   type: 'data',
   tableId: '${saveToTable}',
-  rows: extractedData.map(row => {
+  rows: ${extractedDataVar}.map(row => {
     const rowData = {};
     ${validExtractions.map((extraction: any, idx: number) => {
       if (extraction.saveToColumn) {
@@ -941,16 +968,17 @@ saveDataImmediately({
       }
       return '';
     }).filter(Boolean).join('\n    ')}
+    ${mergeKeyCode}
     return rowData;
   })
 });
 
-log('提取完成，共获得 ' + extractedData.length + ' 行数据');
+log('提取完成，共获得 ' + ${extractedDataVar}.length + ' 行数据');
 `;
     } else {
       code += `// 保存提取的数据（未配置数据表）
-extractedResults.data.push(...extractedData);
-log('提取完成，共获得 ' + extractedData.length + ' 条数据');
+extractedResults.data.push(...${extractedDataVar});
+log('提取完成，共获得 ' + ${extractedDataVar}.length + ' 条数据');
 `;
     }
 
