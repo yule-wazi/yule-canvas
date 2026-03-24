@@ -847,7 +847,8 @@ function findLoopBody(loopId: string, startBlockId: string, endBlockId: string):
     // 找到下一个连接（使用 source-right 或 out handle）
     const nextConn = workflowStore.connections.find(c => 
       c.source === currentId && 
-      (c.sourceHandle === 'source-right' || c.sourceHandle === 'out')
+      (c.sourceHandle === 'source-right' || c.sourceHandle === 'out') &&
+      (c.targetHandle === 'target-left' || c.targetHandle === 'in')
     );
     
     if (nextConn) {

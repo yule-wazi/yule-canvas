@@ -412,7 +412,7 @@ export class WorkflowInterpreter {
       }
 
       const nextConnection = connections.find(conn =>
-        conn.source === currentId && this.isNormalSourceHandle(conn.sourceHandle)
+        conn.source === currentId && this.isNormalConnection(conn)
       );
 
       currentId = nextConnection?.target || null;
