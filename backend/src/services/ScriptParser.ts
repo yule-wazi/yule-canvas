@@ -192,9 +192,25 @@ export class ScriptParser {
 
         // 查找 saveToTable - 从 saveDataImmediately 调用中提取
         let saveToTable = '';
+        let mergeKey = '';
         const saveDataMatch = /saveDataImmediately\(\{[\s\S]*?tableId:\s*'([^']+)'/.exec(code.substring(match.index));
         if (saveDataMatch) {
           saveToTable = saveDataMatch[1];
+          
+          // 查找 mergeKey - 从 rowData['_mergeKey'] = xxx 中提取
+          const mergeKeyMatch = /rowData\['_mergeKey'\]\s*=\s*([^;]+);/.exec(code.substring(match.index));
+          if (mergeKeyMatch) {
+            const mergeKeyValue = mergeKeyMatch[1].trim();
+            // 如果是变量名（不带引号），直接使用
+            if (/^[a-zA-Z_]\w*$/.test(mergeKeyValue)) {
+              mergeKey = mergeKeyValue;
+            }
+            // 如果是字符串字面量，提取变量名（假设是全局变量）
+            else if (mergeKeyValue.startsWith("'") || mergeKeyValue.startsWith('"')) {
+              // 这种情况下无法确定原始变量名，跳过
+              mergeKey = '';
+            }
+          }
         }
 
         // 解析 extractions 数组
@@ -202,7 +218,7 @@ export class ScriptParser {
         
         matches.push({
           index: match.index,
-          block: this.createExtractBlock(extractions, multiple, saveToTable, 0, timeout)
+          block: this.createExtractBlock(extractions, multiple, saveToTable, 0, timeout, mergeKey)
         });
       }
 
@@ -773,9 +789,25 @@ export class ScriptParser {
       
       // 查找 saveToTable - 从 saveDataImmediately 调用中提取
       let saveToTable = '';
+      let mergeKey = '';
       const saveDataMatch = /saveDataImmediately\(\{[\s\S]*?tableId:\s*'([^']+)'/.exec(bodyCode.substring(match.index));
       if (saveDataMatch) {
         saveToTable = saveDataMatch[1];
+        
+        // 查找 mergeKey - 从 rowData['_mergeKey'] = xxx 中提取
+        const mergeKeyMatch = /rowData\['_mergeKey'\]\s*=\s*([^;]+);/.exec(bodyCode.substring(match.index));
+        if (mergeKeyMatch) {
+          const mergeKeyValue = mergeKeyMatch[1].trim();
+          // 如果是变量名（不带引号），直接使用
+          if (/^[a-zA-Z_]\w*$/.test(mergeKeyValue)) {
+            mergeKey = mergeKeyValue;
+          }
+          // 如果是字符串字面量，提取变量名（假设是全局变量）
+          else if (mergeKeyValue.startsWith("'") || mergeKeyValue.startsWith('"')) {
+            // 这种情况下无法确定原始变量名，跳过
+            mergeKey = '';
+          }
+        }
       }
       
       // 解析 extractions 数组
@@ -783,7 +815,7 @@ export class ScriptParser {
       
       matches.push({
         index: match.index,
-        block: this.createExtractBlock(extractions, multiple, saveToTable, 0, timeout)
+        block: this.createExtractBlock(extractions, multiple, saveToTable, 0, timeout, mergeKey)
       });
     }
 
@@ -964,7 +996,7 @@ export class ScriptParser {
     };
   }
 
-  private createExtractBlock(extractions: any[], multiple: boolean, saveToTable: string, xPosition: number, timeout: number = 5000): any {
+  private createExtractBlock(extractions: any[], multiple: boolean, saveToTable: string, xPosition: number, timeout: number = 5000, mergeKey: string = ''): any {
     // 将所有提取项的选择器中的模板字符串变量转换回 {{variableName}}
     const convertedExtractions = extractions.map(ext => ({
       ...ext,
@@ -981,7 +1013,8 @@ export class ScriptParser {
         extractions: convertedExtractions,
         multiple,
         timeout,
-        saveToTable
+        saveToTable,
+        mergeKey
       },
       inputs: [{ id: 'in', name: '输入', type: 'flow' }],
       outputs: [
