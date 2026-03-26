@@ -64,6 +64,18 @@ interface LogEntry {
 interface InterpreterOptions {
   onLog?: (entry: LogEntry) => void;
   onSaveData?: (data: any) => void;
+  onTrace?: (event: TraceEvent) => void;
+  silent?: boolean;
+}
+
+export interface TraceEvent {
+  type: 'block-start' | 'block-end' | 'loop-start' | 'loop-iteration' | 'loop-end';
+  blockId?: string;
+  blockType?: BlockType;
+  label?: string;
+  loopId?: string;
+  iteration?: number;
+  timestamp: number;
 }
 
 interface LoopInfo {
@@ -159,7 +171,19 @@ export class WorkflowInterpreter {
   ): Promise<void> {
     for (const unit of sequence) {
       if (unit.kind === 'block' && unit.block) {
+        this.trace({
+          type: 'block-start',
+          blockId: unit.block.id,
+          blockType: unit.block.type,
+          label: unit.block.label
+        });
         await this.executeBlock(unit.block, context);
+        this.trace({
+          type: 'block-end',
+          blockId: unit.block.id,
+          blockType: unit.block.type,
+          label: unit.block.label
+        });
       } else if (unit.kind === 'loop' && unit.loopInfo) {
         await this.executeLoop(unit.loopInfo, blocksById, connections, loopInfos, context);
       }
@@ -370,6 +394,12 @@ export class WorkflowInterpreter {
     const plannedCount = mode === 'count' ? this.getLoopCount(loopInfo.loop, context) : null;
     let iteration = 0;
 
+    this.trace({
+      type: 'loop-start',
+      loopId: loopInfo.loop.id,
+      label: loopInfo.loop.label
+    });
+
     this.log(
       context,
       mode === 'condition'
@@ -383,6 +413,12 @@ export class WorkflowInterpreter {
         this.log(context, `循环变量 ${variableName} = ${context.variables[variableName]}`);
       }
 
+      this.trace({
+        type: 'loop-iteration',
+        loopId: loopInfo.loop.id,
+        label: loopInfo.loop.label,
+        iteration: iteration + 1
+      });
       await this.executeSequence(sequence, blocksById, connections, loopInfos, context);
       iteration++;
     }
@@ -396,6 +432,11 @@ export class WorkflowInterpreter {
     }
 
     this.log(context, `循环结束: ${loopInfo.loop.label}`);
+    this.trace({
+      type: 'loop-end',
+      loopId: loopInfo.loop.id,
+      label: loopInfo.loop.label
+    });
   }
 
   private walkLoopBody(startId: string, endId: string, connections: Connection[]): string[] {
@@ -582,7 +623,16 @@ export class WorkflowInterpreter {
 
     context.logs.push(formattedMessage);
     this.options.onLog?.({ timestamp, message });
-    console.log(formattedMessage);
+    if (!this.options.silent) {
+      console.log(formattedMessage);
+    }
+  }
+
+  private trace(event: Omit<TraceEvent, 'timestamp'>): void {
+    this.options.onTrace?.({
+      ...event,
+      timestamp: Date.now()
+    });
   }
 
   private buildResult(context: ExecutionContext): any {

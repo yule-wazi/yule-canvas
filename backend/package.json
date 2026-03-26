@@ -6,7 +6,8 @@
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "npm run build"
+    "test": "npm run build",
+    "test:workflow": "ts-node tests/workflow-regression/index.ts"
   },
   "keywords": [],
   "author": "",

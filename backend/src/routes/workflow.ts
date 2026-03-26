@@ -8,7 +8,7 @@ const deprecationPayload = {
   error: 'Workflow REST endpoints are deprecated. Save workflow JSON in the frontend and execute via Socket.io execute-workflow.'
 };
 
-router.all('*', (req, res) => {
+router.use((req, res) => {
   res.status(410).json(deprecationPayload);
 });
 
