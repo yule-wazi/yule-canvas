@@ -1,6 +1,6 @@
 <template>
   <div class="script-generator">
-    <h3>AI生成脚本</h3>
+    <h3>AI生成工作流</h3>
     
     <div class="form-group">
       <label>选择AI模型</label>
@@ -37,25 +37,25 @@
       :disabled="loading || !prompt.trim()"
       class="generate-btn"
     >
-      {{ loading ? '生成中...' : '生成脚本' }}
+      {{ loading ? '生成中...' : '生成' }}
     </button>
 
     <div v-if="error" class="error-message">
       {{ error }}
     </div>
 
-    <div v-if="generatedCode" class="result">
-      <h4>生成的脚本</h4>
-      <ScriptEditor 
-        v-model="generatedCode" 
-        :readonly="false"
-        @change="handleCodeChange"
-      />
+    <div v-if="generatedWorkflow" class="result">
+      <h4>生成的工作流</h4>
+      <div class="workflow-info">
+        <p>✅ 包含 {{ generatedWorkflow.blocks?.length || 0 }} 个模块</p>
+        <p>✅ 包含 {{ generatedWorkflow.connections?.length || 0 }} 个连接</p>
+      </div>
       <div class="actions">
-        <button @click="saveScript" class="save-btn">保存脚本</button>
-        <button @click="copyCode" class="copy-btn">复制代码</button>
+        <button @click="importToEditor" class="import-btn">导入到编辑器</button>
+        <button @click="copyWorkflowJson" class="copy-btn">复制 JSON</button>
       </div>
     </div>
+
   </div>
   
   <!-- Toast 提示 -->
@@ -64,21 +64,18 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import api from '../services/api';
-import ScriptEditor from './ScriptEditor.vue';
 import Toast from './Toast.vue';
+import { useWorkflowStore } from '../stores/workflow';
 
-interface Emits {
-  (e: 'scriptGenerated', code: string): void;
-  (e: 'saveScript', code: string, model: string): void;
-}
-
-const emit = defineEmits<Emits>();
+const router = useRouter();
+const workflowStore = useWorkflowStore();
 
 const selectedModel = ref('siliconflow');
 const siliconflowModel = ref('Qwen/Qwen3-8B');
 const prompt = ref('');
-const generatedCode = ref('');
+const generatedWorkflow = ref<any>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 const loading = ref(false);
 const error = ref('');
@@ -88,7 +85,7 @@ const generate = async () => {
 
   loading.value = true;
   error.value = '';
-  generatedCode.value = '';
+  generatedWorkflow.value = null;
 
   try {
     const requestData: any = {
@@ -103,11 +100,11 @@ const generate = async () => {
       };
     }
     
-    const response: any = await api.post('/ai/generate', requestData);
+    const response: any = await api.post('/ai/generate-workflow', requestData);
 
     if (response.success) {
-      generatedCode.value = response.code;
-      emit('scriptGenerated', response.code);
+      generatedWorkflow.value = response.workflow;
+      toast.value?.show({ message: '工作流生成成功', type: 'success' });
     } else {
       error.value = response.error || '生成失败';
     }
@@ -118,18 +115,32 @@ const generate = async () => {
   }
 };
 
-const handleCodeChange = (code: string) => {
-  generatedCode.value = code;
+const importToEditor = () => {
+  if (!generatedWorkflow.value) return;
+  
+  const workflow = {
+    id: `workflow-${Date.now()}`,
+    name: 'AI 生成工作流',
+    description: prompt.value.trim(),
+    blocks: generatedWorkflow.value.blocks || [],
+    connections: generatedWorkflow.value.connections || [],
+    variables: generatedWorkflow.value.variables || {},
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+
+  workflowStore.loadWorkflow(workflow as any);
+  
+  toast.value?.show({ message: '工作流已导入到编辑器', type: 'success' });
+  
+  router.push('/workflow');
 };
 
-const saveScript = () => {
-  emit('saveScript', generatedCode.value, selectedModel.value);
-};
-
-const copyCode = async () => {
+const copyWorkflowJson = async () => {
   try {
-    await navigator.clipboard.writeText(generatedCode.value);
-    toast.value?.show({ message: '代码已复制到剪贴板', type: 'success' });
+    const json = JSON.stringify(generatedWorkflow.value, null, 2);
+    await navigator.clipboard.writeText(json);
+    toast.value?.show({ message: 'JSON 已复制到剪贴板', type: 'success' });
   } catch (err) {
     console.error('复制失败:', err);
     toast.value?.show({ message: '复制失败', type: 'error' });
@@ -222,6 +233,19 @@ label {
   color: #58a6ff;
 }
 
+.workflow-info {
+  padding: 1rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.workflow-info p {
+  margin: 0.5rem 0;
+  color: #8b949e;
+}
+
 .actions {
   margin-top: 1rem;
   display: flex;
@@ -229,7 +253,8 @@ label {
 }
 
 .save-btn,
-.copy-btn {
+.copy-btn,
+.import-btn {
   padding: 0.5rem 1.5rem;
   border: none;
   border-radius: 6px;
@@ -238,12 +263,14 @@ label {
   transition: background 0.3s;
 }
 
-.save-btn {
+.save-btn,
+.import-btn {
   background: #1f6feb;
   color: white;
 }
 
-.save-btn:hover {
+.save-btn:hover,
+.import-btn:hover {
   background: #388bfd;
 }
 

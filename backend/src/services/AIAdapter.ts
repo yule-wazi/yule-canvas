@@ -1,147 +1,64 @@
 import axios from 'axios';
+import { WorkflowValidator } from './WorkflowValidator';
 
 export interface AIModelAdapter {
   id: string;
   name: string;
-  formatRequest(prompt: string, options?: any): any;
+  formatWorkflowRequest(prompt: string, options?: any): any;
   parseResponse(response: any): string;
   getApiEndpoint(): string;
   getApiKey(): string;
 }
 
-const SHARED_SYSTEM_PROMPT = `你是一个Playwright脚本生成专家。请根据用户的需求生成可执行的Playwright代码。
+const WORKFLOW_JSON_SYSTEM_PROMPT = `你是一个 Playwright 自动化工作流生成助手。
+
+用户会用自然语言描述他们想要自动化的任务，你需要生成一个 Workflow JSON 格式的工作流。
+
+输出必须严格是 JSON，对象包含：
+1. blocks
+2. connections
+3. variables
+
+可用模块：
+- navigate
+- click
+- type
+- select
+- scroll
+- wait
+- extract
+- extract-links
+- back
+- forward
+- log
+- loop
+
+连接规则：
+- 普通流转：sourceHandle 使用 out 或 source-right，targetHandle 使用 in 或 target-left
+- 循环开始：sourceHandle 使用 loop-start
+- 循环结束：targetHandle 使用 loop-end
 
 要求：
-1. 只返回JavaScript代码，不要有任何解释文字
-2. 代码中可以使用 page 对象（已提供）
-3. 使用 log() 函数输出执行日志
-4. 最后使用 return 返回爬取的数据对象
-5. 处理可能的异常情况
-6. 使用 async/await 语法
-
-数据输出格式规范（重要）：
-必须返回以下统一格式的JSON对象：
-{
-  "success": true,           // 是否成功
-  "dataType": "images",      // 数据类型：images/videos/articles/products/links/custom
-  "url": "https://...",      // 爬取的URL
-  "timestamp": Date.now(),   // 时间戳
-  "count": 10,               // 数据条数
-  "items": [                 // 数据数组
-    {
-      "id": 1,               // 序号
-      "title": "",           // 标题（如果有）
-      "url": "",             // 链接/地址
-      "thumbnail": "",       // 缩略图（如果有）
-      "description": "",     // 描述（如果有）
-      "metadata": {}         // 其他元数据
-    }
-  ]
-}
-
-重要提示：
-- 访问页面时使用 { waitUntil: 'domcontentloaded', timeout: 60000 } 加快加载
-- 如果需要爬取图片、商品列表等内容，必须先滚动页面触发懒加载
-- 使用智能滚动：检测页面高度变化，到底后自动停止，最多15次
-- 收集图片时要检查 src、data-src、data-lazy-src 等多种属性
-- 过滤掉无效图片（非http开头、包含data:image等）
-
-示例1：爬取百度首页的标题
-\`\`\`javascript
-log('开始访问百度');
-await page.goto('https://www.baidu.com');
-log('等待页面加载');
-await page.waitForLoadState('networkidle');
-const title = await page.title();
-log(\`获取到标题: \${title}\`);
-return {
-  success: true,
-  dataType: 'custom',
-  url: 'https://www.baidu.com',
-  timestamp: Date.now(),
-  count: 1,
-  items: [{ id: 1, title: title, url: 'https://www.baidu.com' }]
-};
-\`\`\`
-
-示例2：爬取页面所有图片（包含智能滚动懒加载）
-\`\`\`javascript
-log('访问页面');
-const targetUrl = 'https://www.taobao.com';
-await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-log('等待页面初始加载');
-await page.waitForTimeout(3000);
-log('开始智能滚动页面触发懒加载');
-await page.evaluate(async () => {
-  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-  let lastHeight = document.body.scrollHeight;
-  let scrollAttempts = 0;
-  const maxAttempts = 15;
-  
-  while (scrollAttempts < maxAttempts) {
-    window.scrollBy(0, window.innerHeight);
-    await delay(800);
-    
-    const newHeight = document.body.scrollHeight;
-    if (newHeight === lastHeight) {
-      break;
-    }
-    lastHeight = newHeight;
-    scrollAttempts++;
-  }
-  
-  window.scrollTo(0, document.body.scrollHeight);
-  await delay(1500);
-});
-log('滚动完成，等待图片加载');
-await page.waitForTimeout(3000);
-log('收集页面所有图片');
-const images = await page.evaluate(() => {
-  const imgElements = document.querySelectorAll('img');
-  const imageData = [];
-  imgElements.forEach((img, index) => {
-    const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src');
-    if (src && src.startsWith('http') && !src.includes('data:image')) {
-      imageData.push({
-        id: index + 1,
-        title: img.alt || '',
-        url: src,
-        thumbnail: src,
-        description: img.title || '',
-        metadata: {
-          width: img.width,
-          height: img.height
-        }
-      });
-    }
-  });
-  return imageData;
-});
-log(\`成功收集到 \${images.length} 张图片\`);
-return {
-  success: true,
-  dataType: 'images',
-  url: targetUrl,
-  timestamp: Date.now(),
-  count: images.length,
-  items: images
-};
-\`\`\`
-
-现在请根据用户需求生成代码，只返回代码部分，不要包含\`\`\`标记。`;
+1. 只输出 JSON，不要输出解释
+2. 所有 id 必须唯一
+3. 模块从左到右布局
+4. 如果涉及循环变量，使用 {{variableName}} 引用
+5. extract 模块使用 data.extractions 数组
+6. 如果要保存数据表，填写 saveToTable
+`;
 
 export class QwenAdapter implements AIModelAdapter {
   id = 'qwen';
   name = '阿里千问';
 
-  formatRequest(prompt: string, options: any = {}) {
+  formatWorkflowRequest(prompt: string, options: any = {}) {
     return {
       model: options.model || 'qwen-turbo',
       input: {
         messages: [
           {
             role: 'system',
-            content: SHARED_SYSTEM_PROMPT
+            content: WORKFLOW_JSON_SYSTEM_PROMPT
           },
           {
             role: 'user',
@@ -151,7 +68,7 @@ export class QwenAdapter implements AIModelAdapter {
       },
       parameters: {
         temperature: options.temperature || 0.7,
-        max_tokens: options.maxTokens || 2000,
+        max_tokens: options.maxTokens || 4000,
         result_format: 'message'
       }
     };
@@ -174,15 +91,13 @@ export class SiliconFlowAdapter implements AIModelAdapter {
   id = 'siliconflow';
   name = '硅基流动';
 
-  formatRequest(prompt: string, options: any = {}) {
-    const model = options.model || 'Qwen/Qwen2.5-7B-Instruct';
-    
+  formatWorkflowRequest(prompt: string, options: any = {}) {
     return {
-      model: model,
+      model: options.model || 'Qwen/Qwen2.5-7B-Instruct',
       messages: [
         {
           role: 'system',
-          content: SHARED_SYSTEM_PROMPT
+          content: WORKFLOW_JSON_SYSTEM_PROMPT
         },
         {
           role: 'user',
@@ -190,7 +105,7 @@ export class SiliconFlowAdapter implements AIModelAdapter {
         }
       ],
       temperature: options.temperature || 0.7,
-      max_tokens: options.maxTokens || 2000,
+      max_tokens: options.maxTokens || 4000,
       stream: false
     };
   }
@@ -228,7 +143,7 @@ export class AIAdapterManager {
     return Array.from(this.adapters.values());
   }
 
-  async generateScript(modelId: string, prompt: string, options?: any): Promise<string> {
+  async generateWorkflow(modelId: string, prompt: string, options?: any): Promise<any> {
     const adapter = this.getAdapter(modelId);
     if (!adapter) {
       throw new Error(`不支持的模型: ${modelId}`);
@@ -239,31 +154,47 @@ export class AIAdapterManager {
       throw new Error(`${adapter.name} API密钥未配置`);
     }
 
-    const requestData = adapter.formatRequest(prompt, options);
+    const requestData = adapter.formatWorkflowRequest(prompt, options);
     const endpoint = adapter.getApiEndpoint();
 
     try {
       const response = await axios.post(endpoint, requestData, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
         timeout: 30000
       });
 
-      const code = adapter.parseResponse(response.data);
-      
-      // 清理代码块标记
-      let cleanCode = code.trim();
-      if (cleanCode.startsWith('```javascript')) {
-        cleanCode = cleanCode.replace(/^```javascript\n/, '').replace(/\n```$/, '');
-      } else if (cleanCode.startsWith('```')) {
-        cleanCode = cleanCode.replace(/^```\n/, '').replace(/\n```$/, '');
+      const content = adapter.parseResponse(response.data);
+      let cleanJson = content.trim();
+
+      if (cleanJson.startsWith('```json')) {
+        cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
       }
 
-      return cleanCode;
+      let workflow: any;
+      try {
+        workflow = JSON.parse(cleanJson);
+      } catch (parseError: any) {
+        console.error('JSON 解析失败:', cleanJson);
+        throw new Error(`AI 返回的 JSON 格式无效: ${parseError.message}`);
+      }
+
+      const validation = WorkflowValidator.validate(workflow);
+      if (!validation.valid) {
+        throw new Error(`生成的工作流格式无效: ${validation.errors.join(', ')}`);
+      }
+
+      if (validation.warnings.length > 0) {
+        console.warn('Workflow validation warnings:', validation.warnings);
+      }
+
+      return workflow;
     } catch (error: any) {
-      console.error('AI API调用失败:', error.response?.data || error.message);
+      console.error('AI API 调用失败:', error.response?.data || error.message);
       throw new Error(`AI生成失败: ${error.response?.data?.message || error.message}`);
     }
   }

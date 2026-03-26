@@ -9,9 +9,8 @@ const router = createRouter({
       component: () => import('../views/Home.vue')
     },
     {
-      path: '/scripts',
-      name: 'scripts',
-      component: () => import('../views/ScriptManagement.vue')
+      path: '/editor',
+      redirect: '/workflow'
     },
     {
       path: '/data',
@@ -27,6 +26,11 @@ const router = createRouter({
       path: '/workflow',
       name: 'workflow',
       component: () => import('../components/workflow/WorkflowEditor.vue')
+    },
+    {
+      path: '/test',
+      name: 'test',
+      component: () => import('../views/WorkflowJsonTest.vue')
     }
   ]
 });

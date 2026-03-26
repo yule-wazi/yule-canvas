@@ -61,8 +61,12 @@ class SocketClient {
     this.socket?.off(event);
   }
 
-  executeScript(scriptId: string, code: string) {
-    this.socket?.emit('execute-script', { scriptId, code });
+  executeWorkflow(workflowId: string, workflow: any) {
+    this.socket?.emit('execute-workflow', { workflowId, workflow });
+  }
+
+  stopExecution() {
+    this.socket?.emit('stop-execution');
   }
 
   offAll() {

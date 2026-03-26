@@ -3,10 +3,10 @@
     <div class="controls">
       <button 
         @click="execute" 
-        :disabled="executing || (!code && !workflow)"
+        :disabled="executing || !workflow"
         class="execute-btn"
       >
-        {{ executing ? '执行中...' : (workflow ? '执行工作流' : '执行脚本') }}
+        {{ executing ? '执行中...' : '执行工作流' }}
       </button>
       <button 
         @click="stop" 
@@ -71,9 +71,7 @@ import socketClient from '../services/socket';
 import storageManager, { type ScrapedData } from '../services/storage';
 
 interface Props {
-  code?: string;
   workflow?: any;
-  scriptId?: string;
   workflowId?: string;
 }
 
@@ -94,7 +92,7 @@ const getExecutionPayload = (res: any) => res?.data ?? res?.result ?? null;
 const autoSaveData = ref(false); // 默认关闭自动保存
 
 const execute = () => {
-  if (!props.code && !props.workflow) return;
+  if (!props.workflow) return;
 
   executing.value = true;
   logs.value = [];
@@ -155,13 +153,7 @@ const execute = () => {
   });
 
   // 发送执行请求
-  if (props.workflow) {
-    // 执行工作流 JSON
-    socketClient.executeWorkflow(props.workflowId || 'temp', props.workflow);
-  } else if (props.code) {
-    // 执行代码字符串
-    socketClient.executeScript(props.scriptId || 'temp', props.code);
-  }
+  socketClient.executeWorkflow(props.workflowId || 'temp', props.workflow);
 };
 
 const stop = () => {
@@ -197,7 +189,7 @@ const formatTime = (timestamp: number) => {
 const saveExecutionResult = (res: any) => {
   const scrapedData: ScrapedData = {
     id: Date.now().toString(),
-    scriptId: props.scriptId || props.workflowId || 'temp',
+    workflowId: props.workflowId || 'temp',
     data: getExecutionPayload(res),
     status: res.success ? 'success' : 'failed',
     executedAt: Date.now(),

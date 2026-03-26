@@ -2,9 +2,9 @@
   <div class="home">
     <div class="hero">
       <h2>欢迎使用数据爬取Agent</h2>
-      <p>AI驱动的网页数据爬取工具，让数据采集变得简单高效</p>
+      <p>AI 生成工作流 JSON，并由可视化执行器直接完成网页采集</p>
       <div class="quick-actions">
-        <router-link to="/scripts" class="action-btn primary">开始使用</router-link>
+        <router-link to="/workflow" class="action-btn primary">开始使用</router-link>
         <a href="https://playwright.dev/" target="_blank" class="action-btn secondary">Playwright文档</a>
       </div>
     </div>
@@ -12,18 +12,23 @@
     <div class="features">
       <div class="feature-card">
         <div class="icon">🤖</div>
-        <h3>AI生成脚本</h3>
-        <p>使用阿里千问或硅基流动AI自动生成Playwright爬虫脚本，无需手写代码</p>
+        <h3>AI生成工作流</h3>
+        <p>使用阿里千问或硅基流动 AI 自动生成 workflow JSON，无需先写脚本再编译</p>
       </div>
       <div class="feature-card">
         <div class="icon">📝</div>
-        <h3>脚本管理</h3>
-        <p>创建、编辑、执行和管理您的爬虫脚本，支持实时日志查看</p>
+        <h3>可视化编排</h3>
+        <p>通过拖拽模块、循环和变量来组合执行链路，直接保存为 workflow JSON</p>
       </div>
       <div class="feature-card">
         <div class="icon">💾</div>
         <h3>数据存储</h3>
         <p>爬取的数据本地存储，支持JSON和表格视图，可导出使用</p>
+      </div>
+      <div class="feature-card" @click="$router.push('/test')" style="cursor: pointer;">
+        <div class="icon">🧪</div>
+        <h3>JSON 测试</h3>
+        <p>直接输入 Workflow JSON 进行测试，方便开发调试</p>
       </div>
     </div>
 
@@ -40,25 +45,21 @@
         <div class="step">
           <div class="step-number">2</div>
           <div class="step-content">
-            <h4>生成脚本</h4>
-            <p>进入脚本管理页面，描述你的需求，让AI生成爬虫代码</p>
+            <h4>生成工作流</h4>
+            <p>进入工作流编辑器或 AI 生成面板，描述需求，让 AI 直接生成 workflow JSON</p>
           </div>
         </div>
         <div class="step">
           <div class="step-number">3</div>
           <div class="step-content">
             <h4>执行并查看结果</h4>
-            <p>点击执行按钮，实时查看日志，获取爬取的数据</p>
+            <p>点击执行按钮，实时查看日志，并将提取结果直接写入数据表</p>
           </div>
         </div>
       </div>
     </div>
 
     <div class="stats">
-      <div class="stat-item">
-        <div class="stat-value">{{ scriptCount }}</div>
-        <div class="stat-label">已保存脚本</div>
-      </div>
       <div class="stat-item">
         <div class="stat-value">{{ dataCount }}</div>
         <div class="stat-label">数据记录</div>
@@ -75,12 +76,10 @@
 import { ref, onMounted } from 'vue';
 import storageManager from '../services/storage';
 
-const scriptCount = ref(0);
 const dataCount = ref(0);
 const storageUsage = ref(0);
 
 onMounted(() => {
-  scriptCount.value = storageManager.getAllScripts().length;
   dataCount.value = storageManager.getAllData().length;
   const usage = storageManager.getStorageUsage();
   storageUsage.value = Math.round(usage.percentage);
@@ -232,7 +231,7 @@ onMounted(() => {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 2rem;
 }
 

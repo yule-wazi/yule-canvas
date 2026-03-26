@@ -16,10 +16,16 @@ export interface Workflow {
 
 export interface WorkflowExecutionResult {
   success: boolean;
-  dataType: string;
-  url: string;
-  timestamp: number;
-  count: number;
-  items: any[];
+  data?: {
+    dataType?: string;
+    url?: string;
+    timestamp?: number;
+    count?: number;
+    results?: {
+      data?: any[];
+    };
+  };
+  logs?: string[];
+  duration?: number;
   error?: string;
 }

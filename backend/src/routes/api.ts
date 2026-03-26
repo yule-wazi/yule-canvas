@@ -14,30 +14,59 @@ router.get('/ai/models', (req, res) => {
   res.json({ success: true, models });
 });
 
-// AI脚本生成接口
-router.post('/ai/generate', async (req, res) => {
+// AI 生成 Workflow JSON 接口（主入口）
+router.post('/ai/generate-workflow', async (req, res) => {
   try {
-    const { prompt, model = 'qwen', options = {} } = req.body;
+    const { prompt, model = 'siliconflow', options = {} } = req.body;
     
     if (!prompt) {
       return res.status(400).json({
         success: false,
-        code: null,
+        workflow: null,
         error: '请提供需求描述'
       });
     }
 
-    const code = await aiManager.generateScript(model, prompt, options);
+    const workflow = await aiManager.generateWorkflow(model, prompt, options);
     
     res.json({
       success: true,
-      code,
+      workflow,
       error: null
     });
   } catch (error: any) {
     res.status(500).json({
       success: false,
-      code: null,
+      workflow: null,
+      error: error.message
+    });
+  }
+});
+
+// AI 生成默认入口，统一指向 workflow JSON
+router.post('/ai/generate-default', async (req, res) => {
+  try {
+    const { prompt, model = 'siliconflow', options = {} } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({
+        success: false,
+        workflow: null,
+        error: '请提供需求描述'
+      });
+    }
+
+    const workflow = await aiManager.generateWorkflow(model, prompt, options);
+
+    res.json({
+      success: true,
+      workflow,
+      error: null
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      workflow: null,
       error: error.message
     });
   }
