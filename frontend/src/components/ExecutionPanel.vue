@@ -3,10 +3,10 @@
     <div class="controls">
       <button 
         @click="execute" 
-        :disabled="executing || !code"
+        :disabled="executing || (!code && !workflow)"
         class="execute-btn"
       >
-        {{ executing ? '执行中...' : '执行脚本' }}
+        {{ executing ? '执行中...' : (workflow ? '执行工作流' : '执行脚本') }}
       </button>
       <button 
         @click="stop" 
@@ -71,8 +71,10 @@ import socketClient from '../services/socket';
 import storageManager, { type ScrapedData } from '../services/storage';
 
 interface Props {
-  code: string;
+  code?: string;
+  workflow?: any;
   scriptId?: string;
+  workflowId?: string;
 }
 
 interface Log {
@@ -88,10 +90,11 @@ const result = ref<any>(null);
 const progress = ref(0);
 const progressMessage = ref('');
 const logsRef = ref<HTMLElement | null>(null);
+const getExecutionPayload = (res: any) => res?.data ?? res?.result ?? null;
 const autoSaveData = ref(false); // 默认关闭自动保存
 
 const execute = () => {
-  if (!props.code) return;
+  if (!props.code && !props.workflow) return;
 
   executing.value = true;
   logs.value = [];
@@ -101,6 +104,7 @@ const execute = () => {
 
   // 连接Socket
   socketClient.connect();
+  socketClient.offAll();
 
   // 监听事件
   socketClient.onLog((log) => {
@@ -115,12 +119,12 @@ const execute = () => {
 
   socketClient.onComplete((res) => {
     executing.value = false;
-    result.value = res.data;
+    result.value = getExecutionPayload(res);
     
     if (res.success) {
       logs.value.push({
         timestamp: Date.now(),
-        message: `✅ 执行成功，耗时 ${(res.duration / 1000).toFixed(2)}秒`
+        message: `✅ 执行成功${res.duration ? `，耗时 ${(res.duration / 1000).toFixed(2)}秒` : ''}`
       });
       
       // 根据开关决定是否保存执行结果
@@ -151,10 +155,18 @@ const execute = () => {
   });
 
   // 发送执行请求
-  socketClient.executeScript(props.scriptId || 'temp', props.code);
+  if (props.workflow) {
+    // 执行工作流 JSON
+    socketClient.executeWorkflow(props.workflowId || 'temp', props.workflow);
+  } else if (props.code) {
+    // 执行代码字符串
+    socketClient.executeScript(props.scriptId || 'temp', props.code);
+  }
 };
 
 const stop = () => {
+  socketClient.stopExecution();
+  socketClient.offAll();
   socketClient.disconnect();
   executing.value = false;
   logs.value.push({
@@ -185,8 +197,8 @@ const formatTime = (timestamp: number) => {
 const saveExecutionResult = (res: any) => {
   const scrapedData: ScrapedData = {
     id: Date.now().toString(),
-    scriptId: props.scriptId || 'temp',
-    data: res.data,
+    scriptId: props.scriptId || props.workflowId || 'temp',
+    data: getExecutionPayload(res),
     status: res.success ? 'success' : 'failed',
     executedAt: Date.now(),
     duration: res.duration,

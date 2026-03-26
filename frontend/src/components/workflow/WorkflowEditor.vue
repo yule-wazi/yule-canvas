@@ -255,9 +255,7 @@ import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
 import { useDataTableStore } from '../../stores/dataTable';
-import api from '../../services/api';
 import socketService from '../../services/socket';
-import storageManager from '../../services/storage';
 import type { BlockType } from '../../types/block';
 import { simpleLogWorkflow } from '../../examples/workflowExample';
 import CustomNode from './CustomNode.vue';
@@ -1013,36 +1011,12 @@ async function save() {
     
     localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(workflows));
     
+    workflowStore.currentWorkflow = workflow as any;
+
     // 记住当前工作流ID
     localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
 
-    // 编译工作流为代码
-    const response: any = await api.post('/workflow/compile', {
-      workflow: {
-        blocks: workflowStore.blocks,
-        connections: workflowStore.connections
-      }
-    });
-
-    if (response && response.code) {
-      // 保存到脚本管理系统
-      const script = {
-        id: workflow.id,
-        name: workflow.name || '未命名工作流',
-        description: workflow.description || '可视化工作流生成',
-        code: response.code,
-        aiModel: 'workflow',
-        createdAt: workflow.createdAt,
-        updatedAt: workflow.updatedAt,
-        executionCount: 0
-      };
-
-      storageManager.saveScript(script);
-      
-      toast.value?.show({ message: '工作流和脚本保存成功！', type: 'success' });
-    } else {
-      toast.value?.show({ message: '工作流保存成功，但代码生成失败', type: 'warning' });
-    }
+    toast.value?.show({ message: '工作流保存成功', type: 'success' });
   } catch (error: any) {
     console.error('保存失败:', error);
     toast.value?.show({ message: '保存失败: ' + error.message, type: 'error' });
@@ -1133,28 +1107,21 @@ function importJson() {
       return;
     }
 
-    // 清空当前工作流
-    workflowStore.blocks = [];
-    workflowStore.connections = [];
+    const importedWorkflow = {
+      ...(workflowStore.currentWorkflow || {
+        id: Date.now().toString(),
+        name: '导入的工作流',
+        description: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }),
+      blocks: workflow.blocks,
+      connections: workflow.connections,
+      variables: workflow.variables || {},
+      updatedAt: Date.now()
+    };
 
-    // 导入 blocks
-    workflow.blocks.forEach((block: any) => {
-      workflowStore.blocks.push(block);
-    });
-
-    // 导入 connections
-    workflow.connections.forEach((conn: any) => {
-      workflowStore.connections.push(conn);
-    });
-
-    // 导入 variables
-    if (workflow.variables) {
-      if (workflowStore.currentWorkflow) {
-        workflowStore.currentWorkflow.variables = workflow.variables;
-      }
-    }
-
-    workflowStore.saveToHistory();
+    workflowStore.loadWorkflow(importedWorkflow as any);
 
     showImportModal.value = false;
     importJsonText.value = '';
@@ -1197,9 +1164,27 @@ function clear() {
 }
 
 function stopExecution() {
+  socketService.stopExecution();
+  socketService.offAll();
   socketService.disconnect();
   isExecuting.value = false;
   executionLogs.value.push('\n⚠️ 执行已停止');
+}
+
+function getWorkflowResultRows(result: any) {
+  if (!result) {
+    return [];
+  }
+
+  if (Array.isArray(result.results?.data)) {
+    return result.results.data;
+  }
+
+  if (Array.isArray(result.data)) {
+    return result.data;
+  }
+
+  return [];
 }
 
 function saveToDataTables(results: any) {
@@ -1313,6 +1298,7 @@ async function executeWorkflow() {
 
     // 连接Socket.io
     socketService.connect();
+    socketService.offAll();
 
     // 监听日志
     socketService.onLog((log) => {
@@ -1339,18 +1325,9 @@ async function executeWorkflow() {
       // WorkflowExecutor 返回的格式是 { success, data, logs, duration }
       executionResult.value = result.data;
       
-      // 显示提取的数据统计
-      if (result.data && result.data.results) {
-        const { images, data, links } = result.data.results;
-        if (images && images.length > 0) {
-          executionLogs.value.push(`� 提取了 ${images.length} 张图片`);
-        }
-        if (data && data.length > 0) {
-          executionLogs.value.push(`📊 提取了 ${data.length} 条数据`);
-        }
-        if (links && links.length > 0) {
-          executionLogs.value.push(`🔗 提取了 ${links.length} 个链接`);
-        }
+      const extractedRows = getWorkflowResultRows(result.data);
+      if (extractedRows.length > 0) {
+        executionLogs.value.push(`📊 提取了 ${extractedRows.length} 条数据`);
       }
       
       isExecuting.value = false;
