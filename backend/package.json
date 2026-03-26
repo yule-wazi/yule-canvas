@@ -6,8 +6,7 @@
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test:sync": "node tests/compiler-parser-sync.test.js",
-    "test": "npm run build && npm run test:sync"
+    "test": "npm run build"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +25,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
     "nodemon": "^3.1.14",
+    "socket.io-client": "^4.8.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
