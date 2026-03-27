@@ -9,9 +9,14 @@ export class MockPage {
   private pageScrollHeight = 2400;
   private scenario: Scenario;
   public readonly actions: ActionRecord[] = [];
+  private parentPage: MockPage | null;
 
-  constructor(scenario: Scenario = {}) {
+  constructor(scenario: Scenario = {}, actions?: ActionRecord[], parentPage: MockPage | null = null) {
     this.scenario = scenario;
+    this.parentPage = parentPage;
+    if (actions) {
+      this.actions = actions;
+    }
   }
 
   url(): string {
@@ -33,6 +38,24 @@ export class MockPage {
     }
 
     this.actions.push({ type: 'goBack', url: this.currentUrl });
+  }
+
+  async bringToFront(): Promise<void> {
+    this.actions.push({ type: 'bringToFront', url: this.currentUrl });
+  }
+
+  async close(): Promise<void> {
+    this.actions.push({ type: 'closePage', url: this.currentUrl });
+  }
+
+  context() {
+    return {
+      newPage: async () => {
+        const popup = new MockPage(this.scenario, this.actions, this);
+        this.actions.push({ type: 'newPage' });
+        return popup as any;
+      }
+    };
   }
 
   async goForward(): Promise<void> {
@@ -143,6 +166,14 @@ export class MockPage {
 
       this.actions.push({ type: 'extractLinks', pattern, count: links.length });
       return links as TResult;
+    }
+
+    if (typeof arg === 'string' && source.includes("closest?.('a[href]')")) {
+      if (this.scenario.clickTargets && Object.prototype.hasOwnProperty.call(this.scenario.clickTargets, arg)) {
+        return this.scenario.clickTargets[arg] as TResult;
+      }
+
+      return `mock://clicked/${arg.replace(/[^a-z0-9_-]/gi, '_')}` as TResult;
     }
 
     throw new Error(`Unsupported evaluate call in regression mock: ${source.slice(0, 120)}...`);

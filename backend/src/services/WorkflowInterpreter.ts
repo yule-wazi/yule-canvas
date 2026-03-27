@@ -48,6 +48,7 @@ export interface ExecutionContext {
   logs: string[];
   extractedData: any[];
   loopStack: Array<{ loopId: string; iteration: number }>;
+  pageStack: Page[];
 }
 
 export interface ExecutionResult {
@@ -119,7 +120,8 @@ export class WorkflowInterpreter {
         variables: this.normalizeVariables(workflow.variables),
         logs: [],
         extractedData: [],
-        loopStack: []
+        loopStack: [],
+        pageStack: []
       };
 
       const blocksById = new Map(workflow.blocks.map(block => [block.id, block]));
@@ -731,6 +733,16 @@ export class WorkflowInterpreter {
 
   private async executeBack(context: ExecutionContext): Promise<void> {
     this.log(context, '返回上一页');
+    if (context.pageStack.length > 0) {
+      this.log(context, '关闭当前标签页并返回上一个页面');
+      const currentPage = context.page;
+      const previousPage = context.pageStack.pop()!;
+      await currentPage.close();
+      context.page = previousPage;
+      await context.page.bringToFront?.();
+      return;
+    }
+
     await context.page.goBack();
   }
 
@@ -747,6 +759,39 @@ export class WorkflowInterpreter {
 
     if (data.waitForElement) {
       await context.page.waitForSelector(selector, { timeout });
+    }
+
+    if (data.openInNewTab) {
+      const waitUntil = data.waitUntil || 'domcontentloaded';
+      const currentPage = context.page;
+
+      const nextUrl = await currentPage.evaluate((sel: string) => {
+        const target = (globalThis as any).document.querySelector(sel) as any;
+        if (!target) {
+          return '';
+        }
+
+        const anchor = target.closest?.('a[href]') || target;
+        return anchor?.href || anchor?.getAttribute?.('href') || '';
+      }, selector);
+
+      if (nextUrl) {
+        const popup = await currentPage.context().newPage();
+        await popup.goto(nextUrl, {
+          waitUntil,
+          timeout
+        });
+        await popup.waitForLoadState?.(waitUntil).catch(() => null);
+
+        context.pageStack.push(currentPage);
+        context.page = popup;
+        this.log(context, `已切换到新标签页: ${popup.url() || nextUrl}`);
+        return;
+      }
+
+      this.log(context, '未检测到 href，回退为当前页普通点击');
+      await currentPage.click(selector);
+      return;
     }
 
     await context.page.click(selector);

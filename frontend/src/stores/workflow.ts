@@ -131,7 +131,13 @@ export const useWorkflowStore = defineStore('workflow', {
         click: {
           label: '点击元素',
           category: 'interaction',
-          defaultData: { selector: '', waitForElement: true, timeout: DEFAULT_SELECTOR_TIMEOUT },
+          defaultData: {
+            selector: '',
+            waitForElement: true,
+            timeout: DEFAULT_SELECTOR_TIMEOUT,
+            openInNewTab: false,
+            waitUntil: 'domcontentloaded'
+          },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },

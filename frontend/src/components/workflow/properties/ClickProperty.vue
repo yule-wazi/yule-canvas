@@ -1,7 +1,7 @@
 <template>
   <div class="property-form">
     <div class="form-group">
-      <label>CSS选择器</label>
+      <label>CSS 选择器</label>
       <input
         v-model="localData.selector"
         type="text"
@@ -22,7 +22,28 @@
     </div>
 
     <div class="form-group">
-      <label>超时时间 (毫秒)</label>
+      <label>
+        <input
+          v-model="localData.openInNewTab"
+          type="checkbox"
+          @change="emitUpdate"
+        />
+        在新标签页打开
+      </label>
+      <small>适合列表页点开详情。后续模块会在新标签页中执行，使用“返回”可关闭当前标签页并回到列表页。</small>
+    </div>
+
+    <div class="form-group" v-if="localData.openInNewTab">
+      <label>新标签页等待策略</label>
+      <select v-model="localData.waitUntil" @change="emitUpdate">
+        <option value="load">load</option>
+        <option value="domcontentloaded">domcontentloaded</option>
+        <option value="networkidle">networkidle</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>超时时间（毫秒）</label>
       <input
         v-model.number="localData.timeout"
         type="number"
@@ -30,7 +51,7 @@
         step="1000"
         @input="emitUpdate"
       />
-      <small>等待元素出现的最长时间</small>
+      <small>等待元素或新标签页加载的最长时间。</small>
     </div>
   </div>
 </template>
@@ -47,11 +68,27 @@ const emit = defineEmits<{
   update: [data: any];
 }>();
 
-const localData = ref({ ...props.block.data });
+const localData = ref({
+  waitForElement: true,
+  timeout: 5000,
+  openInNewTab: false,
+  waitUntil: 'domcontentloaded',
+  ...props.block.data
+});
 
-watch(() => props.block.data, (newData) => {
-  localData.value = { ...newData };
-}, { deep: true });
+watch(
+  () => props.block.data,
+  (newData) => {
+    localData.value = {
+      waitForElement: true,
+      timeout: 5000,
+      openInNewTab: false,
+      waitUntil: 'domcontentloaded',
+      ...newData
+    };
+  },
+  { deep: true }
+);
 
 function emitUpdate() {
   emit('update', localData.value);
@@ -80,7 +117,8 @@ function emitUpdate() {
 }
 
 .form-group input[type="text"],
-.form-group input[type="number"] {
+.form-group input[type="number"],
+.form-group select {
   background: #0d1117;
   border: 1px solid #30363d;
   border-radius: 6px;
@@ -90,7 +128,8 @@ function emitUpdate() {
 }
 
 .form-group input[type="text"]:focus,
-.form-group input[type="number"]:focus {
+.form-group input[type="number"]:focus,
+.form-group select:focus {
   outline: none;
   border-color: #58a6ff;
 }

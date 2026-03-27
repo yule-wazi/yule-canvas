@@ -339,6 +339,72 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   });
 
   cases.push({
+    name: 'click-open-in-new-tab-then-back',
+    workflow: makeWorkflow(
+      [
+        makeBlock('navigate-1', 'navigate', { url: 'https://example.com/list', waitUntil: 'domcontentloaded', timeout: 1000 }, 'browser'),
+        makeBlock('click-1', 'click', { selector: '.detail-link', waitForElement: true, timeout: 1000, openInNewTab: true, waitUntil: 'domcontentloaded' }, 'interaction'),
+        makeBlock('extract-1', 'extract', {
+          extractions: [{ selector: '.detail video', attribute: 'src', customAttribute: '', saveToColumn: 'video' }],
+          multiple: false,
+          timeout: 1000
+        }, 'extraction'),
+        makeBlock('back-1', 'back', {}, 'browser'),
+        makeBlock('log-1', 'log', { message: 'returned' }, 'browser')
+      ],
+      [
+        flow('navigate-1', 'click-1', 'c1'),
+        flow('click-1', 'extract-1', 'c2'),
+        flow('extract-1', 'back-1', 'c3'),
+        flow('back-1', 'log-1', 'c4')
+      ]
+    ),
+    coveredTypes: ['navigate', 'click', 'extract', 'back', 'log'],
+    scenario: {
+      clickTargets: {
+        '.detail-link': 'https://example.com/detail/1'
+      }
+    },
+    assert: ({ result, actions, trace }) => {
+      assert(result.success, 'click-open-in-new-tab-then-back should succeed');
+      assert(blockOrder(trace).join(',') === 'navigate-1,click-1,extract-1,back-1,log-1', 'new tab flow block order mismatch');
+      assert(actions.some(action => action.type === 'newPage'), 'click should create a new page');
+      assert(actions.some(action => action.type === 'goto' && action.url === 'https://example.com/detail/1'), 'new tab should navigate to extracted link');
+      assert(actions.some(action => action.type === 'closePage' && action.url === 'https://example.com/detail/1'), 'back should close popup page');
+      assert(actions.some(action => action.type === 'bringToFront' && action.url === 'https://example.com/list'), 'back should restore parent page');
+      assert(result.result.url === 'https://example.com/list', 'workflow should end back on the list page');
+    }
+  });
+
+  cases.push({
+    name: 'click-open-in-new-tab-falls-back-to-normal-click-without-href',
+    workflow: makeWorkflow(
+      [
+        makeBlock('navigate-1', 'navigate', { url: 'https://example.com/list', waitUntil: 'domcontentloaded', timeout: 1000 }, 'browser'),
+        makeBlock('click-1', 'click', { selector: '.js-action', waitForElement: true, timeout: 1000, openInNewTab: true, waitUntil: 'domcontentloaded' }, 'interaction'),
+        makeBlock('log-1', 'log', { message: 'after click' }, 'browser')
+      ],
+      [
+        flow('navigate-1', 'click-1', 'c1'),
+        flow('click-1', 'log-1', 'c2')
+      ],
+      {}
+    ),
+    scenario: {
+      clickTargets: {
+        '.js-action': ''
+      }
+    },
+    coveredTypes: ['navigate', 'click', 'log'],
+    assert: ({ result, actions, trace }) => {
+      assert(result.success, 'click-open-in-new-tab-falls-back-to-normal-click-without-href should succeed');
+      assert(blockOrder(trace).join(',') === 'navigate-1,click-1,log-1', 'fallback click flow block order mismatch');
+      assert(!actions.some(action => action.type === 'newPage'), 'fallback click should not create a new tab');
+      assert(actions.some(action => action.type === 'click' && action.selector === '.js-action'), 'fallback click should behave like normal click');
+    }
+  });
+
+  cases.push({
     name: 'history-back-forward',
     workflow: makeWorkflow(
       [
