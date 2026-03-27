@@ -30,16 +30,37 @@
         />
         在新标签页打开
       </label>
-      <small>适合列表页点开详情。后续模块会在新标签页中执行，使用“返回”可关闭当前标签页并回到列表页。</small>
+      <small>适合列表页点击详情页。后续模块会切到新标签页执行，配合“返回”可关闭当前标签页并回到列表页。</small>
     </div>
 
-    <div class="form-group" v-if="localData.openInNewTab">
+    <div
+      v-if="localData.openInNewTab"
+      class="form-group"
+    >
       <label>新标签页等待策略</label>
-      <select v-model="localData.waitUntil" @change="emitUpdate">
+      <select
+        v-model="localData.waitUntil"
+        @change="emitUpdate"
+      >
         <option value="load">load</option>
         <option value="domcontentloaded">domcontentloaded</option>
         <option value="networkidle">networkidle</option>
       </select>
+    </div>
+
+    <div
+      v-if="localData.openInNewTab"
+      class="form-group"
+    >
+      <label>
+        <input
+          v-model="localData.runInBackground"
+          type="checkbox"
+          @change="emitUpdate"
+        />
+        在后台执行子流程
+      </label>
+      <small>开启后，直到对应“返回”之前的子链会在新标签页中执行，主页面会直接继续返回块之后的主链。</small>
     </div>
 
     <div class="form-group">
@@ -68,11 +89,17 @@ const emit = defineEmits<{
   update: [data: any];
 }>();
 
-const localData = ref({
+const createDefaultData = () => ({
+  selector: '',
   waitForElement: true,
   timeout: 5000,
   openInNewTab: false,
-  waitUntil: 'domcontentloaded',
+  runInBackground: false,
+  waitUntil: 'domcontentloaded'
+});
+
+const localData = ref({
+  ...createDefaultData(),
   ...props.block.data
 });
 
@@ -80,10 +107,7 @@ watch(
   () => props.block.data,
   (newData) => {
     localData.value = {
-      waitForElement: true,
-      timeout: 5000,
-      openInNewTab: false,
-      waitUntil: 'domcontentloaded',
+      ...createDefaultData(),
       ...newData
     };
   },
@@ -91,7 +115,11 @@ watch(
 );
 
 function emitUpdate() {
-  emit('update', localData.value);
+  if (!localData.value.openInNewTab) {
+    localData.value.runInBackground = false;
+  }
+
+  emit('update', { ...localData.value });
 }
 </script>
 

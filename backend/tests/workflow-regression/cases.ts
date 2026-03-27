@@ -405,6 +405,59 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   });
 
   cases.push({
+    name: 'click-open-in-new-tab-background-child-chain',
+    workflow: makeWorkflow(
+      [
+        makeBlock('navigate-1', 'navigate', { url: 'https://example.com/list', waitUntil: 'domcontentloaded', timeout: 1000 }, 'browser'),
+        makeBlock('click-1', 'click', { selector: '.detail-link', waitForElement: true, timeout: 1000, openInNewTab: true, runInBackground: true, waitUntil: 'domcontentloaded' }, 'interaction'),
+        makeBlock('extract-1', 'extract', {
+          extractions: [{ selector: '.detail video', attribute: 'src', customAttribute: '', saveToColumn: 'video' }],
+          multiple: false,
+          timeout: 1000,
+          saveToTable: 'table_background',
+          mergeKey: '{{index}}'
+        }, 'extraction'),
+        makeBlock('back-1', 'back', {}, 'browser'),
+        makeBlock('log-1', 'log', { message: 'continue list {{index}}' }, 'browser'),
+        makeBlock('loop-1', 'loop', {
+          mode: 'count',
+          count: 2,
+          condition: '',
+          maxIterations: 10,
+          useVariable: true,
+          variableName: 'index',
+          startValueType: 'custom',
+          startValue: '1'
+        }, 'logic')
+      ],
+      [
+        loopStart('loop-1', 'click-1', 'c1'),
+        flow('click-1', 'extract-1', 'c2'),
+        flow('extract-1', 'back-1', 'c3'),
+        flow('back-1', 'log-1', 'c4'),
+        loopEnd('log-1', 'loop-1', 'c5')
+      ]
+    ),
+    coveredTypes: ['navigate', 'click', 'extract', 'back', 'log', 'loop'],
+    scenario: {
+      clickTargets: {
+        '.detail-link': 'https://example.com/detail/1'
+      }
+    },
+    assert: ({ result, trace, actions, saveEvents }) => {
+      assert(result.success, 'click-open-in-new-tab-background-child-chain should succeed');
+      assert(countEvents(trace, 'loop-iteration', 'loop-1') === 2, 'background click loop should iterate twice');
+      assert(actions.filter(action => action.type === 'newPage').length === 2, 'background click should open one popup per loop iteration');
+      assert(actions.filter(action => action.type === 'goto' && action.url === 'https://example.com/detail/1').length === 2, 'background click should navigate each popup to detail url');
+      assert(actions.filter(action => action.type === 'closePage' && action.url === 'https://example.com/detail/1').length === 2, 'background child chain should close popups via back');
+      assert(saveEvents.length === 2, 'background child chain should save one detail row per iteration');
+      assert(saveEvents.every((event: any) => event.rows[0].video === 'video:src:1'), 'background child chain should extract detail data');
+      assert(result.logs.some((line: string) => line.includes('continue list 1')), 'main chain should continue after first spawned child');
+      assert(result.logs.some((line: string) => line.includes('continue list 2')), 'main chain should continue after second spawned child');
+    }
+  });
+
+  cases.push({
     name: 'history-back-forward',
     workflow: makeWorkflow(
       [

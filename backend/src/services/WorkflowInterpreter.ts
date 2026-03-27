@@ -48,7 +48,13 @@ export interface ExecutionContext {
   logs: string[];
   extractedData: any[];
   loopStack: Array<{ loopId: string; iteration: number }>;
-  pageStack: Page[];
+  pageStack: Array<{ page: Page; activateOnReturn: boolean }>;
+  backgroundTasks: Promise<void>[];
+}
+
+interface PageStackEntry {
+  page: Page;
+  activateOnReturn: boolean;
 }
 
 export interface ExecutionResult {
@@ -121,7 +127,8 @@ export class WorkflowInterpreter {
         logs: [],
         extractedData: [],
         loopStack: [],
-        pageStack: []
+        pageStack: [],
+        backgroundTasks: []
       };
 
       const blocksById = new Map(workflow.blocks.map(block => [block.id, block]));
@@ -148,6 +155,7 @@ export class WorkflowInterpreter {
       );
 
       await this.executeSequence(sequence, blocksById, workflow.connections, loopInfos, context);
+      await this.waitForBackgroundTasks(context);
 
       this.log(context, '工作流执行完成');
 
@@ -173,8 +181,23 @@ export class WorkflowInterpreter {
     loopInfos: Map<string, LoopInfo>,
     context: ExecutionContext
   ): Promise<void> {
-    for (const unit of sequence) {
+    for (let index = 0; index < sequence.length; index++) {
+      const unit = sequence[index];
       if (unit.kind === 'block' && unit.block) {
+        const backgroundResult = await this.trySpawnBackgroundPopupChain(
+          sequence,
+          index,
+          blocksById,
+          connections,
+          loopInfos,
+          context
+        );
+
+        if (backgroundResult.handled) {
+          index = backgroundResult.nextIndex - 1;
+          continue;
+        }
+
         this.trace({
           type: 'block-start',
           blockId: unit.block.id,
@@ -364,6 +387,93 @@ export class WorkflowInterpreter {
       .join(',');
 
     return `${blockIds}|${loopIds}|${connectionIds}`;
+  }
+
+  private async trySpawnBackgroundPopupChain(
+    sequence: ExecutionUnit[],
+    currentIndex: number,
+    blocksById: Map<string, Block>,
+    connections: Connection[],
+    loopInfos: Map<string, LoopInfo>,
+    context: ExecutionContext
+  ): Promise<{ handled: boolean; nextIndex: number }> {
+    const unit = sequence[currentIndex];
+    const block = unit.kind === 'block' ? unit.block : undefined;
+
+    if (!block || block.type !== 'click') {
+      return { handled: false, nextIndex: currentIndex + 1 };
+    }
+
+    const clickData = this.replaceVariables(block.data, context.variables);
+    if (!clickData.openInNewTab || !clickData.runInBackground) {
+      return { handled: false, nextIndex: currentIndex + 1 };
+    }
+
+    if (clickData.waitForElement) {
+      await context.page.waitForSelector(clickData.selector, {
+        timeout: clickData.timeout || 5000
+      });
+    }
+
+    const backgroundEndIndex = this.findBackgroundChainEndIndex(sequence, currentIndex + 1);
+    if (backgroundEndIndex === -1) {
+      this.log(context, '后台新标签页执行未找到结束返回块，回退为普通顺序点击');
+      return { handled: false, nextIndex: currentIndex + 1 };
+    }
+
+    const popup = await this.openPageFromClick(clickData, context.page);
+    if (!popup) {
+      this.log(context, '未检测到 href，回退为当前页普通点击');
+      return { handled: false, nextIndex: currentIndex + 1 };
+    }
+
+    this.trace({
+      type: 'block-start',
+      blockId: block.id,
+      blockType: block.type,
+      label: block.label
+    });
+    this.trace({
+      type: 'block-end',
+      blockId: block.id,
+      blockType: block.type,
+      label: block.label
+    });
+
+    const childSequence = sequence.slice(currentIndex + 1, backgroundEndIndex + 1);
+    const parentPage = context.page;
+    const childContext: ExecutionContext = {
+      page: popup,
+      variables: { ...context.variables },
+      logs: context.logs,
+      extractedData: context.extractedData,
+      loopStack: [...context.loopStack],
+      pageStack: [{ page: parentPage, activateOnReturn: false }],
+      backgroundTasks: context.backgroundTasks
+    };
+
+    this.log(context, `后台标签页任务已启动: ${popup.url()}`);
+
+    const task = this.executeSequence(childSequence, blocksById, connections, loopInfos, childContext)
+      .finally(async () => {
+        if (childContext.page === popup) {
+          await popup.close().catch(() => null);
+        }
+      });
+
+    context.backgroundTasks.push(task);
+    return { handled: true, nextIndex: backgroundEndIndex + 1 };
+  }
+
+  private findBackgroundChainEndIndex(sequence: ExecutionUnit[], startIndex: number): number {
+    for (let index = startIndex; index < sequence.length; index++) {
+      const unit = sequence[index];
+      if (unit.kind === 'block' && unit.block?.type === 'back') {
+        return index;
+      }
+    }
+
+    return -1;
   }
 
   private async executeLoop(
@@ -579,6 +689,16 @@ export class WorkflowInterpreter {
     }
   }
 
+  private async waitForBackgroundTasks(context: ExecutionContext): Promise<void> {
+    let awaitedCount = 0;
+
+    while (awaitedCount < context.backgroundTasks.length) {
+      const pendingTasks = context.backgroundTasks.slice(awaitedCount);
+      awaitedCount = context.backgroundTasks.length;
+      await Promise.all(pendingTasks);
+    }
+  }
+
   private getLoopStartValue(loopBlock: Block, context: ExecutionContext): number {
     const startValueType = loopBlock.data.startValueType;
     const rawStartValue = loopBlock.data.startValue;
@@ -736,10 +856,12 @@ export class WorkflowInterpreter {
     if (context.pageStack.length > 0) {
       this.log(context, '关闭当前标签页并返回上一个页面');
       const currentPage = context.page;
-      const previousPage = context.pageStack.pop()!;
+      const previousPage = context.pageStack.pop() as PageStackEntry;
       await currentPage.close();
-      context.page = previousPage;
-      await context.page.bringToFront?.();
+      context.page = previousPage.page;
+      if (previousPage.activateOnReturn) {
+        await context.page.bringToFront?.();
+      }
       return;
     }
 
@@ -762,34 +884,20 @@ export class WorkflowInterpreter {
     }
 
     if (data.openInNewTab) {
-      const waitUntil = data.waitUntil || 'domcontentloaded';
       const currentPage = context.page;
+      const popup = await this.openPageFromClick(data, currentPage);
 
-      const nextUrl = await currentPage.evaluate((sel: string) => {
-        const target = (globalThis as any).document.querySelector(sel) as any;
-        if (!target) {
-          return '';
-        }
-
-        const anchor = target.closest?.('a[href]') || target;
-        return anchor?.href || anchor?.getAttribute?.('href') || '';
-      }, selector);
-
-      if (nextUrl) {
-        const popup = await currentPage.context().newPage();
-        await popup.goto(nextUrl, {
-          waitUntil,
-          timeout
+      if (popup) {
+        context.pageStack.push({
+          page: currentPage,
+          activateOnReturn: true
         });
-        await popup.waitForLoadState?.(waitUntil).catch(() => null);
-
-        context.pageStack.push(currentPage);
         context.page = popup;
-        this.log(context, `已切换到新标签页: ${popup.url() || nextUrl}`);
+        this.log(context, `Switched to new tab: ${popup.url()}`);
         return;
       }
 
-      this.log(context, '未检测到 href，回退为当前页普通点击');
+      this.log(context, 'No href detected, falling back to a normal click');
       await currentPage.click(selector);
       return;
     }
@@ -1079,5 +1187,32 @@ export class WorkflowInterpreter {
   private async executeLog(data: any, context: ExecutionContext): Promise<void> {
     const message = data.message || '';
     this.log(context, `日志: ${message}`);
+  }
+
+  private async openPageFromClick(data: any, page: Page): Promise<Page | null> {
+    const selector = data.selector;
+    const timeout = data.timeout || 5000;
+    const waitUntil = data.waitUntil || 'domcontentloaded';
+    const nextUrl = await page.evaluate((sel: string) => {
+      const target = (globalThis as any).document.querySelector(sel) as any;
+      if (!target) {
+        return '';
+      }
+
+      const anchor = target.closest?.('a[href]') || target;
+      return anchor?.href || anchor?.getAttribute?.('href') || '';
+    }, selector);
+
+    if (!nextUrl) {
+      return null;
+    }
+
+    const popup = await page.context().newPage();
+    await popup.goto(nextUrl, {
+      waitUntil,
+      timeout
+    });
+    await popup.waitForLoadState?.(waitUntil).catch(() => null);
+    return popup;
   }
 }

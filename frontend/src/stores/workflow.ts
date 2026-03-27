@@ -136,6 +136,7 @@ export const useWorkflowStore = defineStore('workflow', {
             waitForElement: true,
             timeout: DEFAULT_SELECTOR_TIMEOUT,
             openInNewTab: false,
+            runInBackground: false,
             waitUntil: 'domcontentloaded'
           },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
