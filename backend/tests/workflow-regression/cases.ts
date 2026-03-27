@@ -152,7 +152,8 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
       assert(actions.some(action => action.type === 'waitForSelector' && action.selector === '.page-2 .card img'), 'extract should replace variable in selector');
       assert(saveEvents.length === 1, 'extract should emit one save event');
       assert(saveEvents[0].rows.length === 4, 'extract should save all extracted rows');
-      assert(saveEvents[0].rows.every((row: any) => String(row._mergeKey) === '2'), 'extract should resolve mergeKey from global variable');
+      assert(saveEvents[0].rows.every((row: any) => String(row._mergeDisplayKey) === '2'), 'extract should keep readable merge key display');
+      assert(saveEvents[0].rows.every((row: any) => String(row._mergeKey) === '2'), 'extract without loop scope should keep merge key stable');
       assert(result.result.results.data.length === 4, 'extract should persist all rows');
     }
   });
@@ -195,6 +196,7 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
     assert: ({ result, saveEvents }) => {
       assert(result.success, 'extract-literal-merge-key should succeed');
       assert(saveEvents[0].rows.every((row: any) => row._mergeKey === 'constant-key'), 'extract should preserve literal mergeKey');
+      assert(saveEvents[0].rows.every((row: any) => row._mergeDisplayKey === 'constant-key'), 'extract should expose readable merge key display');
       assert(result.result.results.data.length === 2, 'extract should persist two rows');
     }
   });
@@ -544,6 +546,55 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   });
 
   cases.push({
+    name: 'merge-key-is-scoped-by-loop-context',
+    workflow: makeWorkflow(
+      [
+        makeBlock('extract-1', 'extract', {
+          extractions: [{ selector: '.page .card:nth-child({{index}}) img', attribute: 'src', customAttribute: '', saveToColumn: 'cover' }],
+          multiple: false,
+          timeout: 1000,
+          saveToTable: 'table_loop_merge',
+          mergeKey: 'index'
+        }, 'extraction'),
+        makeBlock('extract-2', 'extract', {
+          extractions: [{ selector: '.detail video', attribute: 'src', customAttribute: '', saveToColumn: 'video' }],
+          multiple: false,
+          timeout: 1000,
+          saveToTable: 'table_loop_merge',
+          mergeKey: 'index'
+        }, 'extraction'),
+        makeBlock('loop-1', 'loop', {
+          mode: 'count',
+          count: 2,
+          condition: '',
+          maxIterations: 10,
+          useVariable: false
+        }, 'logic')
+      ],
+      [
+        loopStart('loop-1', 'extract-1', 'c1'),
+        flow('extract-1', 'extract-2', 'c2'),
+        loopEnd('extract-2', 'loop-1', 'c3')
+      ],
+      { index: { value: '1', description: '' } }
+    ),
+    coveredTypes: ['loop', 'extract'],
+    assert: ({ result, saveEvents }) => {
+      assert(result.success, 'merge-key-is-scoped-by-loop-context should succeed');
+      assert(saveEvents.length === 4, 'two extracts across two outer iterations should emit four save events');
+      const firstThumbKey = saveEvents[0].rows[0]._mergeKey;
+      const firstVideoKey = saveEvents[1].rows[0]._mergeKey;
+      const secondThumbKey = saveEvents[2].rows[0]._mergeKey;
+      const secondVideoKey = saveEvents[3].rows[0]._mergeKey;
+      assert(firstThumbKey === firstVideoKey, 'same inner iteration should merge across extract blocks');
+      assert(secondThumbKey === secondVideoKey, 'same later iteration should merge across extract blocks');
+      assert(firstThumbKey !== secondThumbKey, 'different loop iterations should not collide on merge key');
+      assert(saveEvents.every((event: any) => String(event.rows[0]._mergeDisplayKey) === '1'), 'display merge key should stay readable');
+      assert(result.result.results.data.length === 4, 'execution result should retain all saved row payloads');
+    }
+  });
+
+  cases.push({
     name: 'nested-loop-order-and-scope',
     workflow: makeWorkflow(
       [
@@ -603,8 +654,10 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
       assert(countEvents(trace, 'loop-iteration', 'outer-loop') === 2, 'outer loop should iterate twice');
       assert(countEvents(trace, 'loop-iteration', 'inner-loop') === 2, 'inner loop should iterate once per outer loop');
       assert(saveEvents.length === 2, 'nested loop should save once per outer iteration');
-      assert(String(saveEvents[0].rows[0]._mergeKey) === '1', 'first nested save should use page=1');
-      assert(String(saveEvents[1].rows[0]._mergeKey) === '2', 'second nested save should use page=2');
+      assert(String(saveEvents[0].rows[0]._mergeDisplayKey) === '1', 'first nested save should display page=1');
+      assert(String(saveEvents[1].rows[0]._mergeDisplayKey) === '2', 'second nested save should display page=2');
+      assert(String(saveEvents[0].rows[0]._mergeKey).includes('outer-loop:1'), 'first nested save should scope merge key to outer iteration');
+      assert(String(saveEvents[1].rows[0]._mergeKey).includes('outer-loop:2'), 'second nested save should scope merge key to outer iteration');
     }
   });
 

@@ -9,11 +9,11 @@
         />
         提取多个元素
       </label>
-      <small>如果选中，将提取所有匹配的元素；否则只提取第一个</small>
+      <small>选中后提取所有匹配元素，否则只提取第一个。</small>
     </div>
 
     <div class="form-group">
-      <label>等待超时 (毫秒)</label>
+      <label>等待超时（毫秒）</label>
       <input
         v-model.number="localData.timeout"
         type="number"
@@ -21,7 +21,7 @@
         step="1000"
         @input="emitUpdate"
       />
-      <small>等待元素出现的最长时间</small>
+      <small>等待元素出现的最长时间。</small>
     </div>
 
     <div class="form-group">
@@ -32,18 +32,18 @@
           {{ table.name }}
         </option>
       </select>
-      <small>选择要保存数据的数据表</small>
+      <small>选择要保存数据的数据表。</small>
     </div>
 
     <div class="form-group" v-if="localData.saveToTable && !localData.multiple">
-      <label>合并键（可选）</label>
-      <select v-model="localData.mergeKey" @change="emitUpdate">
-        <option value="">不使用合并键</option>
-        <option v-for="(varValue, varName) in globalVariables" :key="varName" :value="varName">
-          {{ varName }} = {{ varValue }}
-        </option>
-      </select>
-      <small>💡 选择一个全局变量作为合并键，相同键值的数据会自动合并</small>
+      <label>合并键模板（可选）</label>
+      <input
+        v-model="localData.mergeKey"
+        type="text"
+        placeholder="例如: {{index}} 或 page-{{page}}-item-{{index}}"
+        @input="emitUpdate"
+      />
+      <small>支持变量模板。系统会自动附加当前循环作用域，避免跨页或外层循环时发生冲突。</small>
     </div>
 
     <div class="extractions-section">
@@ -58,7 +58,7 @@
         </div>
 
         <div class="form-group">
-          <label>CSS选择器</label>
+          <label>CSS 选择器</label>
           <input
             v-model="extraction.selector"
             type="text"
@@ -72,7 +72,7 @@
           <select v-model="extraction.attribute" @change="emitUpdate">
             <option value="text">文本内容 (textContent)</option>
             <option value="innerText">显示文本 (innerText)</option>
-            <option value="innerHTML">HTML内容</option>
+            <option value="innerHTML">HTML 内容</option>
             <option value="href">链接地址 (href)</option>
             <option value="src">图片/资源地址 (src)</option>
             <option value="poster">视频封面 (poster)</option>
@@ -105,7 +105,7 @@
       </div>
 
       <div v-if="localData.extractions.length === 0" class="empty-extractions">
-        点击"+ 添加提取项"开始配置
+        点击“+ 添加提取项”开始配置。
       </div>
 
       <button @click="addExtraction" class="btn-add-extraction">+ 添加提取项</button>
@@ -114,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import type { Block } from '../../../types/block';
 import { useDataTableStore } from '../../../stores/dataTable';
 import { useWorkflowStore } from '../../../stores/workflow';
@@ -122,7 +122,6 @@ import { useWorkflowStore } from '../../../stores/workflow';
 const dataTableStore = useDataTableStore();
 const workflowStore = useWorkflowStore();
 
-// 初始化数据表 store
 onMounted(() => {
   dataTableStore.init();
 });
@@ -135,7 +134,6 @@ const emit = defineEmits<{
   update: [data: any];
 }>();
 
-// 初始化 localData，确保所有字段都有默认值
 const defaultData = {
   multiple: true,
   timeout: 5000,
@@ -151,22 +149,24 @@ const defaultData = {
 
 const localData = ref({ ...defaultData, ...props.block.data });
 
-// 确保 extractions 是数组
 if (!Array.isArray(localData.value.extractions)) {
   localData.value.extractions = [];
 }
 
-watch(() => props.block.data, (newData) => {
-  localData.value = { 
-    ...defaultData, 
-    ...newData,
-    extractions: Array.isArray(newData.extractions) ? newData.extractions : []
-  };
-}, { deep: true });
+watch(
+  () => props.block.data,
+  (newData) => {
+    localData.value = {
+      ...defaultData,
+      ...newData,
+      extractions: Array.isArray(newData.extractions) ? newData.extractions : []
+    };
+  },
+  { deep: true }
+);
 
 const dataTables = computed(() => dataTableStore.tables);
-
-const globalVariables = computed(() => workflowStore.variables);
+const workflowVariables = computed(() => workflowStore.variables);
 
 const selectedTableColumns = computed(() => {
   if (!localData.value.saveToTable) return [];
@@ -192,6 +192,32 @@ function removeExtraction(index: number) {
 function emitUpdate() {
   emit('update', localData.value);
 }
+
+function getDefaultMergeKey(): string {
+  const variables = workflowVariables.value || {};
+
+  if (Object.prototype.hasOwnProperty.call(variables, 'index')) {
+    return '{{index}}';
+  }
+
+  const firstVariableName = Object.keys(variables)[0];
+  if (firstVariableName) {
+    return `{{${firstVariableName}}}`;
+  }
+
+  return '{{index}}';
+}
+
+watch(
+  () => [localData.value.saveToTable, localData.value.multiple, localData.value.mergeKey] as const,
+  ([saveToTable, multiple, mergeKey]) => {
+    if (saveToTable && !multiple && !String(mergeKey || '').trim()) {
+      localData.value.mergeKey = getDefaultMergeKey();
+      emitUpdate();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <style scoped>
@@ -262,24 +288,6 @@ function emitUpdate() {
   font-size: 1rem;
   color: #c9d1d9;
   font-weight: 600;
-}
-
-.btn-small {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: #238636;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #2ea043;
 }
 
 .extraction-item {

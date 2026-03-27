@@ -47,6 +47,7 @@ export interface ExecutionContext {
   variables: Record<string, any>;
   logs: string[];
   extractedData: any[];
+  loopStack: Array<{ loopId: string; iteration: number }>;
 }
 
 export interface ExecutionResult {
@@ -117,7 +118,8 @@ export class WorkflowInterpreter {
         page: this.page,
         variables: this.normalizeVariables(workflow.variables),
         logs: [],
-        extractedData: []
+        extractedData: [],
+        loopStack: []
       };
 
       const blocksById = new Map(workflow.blocks.map(block => [block.id, block]));
@@ -413,6 +415,10 @@ export class WorkflowInterpreter {
         this.log(context, `循环变量 ${variableName} = ${context.variables[variableName]}`);
       }
 
+      context.loopStack.push({
+        loopId: loopInfo.loop.id,
+        iteration: iteration + 1
+      });
       this.trace({
         type: 'loop-iteration',
         loopId: loopInfo.loop.id,
@@ -420,6 +426,7 @@ export class WorkflowInterpreter {
         iteration: iteration + 1
       });
       await this.executeSequence(sequence, blocksById, connections, loopInfos, context);
+      context.loopStack.pop();
       iteration++;
     }
 
@@ -672,12 +679,45 @@ export class WorkflowInterpreter {
     return true;
   }
 
-  private resolveMergeKeyValue(mergeKey: string | undefined, variables: Record<string, any>): any {
+  private resolveMergeKeyValue(
+    mergeKey: string | undefined,
+    variables: Record<string, any>,
+    loopStack: Array<{ loopId: string; iteration: number }>
+  ): { internal: string; display: string } | undefined {
     if (!mergeKey) {
       return undefined;
     }
 
-    return variables[mergeKey] !== undefined ? variables[mergeKey] : mergeKey;
+    const trimmedMergeKey = String(mergeKey).trim();
+    if (!trimmedMergeKey) {
+      return undefined;
+    }
+
+    const displayValue = trimmedMergeKey.includes('{{')
+      ? String(this.replaceVariables(trimmedMergeKey, variables)).trim()
+      : variables[trimmedMergeKey] !== undefined
+        ? String(variables[trimmedMergeKey]).trim()
+        : trimmedMergeKey;
+
+    if (!displayValue) {
+      return undefined;
+    }
+
+    if (loopStack.length === 0) {
+      return {
+        internal: displayValue,
+        display: displayValue
+      };
+    }
+
+    const scopePrefix = loopStack
+      .map(frame => `${frame.loopId}:${frame.iteration}`)
+      .join('|');
+
+    return {
+      internal: `${scopePrefix}::${displayValue}`,
+      display: displayValue
+    };
   }
 
   private async executeNavigate(data: any, context: ExecutionContext): Promise<void> {
@@ -932,12 +972,17 @@ export class WorkflowInterpreter {
     );
 
     if (data.saveToTable) {
-      const mergeKeyValue = this.resolveMergeKeyValue(data.mergeKey, context.variables);
+      const mergeKeyValue = this.resolveMergeKeyValue(
+        data.mergeKey,
+        context.variables,
+        context.loopStack
+      );
       const rowsToSave = rows.map((row: Record<string, any>) => {
         const rowData = { ...row };
 
-        if (mergeKeyValue !== undefined && mergeKeyValue !== '') {
-          rowData._mergeKey = mergeKeyValue;
+        if (mergeKeyValue) {
+          rowData._mergeKey = mergeKeyValue.internal;
+          rowData._mergeDisplayKey = mergeKeyValue.display;
         }
 
         return rowData;
