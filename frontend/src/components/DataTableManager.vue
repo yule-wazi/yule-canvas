@@ -115,7 +115,7 @@
                 <td>{{ row._mergeDisplayKey !== undefined && row._mergeDisplayKey !== null ? row._mergeDisplayKey : (row._mergeKey !== undefined && row._mergeKey !== null ? row._mergeKey : index + 1) }}</td>
                 <td v-for="column in selectedTable.columns" :key="column.key">
                   <span v-if="column.type === 'image' && row[column.key]">
-                    <img :src="normalizeUrl(row[column.key])" alt="" class="table-image" />
+                    <img :src="normalizeUrl(row[column.key])" alt="" class="table-image clickable-image" @click="openImageModal(row[column.key])" />
                   </span>
                   <span v-else-if="column.type === 'video' && row[column.key]">
                     <div 
@@ -221,6 +221,18 @@
   <Toast ref="toast" />
 
   <!-- 视频预览弹窗 -->
+  <div v-if="showImageModal" class="modal-overlay" @click="closeImageModal">
+    <div class="modal-content image-modal" @click.stop>
+      <div class="image-modal-header">
+        <h3>图片预览</h3>
+        <button @click="closeImageModal" class="btn-icon">✕</button>
+      </div>
+      <div class="image-modal-body">
+        <img v-if="currentImageUrl" :src="normalizeUrl(currentImageUrl)" alt="" class="image-preview" />
+      </div>
+    </div>
+  </div>
+
   <div v-if="showVideoModal" class="modal-overlay" @click="closeVideoModal">
     <div class="modal-content video-modal" @click.stop>
       <div class="video-modal-header">
@@ -257,7 +269,9 @@ const dataTableStore = useDataTableStore();
 const selectedTableId = ref<string | null>(null);
 const showCreateModal = ref(false);
 const showAddColumnModal = ref(false);
+const showImageModal = ref(false);
 const showVideoModal = ref(false);
+const currentImageUrl = ref<string>('');
 const currentVideoUrl = ref<string>('');
 const currentVideoPoster = ref<string>('');
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
@@ -473,6 +487,18 @@ function openVideoModal(videoUrl: string, row: any) {
   }
   
   showVideoModal.value = true;
+}
+
+function openImageModal(imageUrl: string) {
+  currentImageUrl.value = imageUrl;
+  showImageModal.value = true;
+}
+
+function closeImageModal() {
+  showImageModal.value = false;
+  setTimeout(() => {
+    currentImageUrl.value = '';
+  }, 300);
 }
 
 function getVideoThumbnailStyle(row: any) {
@@ -864,6 +890,16 @@ function onColumnDrop(dropIndex: number) {
   border-radius: 4px;
 }
 
+.clickable-image {
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.clickable-image:hover {
+  transform: scale(1.04);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
 .table-video {
   max-width: 200px;
   max-height: 120px;
@@ -1077,6 +1113,46 @@ function onColumnDrop(dropIndex: number) {
   width: auto;
   padding: 0;
   overflow: hidden;
+}
+
+.image-modal {
+  max-width: 92vw;
+  max-height: 92vh;
+  width: auto;
+  padding: 0;
+  overflow: hidden;
+}
+
+.image-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #30363d;
+  background: #161b22;
+}
+
+.image-modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #c9d1d9;
+}
+
+.image-modal-body {
+  padding: 1rem;
+  background: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 320px;
+  min-height: 240px;
+}
+
+.image-preview {
+  max-width: min(88vw, 1400px);
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .video-modal-header {

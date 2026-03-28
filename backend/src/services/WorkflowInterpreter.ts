@@ -1177,11 +1177,13 @@ export class WorkflowInterpreter {
     );
 
     if (data.saveToTable) {
-      const mergeKeyValue = this.resolveMergeKeyValue(
-        data.mergeKey,
-        context.variables,
-        context.loopStack
-      );
+      const mergeKeyValue = multiple
+        ? undefined
+        : this.resolveMergeKeyValue(
+            data.mergeKey,
+            context.variables,
+            context.loopStack
+          );
       const rowsToSave = rows.map((row: Record<string, any>) => {
         const rowData = { ...row };
 

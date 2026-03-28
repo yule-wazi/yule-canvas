@@ -130,7 +130,7 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   });
 
   cases.push({
-    name: 'extract-multiple-table-save-with-variable-merge',
+    name: 'extract-multiple-table-save-without-merge',
     workflow: makeWorkflow(
       [makeBlock('extract-1', 'extract', {
         extractions: [
@@ -148,12 +148,12 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
     scenario: { multipleRowCount: 4 },
     coveredTypes: ['extract'],
     assert: ({ result, actions, saveEvents }) => {
-      assert(result.success, 'extract-multiple-table-save-with-variable-merge should succeed');
+      assert(result.success, 'extract-multiple-table-save-without-merge should succeed');
       assert(actions.some(action => action.type === 'waitForSelector' && action.selector === '.page-2 .card img'), 'extract should replace variable in selector');
       assert(saveEvents.length === 1, 'extract should emit one save event');
       assert(saveEvents[0].rows.length === 4, 'extract should save all extracted rows');
-      assert(saveEvents[0].rows.every((row: any) => String(row._mergeDisplayKey) === '2'), 'extract should keep readable merge key display');
-      assert(saveEvents[0].rows.every((row: any) => String(row._mergeKey) === '2'), 'extract without loop scope should keep merge key stable');
+      assert(saveEvents[0].rows.every((row: any) => row._mergeDisplayKey === undefined), 'multiple extract should not emit readable merge key');
+      assert(saveEvents[0].rows.every((row: any) => row._mergeKey === undefined), 'multiple extract should not emit merge key');
       assert(result.result.results.data.length === 4, 'extract should persist all rows');
     }
   });
@@ -184,20 +184,45 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
         extractions: [
           { selector: '.item img', attribute: 'src', customAttribute: '', saveToColumn: 'cover' }
         ],
-        multiple: true,
+        multiple: false,
         timeout: 1000,
         saveToTable: 'table_literal',
         mergeKey: 'constant-key'
       }, 'extraction')],
       []
     ),
-    scenario: { multipleRowCount: 2 },
     coveredTypes: ['extract'],
     assert: ({ result, saveEvents }) => {
       assert(result.success, 'extract-literal-merge-key should succeed');
       assert(saveEvents[0].rows.every((row: any) => row._mergeKey === 'constant-key'), 'extract should preserve literal mergeKey');
       assert(saveEvents[0].rows.every((row: any) => row._mergeDisplayKey === 'constant-key'), 'extract should expose readable merge key display');
-      assert(result.result.results.data.length === 2, 'extract should persist two rows');
+      assert(result.result.results.data.length === 1, 'single extract should persist one row');
+    }
+  });
+
+  cases.push({
+    name: 'extract-multiple-ignores-stale-merge-key',
+    workflow: makeWorkflow(
+      [makeBlock('extract-1', 'extract', {
+        extractions: [
+          { selector: '.feed .card .title', attribute: 'text', customAttribute: '', saveToColumn: 'title' }
+        ],
+        multiple: true,
+        timeout: 1000,
+        saveToTable: 'table_multiple',
+        mergeKey: '{{index}}'
+      }, 'extraction')],
+      [],
+      { index: { value: '1', description: '' } }
+    ),
+    scenario: { multipleRowCount: 4 },
+    coveredTypes: ['extract'],
+    assert: ({ result, saveEvents }) => {
+      assert(result.success, 'extract-multiple-ignores-stale-merge-key should succeed');
+      assert(saveEvents.length === 1, 'multiple extract should emit one save event batch');
+      assert(saveEvents[0].rows.length === 4, 'multiple extract should keep all rows instead of merging them');
+      assert(saveEvents[0].rows.every((row: any) => row._mergeKey === undefined), 'multiple extract should ignore stale mergeKey values');
+      assert(result.result.results.data.length === 4, 'multiple extract should retain four result rows');
     }
   });
 

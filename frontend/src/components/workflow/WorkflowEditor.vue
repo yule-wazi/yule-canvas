@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="workflow-editor">
     <div class="editor-toolbar">
       <div class="toolbar-left">
@@ -145,17 +145,17 @@
     </div>
 
     <!-- 执行日志弹窗 -->
-    <div v-if="showExecutionModal" class="modal-overlay" @click="!isExecuting && (showExecutionModal = false)">
-      <div class="modal-content execution-modal" @click.stop>
+    <div v-if="showExecutionModal" ref="executionPanelRef" class="execution-panel-floating" :style="executionPanelStyle">
+      <div class="execution-panel-header" @mousedown="startExecutionPanelDrag">
         <h3>执行日志</h3>
-        <div class="execution-logs">
-          <div v-for="(log, index) in executionLogs" :key="index" class="log-line">{{ log }}</div>
-        </div>
-        
-        <div class="modal-actions">
+        <div class="execution-panel-actions">
+          <span v-if="isExecuting" class="execution-status">执行中</span>
           <button v-if="isExecuting" @click="stopExecution" class="btn-danger">停止执行</button>
-          <button v-else @click="showExecutionModal = false" class="btn-secondary">关闭</button>
+          <button @click="showExecutionModal = false" class="btn-secondary">关闭</button>
         </div>
+      </div>
+      <div ref="executionLogsRef" class="execution-logs">
+        <div v-for="(log, index) in executionLogs" :key="index" class="log-line">{{ log }}</div>
       </div>
     </div>
 
@@ -254,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw } from 'vue';
+import { ref, reactive, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw, nextTick } from 'vue';
 import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
@@ -311,6 +311,12 @@ const variableNameError = ref('');
 const isExecuting = ref(false);
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
+const executionPanelRef = ref<HTMLElement | null>(null);
+const executionLogsRef = ref<HTMLElement | null>(null);
+const executionPanelPosition = reactive({ x: 24, y: 96, width: 520, height: 420 });
+const executionPanelDragging = ref(false);
+const executionPanelDragOffset = reactive({ x: 0, y: 0 });
+let executionPanelResizeObserver: ResizeObserver | null = null;
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 
@@ -330,6 +336,60 @@ const currentWorkflowName = computed(() => {
 });
 
 // 验证变量名
+const executionPanelStyle = computed(() => ({
+  left: `${executionPanelPosition.x}px`,
+  top: `${executionPanelPosition.y}px`,
+  width: `${executionPanelPosition.width}px`,
+  height: `${executionPanelPosition.height}px`
+}));
+
+function startExecutionPanelDrag(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button')) {
+    return;
+  }
+
+  executionPanelDragging.value = true;
+  executionPanelDragOffset.x = event.clientX - executionPanelPosition.x;
+  executionPanelDragOffset.y = event.clientY - executionPanelPosition.y;
+  window.addEventListener('mousemove', onExecutionPanelDrag);
+  window.addEventListener('mouseup', stopExecutionPanelDrag);
+}
+
+function onExecutionPanelDrag(event: MouseEvent) {
+  if (!executionPanelDragging.value) {
+    return;
+  }
+
+  const maxX = Math.max(window.innerWidth - executionPanelPosition.width - 16, 0);
+  const maxY = Math.max(window.innerHeight - executionPanelPosition.height - 16, 0);
+  executionPanelPosition.x = Math.min(Math.max(event.clientX - executionPanelDragOffset.x, 0), maxX);
+  executionPanelPosition.y = Math.min(Math.max(event.clientY - executionPanelDragOffset.y, 0), maxY);
+}
+
+function stopExecutionPanelDrag() {
+  executionPanelDragging.value = false;
+  window.removeEventListener('mousemove', onExecutionPanelDrag);
+  window.removeEventListener('mouseup', stopExecutionPanelDrag);
+}
+
+async function scrollExecutionLogsToBottom() {
+  await nextTick();
+  if (executionLogsRef.value) {
+    executionLogsRef.value.scrollTop = executionLogsRef.value.scrollHeight;
+  }
+}
+
+function syncExecutionPanelSize() {
+  if (!executionPanelRef.value) {
+    return;
+  }
+
+  const rect = executionPanelRef.value.getBoundingClientRect();
+  executionPanelPosition.width = Math.round(rect.width);
+  executionPanelPosition.height = Math.round(rect.height);
+}
+
 function validateVariableName() {
   const name = newVariable.value.name.trim();
   
@@ -491,6 +551,31 @@ onMounted(() => {
   updateHandleStyles();
 });
 
+watch(
+  () => executionLogs.value.length,
+  () => {
+    scrollExecutionLogsToBottom();
+  }
+);
+
+watch(showExecutionModal, async (visible) => {
+  if (!visible) {
+    executionPanelResizeObserver?.disconnect();
+    executionPanelResizeObserver = null;
+    return;
+  }
+
+  await nextTick();
+  syncExecutionPanelSize();
+  executionPanelResizeObserver?.disconnect();
+  if (executionPanelRef.value) {
+    executionPanelResizeObserver = new ResizeObserver(() => {
+      syncExecutionPanelSize();
+    });
+    executionPanelResizeObserver.observe(executionPanelRef.value);
+  }
+});
+
 // 监听连接变化，更新 handle 样式
 watch(
   () => workflowStore.connections,
@@ -566,6 +651,9 @@ watch(
 
 // 页面卸载前保存
 onBeforeUnmount(() => {
+  stopExecutionPanelDrag();
+  executionPanelResizeObserver?.disconnect();
+  executionPanelResizeObserver = null;
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer);
   }
@@ -1329,7 +1417,8 @@ async function executeWorkflow() {
     }
 
     if (isExecuting.value) {
-      toast.value?.show({ message: '工作流正在执行中...', type: 'warning' });
+      showExecutionModal.value = true;
+      toast.value?.show({ message: '已有脚本正在执行，请先停止或等待当前执行完成', type: 'warning' });
       return;
     }
 
@@ -1590,6 +1679,56 @@ async function executeWorkflow() {
   gap: 1rem;
 }
 
+.execution-panel-floating {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  min-width: 360px;
+  min-height: 240px;
+  max-width: min(720px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  background: rgba(22, 27, 34, 0.96);
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  resize: both;
+}
+
+.execution-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  cursor: move;
+  user-select: none;
+}
+
+.execution-panel-header h3 {
+  margin: 0;
+  color: #58a6ff;
+}
+
+.execution-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.execution-status {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(31, 111, 235, 0.18);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  color: #79c0ff;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1686,13 +1825,13 @@ async function executeWorkflow() {
   background: #0d1117;
   color: #c9d1d9;
   border: 1px solid #30363d;
-  border-radius: 6px;
+  border-radius: 0;
   padding: 1rem;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.9rem;
   overflow-y: auto;
-  min-height: 400px;
-  max-height: 500px;
+  min-height: 0;
+  max-height: none;
   white-space: pre-wrap;
   word-break: break-word;
 }

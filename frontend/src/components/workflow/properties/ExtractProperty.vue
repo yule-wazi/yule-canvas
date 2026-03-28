@@ -211,6 +211,12 @@ function getDefaultMergeKey(): string {
 watch(
   () => [localData.value.saveToTable, localData.value.multiple, localData.value.mergeKey] as const,
   ([saveToTable, multiple, mergeKey]) => {
+    if (multiple && String(mergeKey || '').trim()) {
+      localData.value.mergeKey = '';
+      emitUpdate();
+      return;
+    }
+
     if (saveToTable && !multiple && !String(mergeKey || '').trim()) {
       localData.value.mergeKey = getDefaultMergeKey();
       emitUpdate();
