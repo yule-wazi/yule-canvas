@@ -13,6 +13,15 @@ function makeBlock(
   label = id
 ): Block {
   const isLoop = type === 'loop';
+  const isCondition = type === 'condition';
+  const conditionOutputs = isCondition
+    ? [
+      ...((Array.isArray(data?.branches) ? data.branches : []).map((branch: any, index: number) =>
+        port(`condition-${branch.id || `path-${index + 1}`}-right`, branch.name || `路径 ${index + 1}`)
+      )),
+      ...(data?.fallbackEnabled === false ? [] : [port('condition-fallback-bottom', '兜底')])
+    ]
+    : [];
   return {
     id,
     type,
@@ -21,7 +30,11 @@ function makeBlock(
     position: { x: 0, y: 0 },
     data,
     inputs: [port(isLoop ? 'loop-end' : 'in', isLoop ? 'Loop End' : 'In')],
-    outputs: [port(isLoop ? 'loop-start' : 'out', isLoop ? 'Loop Start' : 'Out')]
+    outputs: isLoop
+      ? [port('loop-start', 'Loop Start')]
+      : isCondition
+        ? conditionOutputs
+        : [port('out', 'Out')]
   };
 }
 
@@ -59,8 +72,284 @@ function loopEnd(source: string, loopId: string, id: string): Connection {
   };
 }
 
+function conditionFlow(source: string, sourceHandle: string, target: string, id: string): Connection {
+  return {
+    id,
+    source,
+    sourceHandle,
+    target,
+    targetHandle: 'target-left'
+  };
+}
+
 export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   const cases: WorkflowTestCase[] = [];
+
+  cases.push({
+    name: 'condition-variable-odd-branch',
+    workflow: makeWorkflow(
+      [
+        makeBlock('condition-1', 'condition', {
+          branches: [
+            {
+              id: 'odd',
+              name: '奇数分支',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-odd',
+                  sourceType: 'variable',
+                  variableName: 'index',
+                  selector: '',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 0,
+                  operator: 'isOdd',
+                  value: ''
+                }
+              ]
+            },
+            {
+              id: 'big',
+              name: '大值分支',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-big',
+                  sourceType: 'variable',
+                  variableName: 'index',
+                  selector: '',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 0,
+                  operator: 'greaterThan',
+                  value: '10'
+                }
+              ]
+            }
+          ],
+          fallbackEnabled: true
+        }, 'logic'),
+        makeBlock('log-odd', 'log', { message: 'odd' }, 'browser'),
+        makeBlock('log-big', 'log', { message: 'big' }, 'browser'),
+        makeBlock('log-fallback', 'log', { message: 'fallback' }, 'browser'),
+        makeBlock('log-after', 'log', { message: 'after' }, 'browser')
+      ],
+      [
+        conditionFlow('condition-1', 'condition-odd-right', 'log-odd', 'c-condition-odd'),
+        conditionFlow('condition-1', 'condition-big-right', 'log-big', 'c-condition-big'),
+        conditionFlow('condition-1', 'condition-fallback-bottom', 'log-fallback', 'c-condition-fallback'),
+        flow('log-odd', 'log-after', 'c-condition-after-odd'),
+        flow('log-big', 'log-after', 'c-condition-after-big'),
+        flow('log-fallback', 'log-after', 'c-condition-after-fallback')
+      ],
+      { index: { value: '3', description: '' } }
+    ),
+    coveredTypes: ['condition', 'log'],
+    assert: ({ result, trace }) => {
+      assert(result.success, 'condition-variable-odd-branch should succeed');
+      assert(blockOrder(trace).join(',') === 'condition-1,log-odd,log-after', 'condition should execute matched branch and shared tail only once');
+    }
+  });
+
+  cases.push({
+    name: 'condition-element-and-fallback',
+    workflow: makeWorkflow(
+      [
+        makeBlock('condition-1', 'condition', {
+          branches: [
+            {
+              id: 'active',
+              name: '状态命中',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-active',
+                  sourceType: 'element',
+                  variableName: '',
+                  selector: '.status',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 1200,
+                  operator: 'contains',
+                  value: '已完成'
+                }
+              ]
+            }
+          ],
+          fallbackEnabled: true
+        }, 'logic'),
+        makeBlock('log-hit', 'log', { message: 'hit' }, 'browser'),
+        makeBlock('log-fallback', 'log', { message: 'fallback' }, 'browser')
+      ],
+      [
+        conditionFlow('condition-1', 'condition-active-right', 'log-hit', 'c-condition-hit'),
+        conditionFlow('condition-1', 'condition-fallback-bottom', 'log-fallback', 'c-condition-fallback')
+      ]
+    ),
+    scenario: {
+      conditionElementValues: {
+        '.status': '处理中'
+      }
+    },
+    coveredTypes: ['condition', 'log'],
+    assert: ({ result, trace, actions }) => {
+      assert(result.success, 'condition-element-and-fallback should succeed');
+      assert(blockOrder(trace).join(',') === 'condition-1,log-fallback', 'condition should use fallback when element rule misses');
+      assert(actions.some(action => action.type === 'waitForSelector' && action.selector === '.status'), 'condition element rule should wait for selector');
+      assert(actions.some(action => action.type === 'conditionExtract' && action.selector === '.status'), 'condition element rule should read element value');
+    }
+  });
+
+  cases.push({
+    name: 'condition-multi-branch-match-with-shared-tail',
+    workflow: makeWorkflow(
+      [
+        makeBlock('condition-1', 'condition', {
+          branches: [
+            {
+              id: 'odd',
+              name: '奇数路径',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-odd',
+                  sourceType: 'variable',
+                  variableName: 'index',
+                  selector: '',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 0,
+                  operator: 'isOdd',
+                  value: ''
+                }
+              ]
+            },
+            {
+              id: 'small',
+              name: '小于十',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-small',
+                  sourceType: 'variable',
+                  variableName: 'index',
+                  selector: '',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 0,
+                  operator: 'lessThan',
+                  value: '10'
+                }
+              ]
+            }
+          ],
+          fallbackEnabled: true
+        }, 'logic'),
+        makeBlock('log-odd', 'log', { message: 'odd' }, 'browser'),
+        makeBlock('log-small', 'log', { message: 'small' }, 'browser'),
+        makeBlock('log-fallback', 'log', { message: 'fallback' }, 'browser'),
+        makeBlock('log-after', 'log', { message: 'after' }, 'browser')
+      ],
+      [
+        conditionFlow('condition-1', 'condition-odd-right', 'log-odd', 'c-multi-odd'),
+        conditionFlow('condition-1', 'condition-small-right', 'log-small', 'c-multi-small'),
+        conditionFlow('condition-1', 'condition-fallback-bottom', 'log-fallback', 'c-multi-fallback'),
+        flow('log-odd', 'log-after', 'c-multi-after-odd'),
+        flow('log-small', 'log-after', 'c-multi-after-small'),
+        flow('log-fallback', 'log-after', 'c-multi-after-fallback')
+      ],
+      { index: { value: '3', description: '' } }
+    ),
+    coveredTypes: ['condition', 'log'],
+    assert: ({ result, trace }) => {
+      assert(result.success, 'condition-multi-branch-match-with-shared-tail should succeed');
+      assert(
+        blockOrder(trace).join(',') === 'condition-1,log-odd,log-small,log-after',
+        'condition should run all matched branches and execute shared tail once'
+      );
+    }
+  });
+
+  cases.push({
+    name: 'loop-with-condition-branches-on-both-sides',
+    workflow: makeWorkflow(
+      [
+        makeBlock('condition-1', 'condition', {
+          branches: [
+            {
+              id: 'odd',
+              name: '奇数',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-odd',
+                  sourceType: 'variable',
+                  variableName: 'num',
+                  selector: '',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 0,
+                  operator: 'isOdd',
+                  value: ''
+                }
+              ]
+            },
+            {
+              id: 'even',
+              name: '偶数',
+              matchType: 'all',
+              rules: [
+                {
+                  id: 'rule-even',
+                  sourceType: 'variable',
+                  variableName: 'num',
+                  selector: '',
+                  elementValueType: 'text',
+                  attributeName: '',
+                  timeout: 0,
+                  operator: 'isEven',
+                  value: ''
+                }
+              ]
+            }
+          ],
+          fallbackEnabled: false
+        }, 'logic'),
+        makeBlock('log-odd', 'log', { message: '奇数----{{num}}' }, 'browser'),
+        makeBlock('log-even', 'log', { message: '偶数----{{num}}' }, 'browser'),
+        makeBlock('loop-1', 'loop', {
+          mode: 'count',
+          count: 6,
+          condition: '',
+          maxIterations: 1000,
+          useVariable: true,
+          variableName: 'num',
+          startValueType: 'variable',
+          startValue: '{{num}}'
+        }, 'logic')
+      ],
+      [
+        conditionFlow('condition-1', 'condition-odd-right', 'log-odd', 'c-loop-condition-odd'),
+        conditionFlow('condition-1', 'condition-even-right', 'log-even', 'c-loop-condition-even'),
+        loopStart('loop-1', 'condition-1', 'c-loop-condition-start'),
+        loopEnd('log-odd', 'loop-1', 'c-loop-condition-end-odd'),
+        loopEnd('log-even', 'loop-1', 'c-loop-condition-end-even')
+      ],
+      { num: { value: '1', description: '' } }
+    ),
+    coveredTypes: ['condition', 'loop', 'log'],
+    assert: ({ result, trace }) => {
+      assert(result.success, 'loop-with-condition-branches-on-both-sides should succeed');
+      const order = blockOrder(trace);
+      assert(order.includes('log-odd'), 'loop condition should execute odd branch inside loop');
+      assert(order.includes('log-even'), 'loop condition should execute even branch inside loop');
+      const oddCount = order.filter(id => id === 'log-odd').length;
+      const evenCount = order.filter(id => id === 'log-even').length;
+      assert(oddCount === 3, 'odd branch should run three times in six iterations');
+      assert(evenCount === 3, 'even branch should run three times in six iterations');
+    }
+  });
 
   cases.push({
     name: 'linear-browser-flow',

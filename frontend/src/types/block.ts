@@ -91,7 +91,35 @@ export interface ExtractLinksBlockData extends BlockData {
 }
 
 export interface ConditionBlockData extends BlockData {
-  condition: string;
+  branches: Array<{
+    id: string;
+    name: string;
+    matchType: 'all' | 'any';
+    rules: Array<{
+      id: string;
+      sourceType: 'variable' | 'element';
+      variableName: string;
+      selector: string;
+      elementValueType: 'text' | 'innerText' | 'attribute';
+      attributeName: string;
+      timeout: number;
+      operator:
+        | 'equals'
+        | 'notEquals'
+        | 'contains'
+        | 'notContains'
+        | 'greaterThan'
+        | 'greaterThanOrEqual'
+        | 'lessThan'
+        | 'lessThanOrEqual'
+        | 'isEmpty'
+        | 'isNotEmpty'
+        | 'isOdd'
+        | 'isEven';
+      value: string;
+    }>;
+  }>;
+  fallbackEnabled: boolean;
 }
 
 export interface LoopBlockData extends BlockData {

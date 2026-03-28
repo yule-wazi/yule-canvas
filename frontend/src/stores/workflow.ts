@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import type { Block, BlockType, BlockData } from '../types/block';
+import type { Block, BlockData, BlockType } from '../types/block';
 import type { Connection } from '../types/connection';
 import type { Workflow } from '../types/workflow';
 import { DEFAULT_SELECTOR_TIMEOUT } from '../constants/workflow';
@@ -11,6 +11,92 @@ interface WorkflowState {
   selectedBlockId: string | null;
   history: Workflow[];
   historyIndex: number;
+}
+
+function createConditionRule() {
+  return {
+    id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    sourceType: 'variable',
+    variableName: '',
+    selector: '',
+    elementValueType: 'text',
+    attributeName: '',
+    timeout: DEFAULT_SELECTOR_TIMEOUT,
+    operator: 'equals',
+    value: ''
+  };
+}
+
+function createConditionBranch(index: number) {
+  return {
+    id: `path-${index + 1}`,
+    name: `路径 ${index + 1}`,
+    matchType: 'all',
+    rules: [createConditionRule()]
+  };
+}
+
+function getDefaultConditionData() {
+  return {
+    branches: [createConditionBranch(0), createConditionBranch(1)],
+    fallbackEnabled: true
+  };
+}
+
+function buildConditionOutputs(data: Record<string, any>) {
+  const branches = Array.isArray(data?.branches) ? data.branches : [];
+  const outputs = branches.map((branch: any, index: number) => ({
+    id: `condition-${branch.id || `path-${index + 1}`}-right`,
+    name: branch.name || `路径 ${index + 1}`,
+    type: 'flow' as const
+  }));
+
+  if (data?.fallbackEnabled !== false) {
+    outputs.push({
+      id: 'condition-fallback-bottom',
+      name: '兜底',
+      type: 'flow' as const
+    });
+  }
+
+  return outputs;
+}
+
+function normalizeConditionBlock(block: Block): Block {
+  if (block.type !== 'condition') {
+    return block;
+  }
+
+  const baseData = block.data || {};
+  const branches = Array.isArray(baseData.branches) && baseData.branches.length > 0
+    ? baseData.branches.map((branch: any, index: number) => ({
+      id: branch.id || `path-${index + 1}`,
+      name: branch.name || `路径 ${index + 1}`,
+      matchType: branch.matchType === 'any' ? 'any' : 'all',
+      rules: Array.isArray(branch.rules) && branch.rules.length > 0
+        ? branch.rules.map((rule: any) => ({
+          ...createConditionRule(),
+          ...rule
+        }))
+        : [createConditionRule()]
+    }))
+    : getDefaultConditionData().branches;
+
+  const data = {
+    branches,
+    fallbackEnabled: baseData.fallbackEnabled !== false
+  };
+
+  return {
+    ...block,
+    data,
+    inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+    outputs: buildConditionOutputs(data)
+  };
+}
+
+function normalizeWorkflowBlocks(blocks: Block[]): Block[] {
+  return blocks.map(block => normalizeConditionBlock(block));
 }
 
 export const useWorkflowStore = defineStore('workflow', {
@@ -43,8 +129,7 @@ export const useWorkflowStore = defineStore('workflow', {
   },
 
   actions: {
-    // 初始化新工作流
-    initWorkflow(name: string = '新工作流') {
+    initWorkflow(name = '新工作流') {
       this.currentWorkflow = {
         id: Date.now().toString(),
         name,
@@ -60,7 +145,6 @@ export const useWorkflowStore = defineStore('workflow', {
       this.saveToHistory();
     },
 
-    // 添加Block
     addBlock(type: BlockType, position: { x: number; y: number }) {
       const block = this.createBlock(type, position);
       this.blocks.push(block);
@@ -68,17 +152,15 @@ export const useWorkflowStore = defineStore('workflow', {
       return block;
     },
 
-    // 创建Block
     createBlock(type: BlockType, position: { x: number; y: number }): Block {
-      const id = `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const id = `block-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const blockConfig = this.getBlockConfig(type);
-      
+
       if (!blockConfig) {
-        console.error('未找到 block 配置:', type);
         throw new Error(`未找到 block 类型 "${type}" 的配置`);
       }
-      
-      return {
+
+      return normalizeConditionBlock({
         id,
         type,
         label: blockConfig.label,
@@ -87,11 +169,11 @@ export const useWorkflowStore = defineStore('workflow', {
         data: blockConfig.defaultData,
         inputs: blockConfig.inputs,
         outputs: blockConfig.outputs
-      };
+      });
     },
 
-    // 获取Block配置
     getBlockConfig(type: BlockType) {
+      const defaultConditionData = getDefaultConditionData();
       const configs: Record<BlockType, any> = {
         navigate: {
           label: '访问页面',
@@ -117,7 +199,15 @@ export const useWorkflowStore = defineStore('workflow', {
         scroll: {
           label: '滚动页面',
           category: 'browser',
-          defaultData: { target: 'page', selector: '', timeout: DEFAULT_SELECTOR_TIMEOUT, mode: 'smart', maxScrolls: 15, scrollDistance: 800, delay: 800 },
+          defaultData: {
+            target: 'page',
+            selector: '',
+            timeout: DEFAULT_SELECTOR_TIMEOUT,
+            mode: 'smart',
+            maxScrolls: 15,
+            scrollDistance: 800,
+            delay: 800
+          },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },
@@ -150,7 +240,7 @@ export const useWorkflowStore = defineStore('workflow', {
           outputs: [{ id: 'out', name: '输出', type: 'flow' }]
         },
         select: {
-          label: '选择下拉框',
+          label: '选择下拉项',
           category: 'interaction',
           defaultData: { selector: '', value: '' },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
@@ -159,11 +249,11 @@ export const useWorkflowStore = defineStore('workflow', {
         extract: {
           label: '提取数据',
           category: 'extraction',
-          defaultData: { 
-            multiple: true, 
-            timeout: DEFAULT_SELECTOR_TIMEOUT, 
-            saveToTable: '', 
-            extractions: [] 
+          defaultData: {
+            multiple: true,
+            timeout: DEFAULT_SELECTOR_TIMEOUT,
+            saveToTable: '',
+            extractions: []
           },
           inputs: [{ id: 'in', name: '输入', type: 'flow' }],
           outputs: [
@@ -182,17 +272,11 @@ export const useWorkflowStore = defineStore('workflow', {
           ]
         },
         condition: {
-          label: '条件判断',
+          label: '条件',
           category: 'logic',
-          defaultData: { condition: '' },
-          inputs: [
-            { id: 'in', name: '输入', type: 'flow' },
-            { id: 'data', name: '数据', type: 'data' }
-          ],
-          outputs: [
-            { id: 'true', name: '真', type: 'flow' },
-            { id: 'false', name: '假', type: 'flow' }
-          ]
+          defaultData: defaultConditionData,
+          inputs: [{ id: 'in', name: '输入', type: 'flow' }],
+          outputs: buildConditionOutputs(defaultConditionData)
         },
         loop: {
           label: '循环',
@@ -239,28 +323,31 @@ export const useWorkflowStore = defineStore('workflow', {
       return configs[type];
     },
 
-    // 删除Block
     removeBlock(id: string) {
       this.blocks = this.blocks.filter(b => b.id !== id);
-      this.connections = this.connections.filter(
-        c => c.source !== id && c.target !== id
-      );
+      this.connections = this.connections.filter(c => c.source !== id && c.target !== id);
       if (this.selectedBlockId === id) {
         this.selectedBlockId = null;
       }
       this.saveToHistory();
     },
 
-    // 更新Block
     updateBlock(id: string, data: Partial<BlockData>) {
       const block = this.blocks.find(b => b.id === id);
-      if (block) {
-        block.data = { ...block.data, ...data };
-        this.saveToHistory();
+      if (!block) {
+        return;
       }
+
+      block.data = { ...block.data, ...data };
+      if (block.type === 'condition') {
+        const normalized = normalizeConditionBlock(block);
+        block.data = normalized.data;
+        block.inputs = normalized.inputs;
+        block.outputs = normalized.outputs;
+      }
+      this.saveToHistory();
     },
 
-    // 更新Block位置
     updateBlockPosition(id: string, position: { x: number; y: number }) {
       const block = this.blocks.find(b => b.id === id);
       if (block) {
@@ -268,25 +355,21 @@ export const useWorkflowStore = defineStore('workflow', {
       }
     },
 
-    // 添加连接
     addConnection(connection: Omit<Connection, 'id'>) {
-      const id = `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const id = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       this.connections.push({ id, ...connection });
       this.saveToHistory();
     },
 
-    // 删除连接
     removeConnection(id: string) {
       this.connections = this.connections.filter(c => c.id !== id);
       this.saveToHistory();
     },
 
-    // 选择Block
     selectBlock(id: string | null) {
       this.selectedBlockId = id;
     },
 
-    // 保存到历史记录
     saveToHistory() {
       const snapshot: Workflow = {
         id: this.currentWorkflow?.id || Date.now().toString(),
@@ -299,19 +382,16 @@ export const useWorkflowStore = defineStore('workflow', {
         updatedAt: Date.now()
       };
 
-      // 删除当前索引之后的历史
       this.history = this.history.slice(0, this.historyIndex + 1);
       this.history.push(snapshot);
       this.historyIndex++;
 
-      // 限制历史记录数量
       if (this.history.length > 50) {
         this.history.shift();
         this.historyIndex--;
       }
     },
 
-    // 撤销
     undo() {
       if (this.canUndo) {
         this.historyIndex--;
@@ -319,7 +399,6 @@ export const useWorkflowStore = defineStore('workflow', {
       }
     },
 
-    // 重做
     redo() {
       if (this.canRedo) {
         this.historyIndex++;
@@ -327,26 +406,57 @@ export const useWorkflowStore = defineStore('workflow', {
       }
     },
 
-    // 从历史记录加载
     loadFromHistory() {
       const snapshot = this.history[this.historyIndex];
-      if (snapshot) {
-        this.currentWorkflow = snapshot;
-        this.blocks = JSON.parse(JSON.stringify(snapshot.blocks));
-        this.connections = JSON.parse(JSON.stringify(snapshot.connections));
+      if (!snapshot) {
+        return;
       }
+
+      this.currentWorkflow = snapshot;
+      this.blocks = normalizeWorkflowBlocks(JSON.parse(JSON.stringify(snapshot.blocks)));
+      this.connections = JSON.parse(JSON.stringify(snapshot.connections));
     },
 
-    // 加载工作流
     loadWorkflow(workflow: Workflow) {
       this.currentWorkflow = workflow;
-      this.blocks = JSON.parse(JSON.stringify(workflow.blocks));
+      this.blocks = normalizeWorkflowBlocks(JSON.parse(JSON.stringify(workflow.blocks)));
       this.connections = JSON.parse(JSON.stringify(workflow.connections));
       this.history = [workflow];
       this.historyIndex = 0;
     },
 
-    // 清空工作流
+    migrateConditionBlocks() {
+      let changed = false;
+      this.blocks = this.blocks.map(block => {
+        if (block.type !== 'condition') {
+          return block;
+        }
+
+        const normalized = normalizeConditionBlock(JSON.parse(JSON.stringify(block)));
+        const before = JSON.stringify({
+          data: block.data,
+          inputs: block.inputs,
+          outputs: block.outputs
+        });
+        const after = JSON.stringify({
+          data: normalized.data,
+          inputs: normalized.inputs,
+          outputs: normalized.outputs
+        });
+
+        if (before !== after) {
+          changed = true;
+          return normalized;
+        }
+
+        return block;
+      });
+
+      if (changed) {
+        this.saveToHistory();
+      }
+    },
+
     clearWorkflow() {
       this.blocks = [];
       this.connections = [];
@@ -355,8 +465,7 @@ export const useWorkflowStore = defineStore('workflow', {
       this.historyIndex = -1;
     },
 
-    // 设置变量
-    setVariable(name: string, value: string, description: string = '') {
+    setVariable(name: string, value: string, description = '') {
       if (!this.currentWorkflow) {
         this.initWorkflow();
       }
@@ -367,7 +476,6 @@ export const useWorkflowStore = defineStore('workflow', {
       this.saveToHistory();
     },
 
-    // 删除变量
     deleteVariable(name: string) {
       if (this.currentWorkflow?.variables) {
         delete this.currentWorkflow.variables[name];

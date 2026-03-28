@@ -11,6 +11,7 @@ export type BlockTypeUnderTest =
   | 'select'
   | 'extract'
   | 'extract-links'
+  | 'condition'
   | 'loop'
   | 'log';
 
@@ -19,6 +20,7 @@ export interface Scenario {
   linkCount?: number;
   clickTargets?: Record<string, string>;
   selectorValues?: Record<string, string[]>;
+  conditionElementValues?: Record<string, string>;
   waitForSelectorDelayMs?: number;
   evaluateDelayMs?: number;
   extractEvaluateDelayMs?: number;
@@ -57,6 +59,7 @@ export const REQUIRED_BLOCK_TYPES: BlockTypeUnderTest[] = [
   'select',
   'extract',
   'extract-links',
+  'condition',
   'loop',
   'log'
 ];

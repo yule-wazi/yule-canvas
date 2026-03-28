@@ -102,6 +102,16 @@ interface ExecutionUnit {
   loopInfo?: LoopInfo;
 }
 
+interface ConditionBranchEdge {
+  sourceHandle: string;
+  targetOwner: string;
+}
+
+interface ScopedOwnerGraph {
+  outgoing: Map<string, ConditionBranchEdge[]>;
+  incomingCount: Map<string, number>;
+}
+
 /**
  * WorkflowInterpreter
  * 直接解释执行 Workflow JSON，而不是先编译为代码。
@@ -198,9 +208,16 @@ export class WorkflowInterpreter {
     loopInfos: Map<string, LoopInfo>,
     context: ExecutionContext
   ): Promise<void> {
+    const skippedUnitIds = new Set<string>();
+    const scopedGraph = this.buildScopedOwnerGraph(sequence, connections);
+
     for (let index = 0; index < sequence.length; index++) {
       this.assertNotCancelled();
       const unit = sequence[index];
+      if (skippedUnitIds.has(unit.id)) {
+        continue;
+      }
+
       if (unit.kind === 'block' && unit.block) {
         const backgroundResult = await this.trySpawnBackgroundPopupChain(
           sequence,
@@ -213,6 +230,56 @@ export class WorkflowInterpreter {
 
         if (backgroundResult.handled) {
           index = backgroundResult.nextIndex - 1;
+          continue;
+        }
+
+        if (unit.block.type === 'condition') {
+          this.trace({
+            type: 'block-start',
+            blockId: unit.block.id,
+            blockType: unit.block.type,
+            label: unit.block.label
+          });
+
+          const selectedHandles = await this.executeConditionBlock(unit.block, context);
+
+          this.trace({
+            type: 'block-end',
+            blockId: unit.block.id,
+            blockType: unit.block.type,
+            label: unit.block.label
+          });
+
+          const branchEdges = scopedGraph.outgoing.get(unit.block.id) || [];
+          const selectedEdgeMap = new Map(
+            branchEdges
+              .filter(edge => selectedHandles.includes(edge.sourceHandle))
+              .map(edge => [edge.sourceHandle, edge] as const)
+          );
+
+          const allBranchIds = new Set<string>();
+          branchEdges.forEach(edge => {
+            this.collectConditionBranchOwnerIds(edge.targetOwner, scopedGraph).forEach(id => {
+              allBranchIds.add(id);
+            });
+          });
+          allBranchIds.forEach(id => skippedUnitIds.add(id));
+
+          for (const handleId of selectedHandles) {
+            const selectedEdge = selectedEdgeMap.get(handleId);
+            if (!selectedEdge) {
+              continue;
+            }
+
+            const selectedBranchIds = this.collectConditionBranchOwnerIds(selectedEdge.targetOwner, scopedGraph);
+            if (selectedBranchIds.size === 0) {
+              continue;
+            }
+
+            const branchSequence = sequence.filter(candidate => selectedBranchIds.has(candidate.id));
+            await this.executeSequence(branchSequence, blocksById, connections, loopInfos, context);
+          }
+
           continue;
         }
 
@@ -233,6 +300,89 @@ export class WorkflowInterpreter {
         await this.executeLoop(unit.loopInfo, blocksById, connections, loopInfos, context);
       }
     }
+  }
+
+  private buildScopedOwnerGraph(sequence: ExecutionUnit[], connections: Connection[]): ScopedOwnerGraph {
+    const ownerIds = new Set(sequence.map(unit => unit.id));
+    const childLoopBodies = sequence
+      .filter((unit): unit is ExecutionUnit & { loopInfo: LoopInfo } => unit.kind === 'loop' && Boolean(unit.loopInfo))
+      .map(unit => ({
+        loopId: unit.id,
+        bodyIds: unit.loopInfo!.bodyBlockIds
+      }));
+
+    const resolveOwner = (blockId: string): string | null => {
+      if (ownerIds.has(blockId)) {
+        return blockId;
+      }
+
+      for (const childLoop of childLoopBodies) {
+        if (childLoop.bodyIds.has(blockId)) {
+          return childLoop.loopId;
+        }
+      }
+
+      return null;
+    };
+
+    const outgoing = new Map<string, ConditionBranchEdge[]>();
+    const incomingCount = new Map<string, number>();
+
+    ownerIds.forEach(id => {
+      outgoing.set(id, []);
+      incomingCount.set(id, 0);
+    });
+
+    connections
+      .filter(conn => this.isNormalConnection(conn))
+      .forEach(conn => {
+        const sourceOwner = resolveOwner(conn.source);
+        const targetOwner = resolveOwner(conn.target);
+
+        if (!sourceOwner || !targetOwner || sourceOwner === targetOwner) {
+          return;
+        }
+
+        const edges = outgoing.get(sourceOwner);
+        if (!edges) {
+          return;
+        }
+
+        if (edges.some(edge => edge.sourceHandle === conn.sourceHandle && edge.targetOwner === targetOwner)) {
+          return;
+        }
+
+        edges.push({
+          sourceHandle: conn.sourceHandle,
+          targetOwner
+        });
+        incomingCount.set(targetOwner, (incomingCount.get(targetOwner) || 0) + 1);
+      });
+
+    return { outgoing, incomingCount };
+  }
+
+  private collectConditionBranchOwnerIds(startOwnerId: string, graph: ScopedOwnerGraph): Set<string> {
+    const collected = new Set<string>();
+    const queue = [startOwnerId];
+
+    while (queue.length > 0) {
+      const ownerId = queue.shift()!;
+      if (collected.has(ownerId)) {
+        continue;
+      }
+
+      if (ownerId !== startOwnerId && (graph.incomingCount.get(ownerId) || 0) > 1) {
+        continue;
+      }
+
+      collected.add(ownerId);
+
+      const edges = graph.outgoing.get(ownerId) || [];
+      edges.forEach(edge => queue.push(edge.targetOwner));
+    }
+
+    return collected;
   }
 
   private buildLoopInfos(blocks: Block[], connections: Connection[]): Map<string, LoopInfo> {
@@ -582,26 +732,30 @@ export class WorkflowInterpreter {
   }
 
   private walkLoopBody(startId: string, endId: string, connections: Connection[]): string[] {
-    const path: string[] = [];
     const visited = new Set<string>();
-    let currentId: string | null = startId;
+    const queue = [startId];
 
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId);
-      path.push(currentId);
-
-      if (currentId === endId) {
-        break;
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) {
+        continue;
       }
 
-      const nextConnection = connections.find(conn =>
-        conn.source === currentId && this.isNormalConnection(conn)
-      );
+      visited.add(currentId);
+      if (currentId === endId) {
+        continue;
+      }
 
-      currentId = nextConnection?.target || null;
+      connections
+        .filter(conn => conn.source === currentId && this.isNormalConnection(conn))
+        .forEach(conn => {
+          if (!visited.has(conn.target)) {
+            queue.push(conn.target);
+          }
+        });
     }
 
-    return path;
+    return Array.from(visited);
   }
 
   private async executeBlock(block: Block, context: ExecutionContext): Promise<void> {
@@ -639,6 +793,8 @@ export class WorkflowInterpreter {
         break;
       case 'extract-links':
         await this.executeExtractLinks(data, context);
+        break;
+      case 'condition':
         break;
       case 'log':
         await this.executeLog(data, context);
@@ -727,6 +883,142 @@ export class WorkflowInterpreter {
       if (failure) {
         throw failure.reason;
       }
+    }
+  }
+
+  private async executeConditionBlock(block: Block, context: ExecutionContext): Promise<string[]> {
+    const branches = Array.isArray(block.data?.branches) ? block.data.branches : [];
+    const matchedHandles: string[] = [];
+
+    for (let index = 0; index < branches.length; index++) {
+      const branch = branches[index];
+      const matched = await this.evaluateConditionBranch(branch, context);
+      this.log(context, `条件分支 ${branch.name || `路径 ${index + 1}`}: ${matched ? '命中' : '未命中'}`);
+      if (matched) {
+        matchedHandles.push(`condition-${branch.id || `path-${index + 1}`}-right`);
+      }
+    }
+
+    if (matchedHandles.length > 0) {
+      return matchedHandles;
+    }
+
+    if (block.data?.fallbackEnabled !== false) {
+      this.log(context, '条件分支未命中，进入兜底分支');
+      return ['condition-fallback-bottom'];
+    }
+
+    this.log(context, '条件分支未命中，且未启用兜底分支');
+    return [];
+  }
+
+  private async evaluateConditionBranch(branch: any, context: ExecutionContext): Promise<boolean> {
+    const rules = Array.isArray(branch?.rules) ? branch.rules : [];
+    if (rules.length === 0) {
+      return false;
+    }
+
+    const results: boolean[] = [];
+    for (const rule of rules) {
+      results.push(await this.evaluateConditionRule(rule, context));
+    }
+
+    return branch?.matchType === 'any'
+      ? results.some(Boolean)
+      : results.every(Boolean);
+  }
+
+  private async evaluateConditionRule(rule: any, context: ExecutionContext): Promise<boolean> {
+    const operator = String(rule?.operator || 'equals');
+    const rightValue = this.replaceVariables(rule?.value ?? '', context.variables);
+    let leftValue: any = '';
+
+    if (rule?.sourceType === 'element') {
+      leftValue = await this.getConditionElementValue(rule, context);
+    } else {
+      const variableName = String(rule?.variableName || '').trim();
+      leftValue = variableName ? context.variables[variableName] : '';
+    }
+
+    return this.compareConditionValues(leftValue, rightValue, operator);
+  }
+
+  private async getConditionElementValue(rule: any, context: ExecutionContext): Promise<any> {
+    const selector = String(this.replaceVariables(rule?.selector || '', context.variables)).trim();
+    if (!selector) {
+      return '';
+    }
+
+    const timeout = Number.parseInt(String(rule?.timeout ?? 0), 10);
+    if (Number.isFinite(timeout) && timeout > 0) {
+      try {
+        await context.page.waitForSelector(selector, { timeout });
+      } catch (error) {
+        return '';
+      }
+    }
+
+    const valueType = rule?.elementValueType || 'text';
+    const attributeName = String(rule?.attributeName || '').trim();
+
+    return context.page.evaluate(
+      ({ selector: sel, valueType: mode, attributeName: attr }) => {
+        const element = (globalThis as any).document?.querySelector?.(sel);
+        if (!element) {
+          return '';
+        }
+
+        if (mode === 'innerText') {
+          return element.innerText || '';
+        }
+
+        if (mode === 'attribute') {
+          return attr ? element.getAttribute(attr) || '' : '';
+        }
+
+        return element.textContent || '';
+      },
+      {
+        selector,
+        valueType,
+        attributeName
+      }
+    );
+  }
+
+  private compareConditionValues(leftValue: any, rightValue: any, operator: string): boolean {
+    const leftText = String(leftValue ?? '').trim();
+    const rightText = String(rightValue ?? '').trim();
+    const leftNumber = Number(leftText);
+    const rightNumber = Number(rightText);
+
+    switch (operator) {
+      case 'equals':
+        return leftText === rightText;
+      case 'notEquals':
+        return leftText !== rightText;
+      case 'contains':
+        return leftText.includes(rightText);
+      case 'notContains':
+        return !leftText.includes(rightText);
+      case 'greaterThan':
+        return Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber > rightNumber;
+      case 'greaterThanOrEqual':
+        return Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber >= rightNumber;
+      case 'lessThan':
+        return Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber < rightNumber;
+      case 'lessThanOrEqual':
+        return Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber <= rightNumber;
+      case 'isEmpty':
+        return leftText === '';
+      case 'isNotEmpty':
+        return leftText !== '';
+      case 'isOdd':
+        return Number.isInteger(leftNumber) && Math.abs(leftNumber % 2) === 1;
+      case 'isEven':
+        return Number.isInteger(leftNumber) && leftNumber % 2 === 0;
+      default:
+        return false;
     }
   }
 
@@ -829,7 +1121,7 @@ export class WorkflowInterpreter {
   }
 
   private isNormalSourceHandle(handle?: string): boolean {
-    return handle === 'source-right' || handle === 'out';
+    return handle === 'source-right' || handle === 'out' || Boolean(handle?.startsWith('condition-'));
   }
 
   private isNormalTargetHandle(handle?: string): boolean {

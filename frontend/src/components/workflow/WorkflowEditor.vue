@@ -74,6 +74,10 @@
 
         <div class="palette-category">
           <h4>逻辑控制</h4>
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'condition')">
+            <span class="block-icon">🔀</span>
+            <span>条件</span>
+          </div>
           <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'loop')">
             <span class="block-icon">�</span>
             <span>循环</span>
@@ -264,6 +268,7 @@ import socketService from '../../services/socket';
 import type { BlockType } from '../../types/block';
 import { simpleLogWorkflow } from '../../examples/workflowExample';
 import CustomNode from './CustomNode.vue';
+import ConditionNode from './ConditionNode.vue';
 import LoopNode from './LoopNode.vue';
 import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
@@ -279,6 +284,7 @@ const WaitProperty = defineAsyncComponent(() => import('./properties/WaitPropert
 const ClickProperty = defineAsyncComponent(() => import('./properties/ClickProperty.vue'));
 const TypeProperty = defineAsyncComponent(() => import('./properties/TypeProperty.vue'));
 const ExtractProperty = defineAsyncComponent(() => import('./properties/ExtractProperty.vue'));
+const ConditionProperty = defineAsyncComponent(() => import('./properties/ConditionProperty.vue'));
 const LogProperty = defineAsyncComponent(() => import('./properties/LogProperty.vue'));
 const LoopProperty = defineAsyncComponent(() => import('./properties/LoopProperty.vue'));
 const DataTableManager = defineAsyncComponent(() => import('../DataTableManager.vue'));
@@ -289,6 +295,7 @@ const WorkflowManager = defineAsyncComponent(() => import('./WorkflowManager.vue
 // 定义节点类型
 const nodeTypes = {
   custom: markRaw(CustomNode) as any,
+  condition: markRaw(ConditionNode) as any,
   loop: markRaw(LoopNode) as any
 };
 
@@ -544,10 +551,12 @@ function initializeWorkflow() {
 }
 
 initializeWorkflow();
+workflowStore.migrateConditionBlocks();
 
 // 初始化数据表 store
 onMounted(() => {
   dataTableStore.init();
+  workflowStore.migrateConditionBlocks();
   updateHandleStyles();
 });
 
@@ -600,11 +609,13 @@ function updateHandleStyles() {
       const sourceNode = document.querySelector(`[data-id="${conn.source}"]`);
       if (sourceNode) {
         // 根据 sourceHandle 查找对应的 handle
-        let sourceHandle;
-        if (conn.sourceHandle === 'loop-start') {
-          sourceHandle = sourceNode.querySelector('.vue-flow__handle-left');
-        } else {
-          sourceHandle = sourceNode.querySelector('.vue-flow__handle-right');
+        let sourceHandle = sourceNode.querySelector(`[data-handleid="${conn.sourceHandle}"]`);
+        if (!sourceHandle) {
+          sourceHandle = conn.sourceHandle === 'loop-start'
+            ? sourceNode.querySelector('.vue-flow__handle-left')
+            : conn.sourceHandle === 'condition-fallback-bottom'
+              ? sourceNode.querySelector('.vue-flow__handle-bottom')
+            : sourceNode.querySelector('.vue-flow__handle-right');
         }
         if (sourceHandle) {
           sourceHandle.classList.add('connected');
@@ -615,11 +626,11 @@ function updateHandleStyles() {
       const targetNode = document.querySelector(`[data-id="${conn.target}"]`);
       if (targetNode) {
         // 根据 targetHandle 查找对应的 handle
-        let targetHandle;
-        if (conn.targetHandle === 'loop-end') {
-          targetHandle = targetNode.querySelector('.vue-flow__handle-right');
-        } else {
-          targetHandle = targetNode.querySelector('.vue-flow__handle-left');
+        let targetHandle = targetNode.querySelector(`[data-handleid="${conn.targetHandle}"]`);
+        if (!targetHandle) {
+          targetHandle = conn.targetHandle === 'loop-end'
+            ? targetNode.querySelector('.vue-flow__handle-right')
+            : targetNode.querySelector('.vue-flow__handle-left');
         }
         if (targetHandle) {
           targetHandle.classList.add('connected');
@@ -705,13 +716,14 @@ const elements = computed({
       
       return {
         id: block.id,
-        type: block.type === 'loop' ? 'loop' : 'custom',  // 循环模块使用特殊节点类型
+        type: block.type === 'loop' ? 'loop' : block.type === 'condition' ? 'condition' : 'custom',
         position: block.position,
         label: block.label,
         data: { 
           label: block.label,
           ...block.data, 
           blockType: block.type,
+          outputs: block.outputs,
           hasSourceConnection,
           hasTargetConnection
         },
@@ -892,7 +904,8 @@ function onConnect(connection: any) {
   
   // 验证：source 必须是右侧，target 必须是左侧（循环模块除外）
   if (sourceBlock?.type !== 'loop') {
-    if (connection.sourceHandle && !connection.sourceHandle.includes('right')) {
+    const sourceOutputs = sourceBlock?.outputs?.map(output => output.id) || [];
+    if (connection.sourceHandle && !sourceOutputs.includes(connection.sourceHandle) && !connection.sourceHandle.includes('right')) {
       return; // 静默拒绝
     }
   }
@@ -1110,6 +1123,7 @@ function getPropertyComponent(type: BlockType) {
     click: ClickProperty,
     type: TypeProperty,
     extract: ExtractProperty,
+    condition: ConditionProperty,
     loop: LoopProperty,
     log: LogProperty
   };

@@ -186,6 +186,30 @@ export class MockPage {
       return rows as TResult;
     }
 
+    if (
+      arg &&
+      typeof arg === 'object' &&
+      'selector' in (arg as Record<string, any>) &&
+      'valueType' in (arg as Record<string, any>) &&
+      !('configs' in (arg as Record<string, any>))
+    ) {
+      await this.delay(this.scenario.evaluateDelayMs);
+      this.ensureOpen();
+      const payload = arg as Record<string, any>;
+      const selector = String(payload.selector || '');
+      const value = this.scenario.conditionElementValues?.[selector]
+        ?? this.scenario.selectorValues?.[selector]?.[0]
+        ?? '';
+
+      this.actions.push({
+        type: 'conditionExtract',
+        selector,
+        valueType: payload.valueType,
+        attributeName: payload.attributeName || ''
+      });
+      return value as TResult;
+    }
+
     if (typeof arg === 'string' && source.includes("querySelectorAll('a[href]')")) {
       await this.delay(this.scenario.evaluateDelayMs);
       this.ensureOpen();
