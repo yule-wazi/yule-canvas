@@ -458,6 +458,57 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   });
 
   cases.push({
+    name: 'stop-cancels-background-child-chain-without-crash',
+    workflow: makeWorkflow(
+      [
+        makeBlock('navigate-1', 'navigate', { url: 'https://example.com/list', waitUntil: 'domcontentloaded', timeout: 1000 }, 'browser'),
+        makeBlock('click-1', 'click', { selector: '.detail-link', waitForElement: true, timeout: 1000, openInNewTab: true, runInBackground: true, waitUntil: 'domcontentloaded' }, 'interaction'),
+        makeBlock('extract-1', 'extract', {
+          extractions: [{ selector: '.detail video', attribute: 'src', customAttribute: '', saveToColumn: 'video' }],
+          multiple: false,
+          timeout: 1000,
+          saveToTable: 'table_background',
+          mergeKey: '{{index}}'
+        }, 'extraction'),
+        makeBlock('back-1', 'back', {}, 'browser'),
+        makeBlock('wait-1', 'wait', { duration: 50 }, 'browser'),
+        makeBlock('loop-1', 'loop', {
+          mode: 'count',
+          count: 2,
+          condition: '',
+          maxIterations: 10,
+          useVariable: true,
+          variableName: 'index',
+          startValueType: 'custom',
+          startValue: '1'
+        }, 'logic')
+      ],
+      [
+        loopStart('loop-1', 'click-1', 'c1'),
+        flow('click-1', 'extract-1', 'c2'),
+        flow('extract-1', 'back-1', 'c3'),
+        flow('back-1', 'wait-1', 'c4'),
+        loopEnd('wait-1', 'loop-1', 'c5')
+      ]
+    ),
+    scenario: {
+      clickTargets: {
+        '.detail-link': 'https://example.com/detail/1'
+      },
+      extractEvaluateDelayMs: 40
+    },
+    cancelAfterMs: 10,
+    closePageOnCancel: true,
+    coveredTypes: ['navigate', 'click', 'extract', 'back', 'wait', 'loop'],
+    assert: ({ result, actions }) => {
+      assert(!result.success, 'stop-cancels-background-child-chain-without-crash should stop execution');
+      assert(result.error === 'Execution stopped', 'stop-cancels-background-child-chain-without-crash should surface stop status');
+      assert(actions.some(action => action.type === 'newPage'), 'stop case should still open background popup before cancellation');
+      assert(actions.some(action => action.type === 'closePage' && action.url === 'https://example.com/list'), 'stop case should close the root page during cancellation');
+    }
+  });
+
+  cases.push({
     name: 'history-back-forward',
     workflow: makeWorkflow(
       [

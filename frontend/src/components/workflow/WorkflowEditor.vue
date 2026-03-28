@@ -26,27 +26,27 @@
         
         <div class="palette-category">
           <h4>浏览器控制</h4>
-          <div class="palette-block" @click="addBlock('navigate')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'navigate')">
             <span class="block-icon">🌐</span>
             <span>访问页面</span>
           </div>
-          <div class="palette-block" @click="addBlock('back')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'back')">
             <span class="block-icon">⬅️</span>
             <span>返回</span>
           </div>
-          <div class="palette-block" @click="addBlock('forward')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'forward')">
             <span class="block-icon">➡️</span>
             <span>前进</span>
           </div>
-          <div class="palette-block" @click="addBlock('scroll')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'scroll')">
             <span class="block-icon">📜</span>
             <span>滚动页面</span>
           </div>
-          <div class="palette-block" @click="addBlock('wait')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'wait')">
             <span class="block-icon">⏱️</span>
             <span>等待</span>
           </div>
-          <div class="palette-block" @click="addBlock('log')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'log')">
             <span class="block-icon">📝</span>
             <span>日志输出</span>
           </div>
@@ -54,11 +54,11 @@
 
         <div class="palette-category">
           <h4>页面交互</h4>
-          <div class="palette-block" @click="addBlock('click')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'click')">
             <span class="block-icon">👆</span>
             <span>点击元素</span>
           </div>
-          <div class="palette-block" @click="addBlock('type')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'type')">
             <span class="block-icon">⌨️</span>
             <span>输入文本</span>
           </div>
@@ -66,7 +66,7 @@
 
         <div class="palette-category">
           <h4>数据提取</h4>
-          <div class="palette-block" @click="addBlock('extract')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'extract')">
             <span class="block-icon">📊</span>
             <span>提取数据</span>
           </div>
@@ -74,14 +74,19 @@
 
         <div class="palette-category">
           <h4>逻辑控制</h4>
-          <div class="palette-block" @click="addBlock('loop')">
+          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'loop')">
             <span class="block-icon">�</span>
             <span>循环</span>
           </div>
         </div>
       </div>
 
-      <div class="canvas-area">
+      <div
+        ref="canvasAreaRef"
+        class="canvas-area"
+        @dragover.prevent="onCanvasDragOver"
+        @drop="onCanvasDrop"
+      >
         <VueFlow
           v-model="elements"
           :default-zoom="1"
@@ -250,7 +255,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw } from 'vue';
-import { VueFlow, MarkerType } from '@vue-flow/core';
+import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
@@ -287,8 +292,11 @@ const nodeTypes = {
   loop: markRaw(LoopNode) as any
 };
 
+const { project } = useVueFlow();
+
 const workflowStore = useWorkflowStore();
 const dataTableStore = useDataTableStore();
+const canvasAreaRef = ref<HTMLElement | null>(null);
 const showExecutionModal = ref(false);
 const showDataTableModal = ref(false);
 const showVariablesModal = ref(false);
@@ -699,11 +707,52 @@ function getMinimapNodeColor(node: any) {
   return '#6e7681';
 }
 
-function addBlock(type: BlockType) {
+const PALETTE_BLOCK_MIME = 'application/x-aibrowser-block-type';
+
+function onPaletteDragStart(event: DragEvent, type: BlockType) {
+  if (!event.dataTransfer) {
+    return;
+  }
+
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData(PALETTE_BLOCK_MIME, type);
+  event.dataTransfer.setData('text/plain', type);
+}
+
+function onCanvasDragOver(event: DragEvent) {
+  if (!event.dataTransfer) {
+    return;
+  }
+
+  event.dataTransfer.dropEffect = 'copy';
+}
+
+function onCanvasDrop(event: DragEvent) {
+  const type = event.dataTransfer?.getData(PALETTE_BLOCK_MIME) as BlockType | '';
+  const canvasRect = canvasAreaRef.value?.getBoundingClientRect();
+
+  if (!type || !canvasRect) {
+    return;
+  }
+
+  const position = project({
+    x: event.clientX - canvasRect.left,
+    y: event.clientY - canvasRect.top
+  });
+
+  addBlock(type, position);
+}
+
+function addBlock(type: BlockType, dropPosition?: { x: number; y: number }) {
   // 计算新节点的位置 - 水平布局
   const existingBlocks = workflowStore.blocks;
   let x = 100;
   let y = 200;
+
+  if (dropPosition) {
+    workflowStore.addBlock(type, dropPosition);
+    return;
+  }
   
   if (existingBlocks.length > 0) {
     // 找到最右边的节点
@@ -1500,13 +1549,17 @@ async function executeWorkflow() {
   background: #21262d;
   border: 1px solid #30363d;
   border-radius: 6px;
-  cursor: pointer;
+  cursor: move;
   transition: all 0.2s;
 }
 
 .palette-block:hover {
   background: #30363d;
   border-color: #58a6ff;
+}
+
+.palette-block:active {
+  cursor: move;
 }
 
 .block-icon {

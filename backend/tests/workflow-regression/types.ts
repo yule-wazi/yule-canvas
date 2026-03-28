@@ -19,6 +19,9 @@ export interface Scenario {
   linkCount?: number;
   clickTargets?: Record<string, string>;
   selectorValues?: Record<string, string[]>;
+  waitForSelectorDelayMs?: number;
+  evaluateDelayMs?: number;
+  extractEvaluateDelayMs?: number;
 }
 
 export interface ActionRecord {
@@ -37,6 +40,8 @@ export interface WorkflowTestCase {
   name: string;
   workflow: Workflow;
   scenario?: Scenario;
+  cancelAfterMs?: number;
+  closePageOnCancel?: boolean;
   coveredTypes: BlockTypeUnderTest[];
   assert: (execution: TestExecution) => void;
 }

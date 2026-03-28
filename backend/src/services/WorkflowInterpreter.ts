@@ -73,6 +73,7 @@ interface InterpreterOptions {
   onLog?: (entry: LogEntry) => void;
   onSaveData?: (data: any) => void;
   onTrace?: (event: TraceEvent) => void;
+  isCancelled?: () => boolean;
   silent?: boolean;
 }
 
@@ -157,6 +158,14 @@ export class WorkflowInterpreter {
       await this.executeSequence(sequence, blocksById, workflow.connections, loopInfos, context);
       await this.waitForBackgroundTasks(context);
 
+      if (this.options.isCancelled?.()) {
+        return {
+          success: false,
+          error: 'Execution stopped',
+          logs: context.logs
+        };
+      }
+
       this.log(context, '工作流执行完成');
 
       return {
@@ -166,6 +175,14 @@ export class WorkflowInterpreter {
       };
     } catch (error: any) {
       console.error('执行工作流失败:', error);
+      if (this.isCancellationError(error)) {
+        return {
+          success: false,
+          error: 'Execution stopped',
+          logs: []
+        };
+      }
+
       return {
         success: false,
         error: error.message,
@@ -182,6 +199,7 @@ export class WorkflowInterpreter {
     context: ExecutionContext
   ): Promise<void> {
     for (let index = 0; index < sequence.length; index++) {
+      this.assertNotCancelled();
       const unit = sequence[index];
       if (unit.kind === 'block' && unit.block) {
         const backgroundResult = await this.trySpawnBackgroundPopupChain(
@@ -455,6 +473,11 @@ export class WorkflowInterpreter {
     this.log(context, `后台标签页任务已启动: ${popup.url()}`);
 
     const task = this.executeSequence(childSequence, blocksById, connections, loopInfos, childContext)
+      .catch((error) => {
+        if (!this.isCancellationError(error)) {
+          throw error;
+        }
+      })
       .finally(async () => {
         if (childContext.page === popup) {
           await popup.close().catch(() => null);
@@ -693,10 +716,39 @@ export class WorkflowInterpreter {
     let awaitedCount = 0;
 
     while (awaitedCount < context.backgroundTasks.length) {
+      this.assertNotCancelled();
       const pendingTasks = context.backgroundTasks.slice(awaitedCount);
       awaitedCount = context.backgroundTasks.length;
-      await Promise.all(pendingTasks);
+      const results = await Promise.allSettled(pendingTasks);
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected' && !this.isCancellationError(result.reason)
+      );
+
+      if (failure) {
+        throw failure.reason;
+      }
     }
+  }
+
+  private assertNotCancelled(): void {
+    if (this.options.isCancelled?.()) {
+      throw new Error('Execution stopped');
+    }
+  }
+
+  private isCancellationError(error: any): boolean {
+    if (!this.options.isCancelled?.()) {
+      return false;
+    }
+
+    const message = String(error?.message || error || '');
+    return (
+      message.includes('Execution stopped') ||
+      message.includes('Target page, context or browser has been closed') ||
+      message.includes('Browser has been closed') ||
+      message.includes('Context closed') ||
+      message.includes('Page closed')
+    );
   }
 
   private getLoopStartValue(loopBlock: Block, context: ExecutionContext): number {

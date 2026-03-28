@@ -12,9 +12,12 @@ async function runCase(testCase: WorkflowTestCase): Promise<void> {
   const page = new MockPage(testCase.scenario);
   const trace: TraceEvent[] = [];
   const saveEvents: any[] = [];
+  let cancelled = false;
+  let cancelTimer: NodeJS.Timeout | null = null;
   const interpreter = new WorkflowInterpreter(page as any, {
     onTrace: event => trace.push(event),
     onSaveData: event => saveEvents.push(event),
+    isCancelled: () => cancelled,
     silent: true
   });
 
@@ -23,11 +26,25 @@ async function runCase(testCase: WorkflowTestCase): Promise<void> {
     assert(value !== undefined, `[${testCase.name}] variable ${key} should be normalizable`);
   });
 
+  if (typeof testCase.cancelAfterMs === 'number') {
+    cancelTimer = setTimeout(async () => {
+      cancelled = true;
+      if (testCase.closePageOnCancel) {
+        await page.close().catch(() => null);
+      }
+    }, testCase.cancelAfterMs);
+  }
+
   const result = await interpreter.execute(testCase.workflow);
+  if (cancelTimer) {
+    clearTimeout(cancelTimer);
+  }
   const blockStarts = trace.filter(event => event.type === 'block-start').length;
   const blockEnds = trace.filter(event => event.type === 'block-end').length;
 
-  assert(blockStarts === blockEnds, `[${testCase.name}] block trace should be balanced`);
+  if (typeof testCase.cancelAfterMs !== 'number') {
+    assert(blockStarts === blockEnds, `[${testCase.name}] block trace should be balanced`);
+  }
   testCase.assert({
     result,
     trace,

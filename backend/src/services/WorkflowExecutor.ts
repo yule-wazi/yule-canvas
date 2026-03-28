@@ -13,6 +13,7 @@ export class WorkflowExecutor {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private callbacks: WorkflowExecutorCallbacks;
+  private stopRequested = false;
 
   constructor(callbacks: WorkflowExecutorCallbacks = {}) {
     this.callbacks = callbacks;
@@ -23,6 +24,7 @@ export class WorkflowExecutor {
    */
   async executeWorkflow(workflow: Workflow): Promise<any> {
     const startTime = Date.now();
+    this.stopRequested = false;
 
     try {
       // 启动浏览器
@@ -35,7 +37,8 @@ export class WorkflowExecutor {
       // 创建解释器并执行
       const interpreter = new WorkflowInterpreter(this.page, {
         onLog: this.callbacks.onLog,
-        onSaveData: this.callbacks.onSaveData
+        onSaveData: this.callbacks.onSaveData,
+        isCancelled: () => this.stopRequested
       });
       const result = await interpreter.execute(workflow);
 
@@ -48,6 +51,15 @@ export class WorkflowExecutor {
       };
     } catch (error: any) {
       console.error('执行工作流失败:', error);
+      if (this.stopRequested) {
+        return {
+          success: false,
+          error: 'Execution stopped',
+          logs: [],
+          duration: Date.now() - startTime
+        };
+      }
+
       return {
         success: false,
         error: error.message,
@@ -218,6 +230,7 @@ export class WorkflowExecutor {
   }
 
   async stop(): Promise<void> {
+    this.stopRequested = true;
     await this.cleanup();
   }
 }

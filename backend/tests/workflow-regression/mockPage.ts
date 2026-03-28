@@ -10,6 +10,8 @@ export class MockPage {
   private scenario: Scenario;
   public readonly actions: ActionRecord[] = [];
   private parentPage: MockPage | null;
+  private readonly childPages = new Set<MockPage>();
+  private closed = false;
 
   constructor(scenario: Scenario = {}, actions?: ActionRecord[], parentPage: MockPage | null = null) {
     this.scenario = scenario;
@@ -24,6 +26,7 @@ export class MockPage {
   }
 
   async goto(url: string, options?: Record<string, any>): Promise<void> {
+    this.ensureOpen();
     this.currentUrl = url;
     this.history = this.history.slice(0, this.historyIndex + 1);
     this.history.push(url);
@@ -32,6 +35,7 @@ export class MockPage {
   }
 
   async goBack(): Promise<void> {
+    this.ensureOpen();
     if (this.historyIndex > 0) {
       this.historyIndex -= 1;
       this.currentUrl = this.history[this.historyIndex];
@@ -41,17 +45,28 @@ export class MockPage {
   }
 
   async bringToFront(): Promise<void> {
+    this.ensureOpen();
     this.actions.push({ type: 'bringToFront', url: this.currentUrl });
   }
 
   async close(): Promise<void> {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
     this.actions.push({ type: 'closePage', url: this.currentUrl });
+    for (const childPage of this.childPages) {
+      await childPage.close();
+    }
   }
 
   context() {
     return {
       newPage: async () => {
+        this.ensureOpen();
         const popup = new MockPage(this.scenario, this.actions, this);
+        this.childPages.add(popup);
         this.actions.push({ type: 'newPage' });
         return popup as any;
       }
@@ -59,6 +74,7 @@ export class MockPage {
   }
 
   async goForward(): Promise<void> {
+    this.ensureOpen();
     if (this.historyIndex < this.history.length - 1) {
       this.historyIndex += 1;
       this.currentUrl = this.history[this.historyIndex];
@@ -68,10 +84,14 @@ export class MockPage {
   }
 
   async waitForSelector(selector: string, options?: Record<string, any>): Promise<void> {
+    this.ensureOpen();
+    await this.delay(this.scenario.waitForSelectorDelayMs);
+    this.ensureOpen();
     this.actions.push({ type: 'waitForSelector', selector, options });
   }
 
   async click(selector: string): Promise<void> {
+    this.ensureOpen();
     const clickIndex = this.actions.filter(action => action.type === 'click').length + 1;
     const targetUrl = this.scenario.clickTargets?.[selector] || `mock://clicked/${clickIndex}`;
 
@@ -83,27 +103,35 @@ export class MockPage {
   }
 
   async type(selector: string, text: string, options?: Record<string, any>): Promise<void> {
+    this.ensureOpen();
     this.actions.push({ type: 'type', selector, text, options });
   }
 
   async selectOption(selector: string, value: string): Promise<void> {
+    this.ensureOpen();
     this.actions.push({ type: 'selectOption', selector, value });
   }
 
   async waitForTimeout(duration: number): Promise<void> {
+    this.ensureOpen();
     this.actions.push({ type: 'waitForTimeout', duration });
   }
 
   async evaluate<TArg = any, TResult = any>(fn: Function, arg?: TArg): Promise<TResult> {
+    this.ensureOpen();
     const source = fn.toString();
 
     if (typeof arg === 'number') {
+      await this.delay(this.scenario.evaluateDelayMs);
+      this.ensureOpen();
       this.pageScrollY += arg;
       this.actions.push({ type: 'pageScroll', distance: arg, scrollY: this.pageScrollY });
       return undefined as TResult;
     }
 
     if (source.includes('scrollY') && source.includes('scrollHeight')) {
+      await this.delay(this.scenario.evaluateDelayMs);
+      this.ensureOpen();
       return {
         scrollY: this.pageScrollY,
         innerHeight: this.pageInnerHeight,
@@ -112,6 +140,8 @@ export class MockPage {
     }
 
     if (arg && typeof arg === 'object' && 'sel' in (arg as Record<string, any>)) {
+      await this.delay(this.scenario.evaluateDelayMs);
+      this.ensureOpen();
       const payload = arg as Record<string, any>;
       this.actions.push({
         type: 'elementScroll',
@@ -129,6 +159,8 @@ export class MockPage {
       typeof arg === 'object' &&
       Array.isArray((arg as Record<string, any>).configs)
     ) {
+      await this.delay(this.scenario.extractEvaluateDelayMs ?? this.scenario.evaluateDelayMs);
+      this.ensureOpen();
       const payload = arg as Record<string, any>;
       const configs = payload.configs as Array<Record<string, any>>;
       const isMultiple = Boolean(payload.isMultiple);
@@ -155,6 +187,8 @@ export class MockPage {
     }
 
     if (typeof arg === 'string' && source.includes("querySelectorAll('a[href]')")) {
+      await this.delay(this.scenario.evaluateDelayMs);
+      this.ensureOpen();
       const pattern = arg;
       const linkCount = this.scenario.linkCount || 2;
       const links = Array.from({ length: linkCount }, (_, index) => ({
@@ -169,6 +203,8 @@ export class MockPage {
     }
 
     if (typeof arg === 'string' && source.includes("closest?.('a[href]')")) {
+      await this.delay(this.scenario.evaluateDelayMs);
+      this.ensureOpen();
       if (this.scenario.clickTargets && Object.prototype.hasOwnProperty.call(this.scenario.clickTargets, arg)) {
         return this.scenario.clickTargets[arg] as TResult;
       }
@@ -185,5 +221,21 @@ export class MockPage {
         ? config.customAttribute
         : config.attribute || 'text';
     return `${config.saveToColumn || 'value'}:${attribute}:${rowIndex + 1}`;
+  }
+
+  private ensureOpen(): void {
+    if (!this.closed) {
+      return;
+    }
+
+    throw new Error('Target page, context or browser has been closed');
+  }
+
+  private async delay(duration?: number): Promise<void> {
+    if (!duration || duration <= 0) {
+      return;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, duration));
   }
 }
