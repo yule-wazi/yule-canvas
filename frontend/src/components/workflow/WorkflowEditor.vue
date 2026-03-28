@@ -267,6 +267,7 @@ import { useDataTableStore } from '../../stores/dataTable';
 import socketService from '../../services/socket';
 import type { BlockType } from '../../types/block';
 import { simpleLogWorkflow } from '../../examples/workflowExample';
+import { findLoopBody, hasLoopIntersection } from '../../../../shared/workflowLoopGuards';
 import CustomNode from './CustomNode.vue';
 import ConditionNode from './ConditionNode.vue';
 import LoopNode from './LoopNode.vue';
@@ -928,10 +929,15 @@ function onConnect(connection: any) {
     
     if (loopEndConn) {
       // 已经有循环体了，检查新的起始点是否会导致交叉
-      const currentLoopBody = findLoopBody(loopId, connection.target, loopEndConn.source);
+      const currentLoopBody = findLoopBody(workflowStore.connections, connection.target, loopEndConn.source);
       
       // 检查当前循环体是否包含其他循环的循环体块
-      const hasIntersection = checkLoopIntersection(currentLoopBody, loopId);
+      const hasIntersection = hasLoopIntersection(
+        workflowStore.blocks,
+        workflowStore.connections,
+        currentLoopBody,
+        loopId
+      );
       
       if (hasIntersection) {
         toast.value?.show({ 
@@ -954,10 +960,15 @@ function onConnect(connection: any) {
     
     if (loopStartConn) {
       // 已经有循环体了，检查新的结束点是否会导致交叉
-      const currentLoopBody = findLoopBody(loopId, loopStartConn.target, connection.source);
+      const currentLoopBody = findLoopBody(workflowStore.connections, loopStartConn.target, connection.source);
       
       // 检查当前循环体是否包含其他循环的循环体块
-      const hasIntersection = checkLoopIntersection(currentLoopBody, loopId);
+      const hasIntersection = hasLoopIntersection(
+        workflowStore.blocks,
+        workflowStore.connections,
+        currentLoopBody,
+        loopId
+      );
       
       if (hasIntersection) {
         toast.value?.show({ 
@@ -978,114 +989,6 @@ function onConnect(connection: any) {
   updateHandleStyles();
 }
 
-// 查找循环体内的所有块ID（包括嵌套的循环模块）
-function findLoopBody(loopId: string, startBlockId: string, endBlockId: string): Set<string> {
-  const bodyBlockIds = new Set<string>();
-  const visited = new Set<string>();
-  let currentId = startBlockId;
-  
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-    bodyBlockIds.add(currentId);
-    
-    if (currentId === endBlockId) {
-      break;
-    }
-    
-    // 找到下一个连接（使用 source-right 或 out handle）
-    const nextConn = workflowStore.connections.find(c => 
-      c.source === currentId && 
-      (c.sourceHandle === 'source-right' || c.sourceHandle === 'out') &&
-      (c.targetHandle === 'target-left' || c.targetHandle === 'in')
-    );
-    
-    if (nextConn) {
-      currentId = nextConn.target;
-    } else {
-      break;
-    }
-  }
-  
-  return bodyBlockIds;
-}
-
-// 检查循环体是否与其他循环体交叉（允许完全嵌套，但不允许部分交叉）
-function checkLoopIntersection(currentLoopBody: Set<string>, currentLoopId: string): boolean {
-  // 获取所有其他循环模块
-  const otherLoops = workflowStore.blocks.filter(b => 
-    b.type === 'loop' && b.id !== currentLoopId
-  );
-  
-  for (const otherLoop of otherLoops) {
-    // 找到其他循环的循环体
-    const loopStartConn = workflowStore.connections.find(c => 
-      c.source === otherLoop.id && c.sourceHandle === 'loop-start'
-    );
-    const loopEndConn = workflowStore.connections.find(c => 
-      c.target === otherLoop.id && c.targetHandle === 'loop-end'
-    );
-    
-    if (loopStartConn && loopEndConn) {
-      const otherLoopBody = findLoopBody(otherLoop.id, loopStartConn.target, loopEndConn.source);
-      
-      // 检查交叉情况
-      let currentContainsOther = 0; // 当前循环体包含其他循环体的块数
-      let otherContainsCurrent = 0; // 其他循环体包含当前循环体的块数
-      
-      for (const blockId of otherLoopBody) {
-        if (currentLoopBody.has(blockId)) {
-          currentContainsOther++;
-        }
-      }
-      
-      for (const blockId of currentLoopBody) {
-        if (otherLoopBody.has(blockId)) {
-          otherContainsCurrent++;
-        }
-      }
-      
-      // 情况1：完全不相交 - 允许
-      if (currentContainsOther === 0 && otherContainsCurrent === 0) {
-        continue;
-      }
-      
-      // 情况2：当前循环完全包含其他循环（嵌套） - 允许
-      // 需要包含其他循环的所有循环体块
-      // 注意：其他循环模块本身不在循环体内，所以不需要检查 currentLoopBody.has(otherLoop.id)
-      // 只要当前循环体包含了其他循环的所有循环体块，就说明其他循环被完全嵌套在当前循环内
-      if (currentContainsOther === otherLoopBody.size) {
-        // 额外检查：其他循环的起始块和结束块都应该在当前循环体内
-        if (currentLoopBody.has(loopStartConn.target) && currentLoopBody.has(loopEndConn.source)) {
-          continue; // 合法嵌套
-        }
-      }
-      
-      // 情况3：其他循环完全包含当前循环（被嵌套） - 允许
-      // 需要包含当前循环的所有循环体块
-      if (otherContainsCurrent === currentLoopBody.size) {
-        // 额外检查：当前循环的起始块和结束块都应该在其他循环体内
-        // 找到当前循环的起始和结束连接
-        const currentLoopStartConn = workflowStore.connections.find(c => 
-          c.source === currentLoopId && c.sourceHandle === 'loop-start'
-        );
-        const currentLoopEndConn = workflowStore.connections.find(c => 
-          c.target === currentLoopId && c.targetHandle === 'loop-end'
-        );
-        
-        if (currentLoopStartConn && currentLoopEndConn) {
-          if (otherLoopBody.has(currentLoopStartConn.target) && otherLoopBody.has(currentLoopEndConn.source)) {
-            continue; // 合法嵌套
-          }
-        }
-      }
-      
-      // 情况4：部分交叉 - 不允许
-      return true;
-    }
-  }
-  
-  return false;
-}
 
 function onNodesChange(changes: any[]) {
   changes.forEach(change => {

@@ -2,6 +2,7 @@ import { WorkflowInterpreter, TraceEvent } from '../../src/services/WorkflowInte
 import { WorkflowValidator } from '../../src/services/WorkflowValidator';
 import { buildWorkflowRegressionCases } from './cases';
 import { assert, normalizeVariables } from './helpers';
+import { buildLoopGuardCases } from './loopGuardCases';
 import { MockPage } from './mockPage';
 import { REQUIRED_BLOCK_TYPES, WorkflowTestCase } from './types';
 
@@ -70,15 +71,18 @@ function parseArgs(argv: string[]): { caseFilter?: string; listOnly: boolean } {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const allCases = buildWorkflowRegressionCases();
+  const loopGuardCases = buildLoopGuardCases();
 
   if (args.listOnly) {
     allCases.forEach(testCase => console.log(testCase.name));
+    loopGuardCases.forEach(testCase => console.log(testCase.name));
     return;
   }
 
   const testCases = allCases.filter(testCase => !args.caseFilter || testCase.name === args.caseFilter);
+  const selectedLoopGuardCases = loopGuardCases.filter(testCase => !args.caseFilter || testCase.name === args.caseFilter);
   assert(
-    testCases.length > 0,
+    testCases.length + selectedLoopGuardCases.length > 0,
     args.caseFilter
       ? `No workflow regression case named "${args.caseFilter}"`
       : 'No workflow regression cases configured'
@@ -102,7 +106,13 @@ async function main(): Promise<void> {
     console.log(`PASS ${testCase.name}`);
   }
 
-  console.log(`Workflow regression suite passed: ${passed}/${testCases.length}`);
+  for (const testCase of selectedLoopGuardCases) {
+    testCase.run();
+    passed++;
+    console.log(`PASS ${testCase.name}`);
+  }
+
+  console.log(`Workflow regression suite passed: ${passed}/${testCases.length + selectedLoopGuardCases.length}`);
 }
 
 main().catch((error: any) => {
