@@ -1127,6 +1127,16 @@ export class WorkflowInterpreter {
     const rows = await context.page.evaluate(
       ({ configs, isMultiple }) => {
         const extractValue = (element: any, attribute: string, customAttribute: string) => {
+          const normalizeBackgroundImageValue = (value: string) => {
+            const trimmed = String(value || '').trim();
+            const match = trimmed.match(/^url\((.*)\)$/i);
+            if (!match) {
+              return trimmed;
+            }
+
+            return match[1].trim().replace(/^['"]|['"]$/g, '');
+          };
+
           if (!element) {
             return '';
           }
@@ -1137,6 +1147,16 @@ export class WorkflowInterpreter {
 
           if (attribute === 'html' || attribute === 'innerHTML') {
             return element.innerHTML || '';
+          }
+
+          if (attribute === 'backgroundImage') {
+            const inlineValue = element.style?.backgroundImage || '';
+            if (inlineValue) {
+              return normalizeBackgroundImageValue(inlineValue);
+            }
+
+            const win = (globalThis as any).window;
+            return normalizeBackgroundImageValue(win.getComputedStyle?.(element)?.backgroundImage || '');
           }
 
           if (attribute === 'data-*' && customAttribute) {

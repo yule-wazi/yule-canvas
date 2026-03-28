@@ -2,12 +2,12 @@
   <div class="property-form">
     <div class="form-group">
       <label>CSS 选择器</label>
-      <input
+      <textarea
         v-model="localData.selector"
-        type="text"
         placeholder="例如: button.submit"
+        rows="3"
         @input="emitUpdate"
-      />
+      ></textarea>
     </div>
 
     <div class="form-group">
@@ -33,10 +33,7 @@
       <small>适合列表页点击详情页。后续模块会切到新标签页执行，配合“返回”可关闭当前标签页并回到列表页。</small>
     </div>
 
-    <div
-      v-if="localData.openInNewTab"
-      class="form-group"
-    >
+    <div v-if="localData.openInNewTab" class="form-group">
       <label>新标签页等待策略</label>
       <select
         v-model="localData.waitUntil"
@@ -48,10 +45,7 @@
       </select>
     </div>
 
-    <div
-      v-if="localData.openInNewTab"
-      class="form-group"
-    >
+    <div v-if="localData.openInNewTab" class="form-group">
       <label>
         <input
           v-model="localData.runInBackground"
@@ -144,7 +138,7 @@ function emitUpdate() {
   gap: 0.5rem;
 }
 
-.form-group input[type="text"],
+.form-group textarea,
 .form-group input[type="number"],
 .form-group select {
   background: #0d1117;
@@ -155,11 +149,25 @@ function emitUpdate() {
   font-size: 0.9rem;
 }
 
-.form-group input[type="text"]:focus,
+.form-group textarea:focus,
 .form-group input[type="number"]:focus,
 .form-group select:focus {
   outline: none;
   border-color: #58a6ff;
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 84px;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  line-height: 1.5;
 }
 
 .form-group input[type="checkbox"] {

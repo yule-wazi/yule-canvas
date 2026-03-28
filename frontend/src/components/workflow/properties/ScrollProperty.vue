@@ -10,12 +10,12 @@
 
     <div class="form-group" v-if="localData.target === 'element'">
       <label>元素选择器</label>
-      <input
+      <textarea
         v-model="localData.selector"
-        type="text"
         placeholder="例如: .scroll-container"
+        rows="3"
         @input="emitUpdate"
-      />
+      ></textarea>
       <small>CSS选择器，用于定位需要滚动的元素</small>
     </div>
 
@@ -87,7 +87,6 @@ const emit = defineEmits<{
   update: [data: any];
 }>();
 
-// 初始化 localData，确保所有字段都有默认值
 const defaultData = {
   target: 'page',
   selector: '',
@@ -127,6 +126,7 @@ function emitUpdate() {
   color: #8b949e;
 }
 
+.form-group textarea,
 .form-group input,
 .form-group select {
   background: #0d1117;
@@ -137,10 +137,25 @@ function emitUpdate() {
   font-size: 0.9rem;
 }
 
+.form-group textarea:focus,
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
   border-color: #58a6ff;
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 84px;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  line-height: 1.5;
 }
 
 .form-group small {

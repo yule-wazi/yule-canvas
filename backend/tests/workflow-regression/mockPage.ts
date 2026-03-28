@@ -216,6 +216,10 @@ export class MockPage {
   }
 
   private defaultExtractValue(config: Record<string, any>, rowIndex: number): string {
+    if (config.attribute === 'backgroundImage') {
+      return `https://example.com/bg-${rowIndex + 1}.jpg`;
+    }
+
     const attribute =
       config.attribute === 'data-*' && config.customAttribute
         ? config.customAttribute

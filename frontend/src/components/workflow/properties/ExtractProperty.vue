@@ -59,12 +59,12 @@
 
         <div class="form-group">
           <label>CSS 选择器</label>
-          <input
+          <textarea
             v-model="extraction.selector"
-            type="text"
             placeholder="例如: .product-name"
+            rows="3"
             @input="emitUpdate"
-          />
+          ></textarea>
         </div>
 
         <div class="form-group">
@@ -75,6 +75,7 @@
             <option value="innerHTML">HTML 内容</option>
             <option value="href">链接地址 (href)</option>
             <option value="src">图片/资源地址 (src)</option>
+            <option value="backgroundImage">背景图 (background-image)</option>
             <option value="poster">视频封面 (poster)</option>
             <option value="value">表单值 (value)</option>
             <option value="alt">替代文本 (alt)</option>
@@ -247,6 +248,7 @@ watch(
   gap: 0.5rem;
 }
 
+.form-group textarea,
 .form-group input[type="text"],
 .form-group input[type="number"],
 .form-group select {
@@ -258,11 +260,26 @@ watch(
   font-size: 0.9rem;
 }
 
+.form-group textarea:focus,
 .form-group input[type="text"]:focus,
 .form-group input[type="number"]:focus,
 .form-group select:focus {
   outline: none;
   border-color: #58a6ff;
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 84px;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  line-height: 1.5;
 }
 
 .form-group input[type="checkbox"] {

@@ -1,13 +1,13 @@
 <template>
   <div class="property-form">
     <div class="form-group">
-      <label>CSS选择器</label>
-      <input
+      <label>CSS 选择器</label>
+      <textarea
         v-model="localData.selector"
-        type="text"
         placeholder="例如: input[name='username']"
+        rows="3"
         @input="emitUpdate"
-      />
+      ></textarea>
     </div>
 
     <div class="form-group">
@@ -105,6 +105,15 @@ function emitUpdate() {
 
 .form-group textarea {
   resize: vertical;
+  min-height: 84px;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .form-group small {

@@ -178,6 +178,25 @@ export function buildWorkflowRegressionCases(): WorkflowTestCase[] {
   });
 
   cases.push({
+    name: 'extract-background-image',
+    workflow: makeWorkflow(
+      [makeBlock('extract-1', 'extract', {
+        extractions: [
+          { selector: '.poster-card', attribute: 'backgroundImage', customAttribute: '', saveToColumn: 'cover' }
+        ],
+        multiple: false,
+        timeout: 1800
+      }, 'extraction')],
+      []
+    ),
+    coveredTypes: ['extract'],
+    assert: ({ result }) => {
+      assert(result.success, 'extract-background-image should succeed');
+      assert(result.result.results.data[0].cover === 'https://example.com/bg-1.jpg', 'extract should normalize background-image to a plain url');
+    }
+  });
+
+  cases.push({
     name: 'extract-literal-merge-key',
     workflow: makeWorkflow(
       [makeBlock('extract-1', 'extract', {
