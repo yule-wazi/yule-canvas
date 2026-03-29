@@ -1,7 +1,11 @@
 import {
   classifyRecordedNavigation,
   createRecordedMarkEvent,
-  RecordingPageHistoryState
+  RecordingPageHistoryState,
+  shouldArmRecordedScroll,
+  shouldIgnoreNavigationResetScroll,
+  shouldRecordWindowScroll,
+  shouldStopRecorderPanelWheel,
 } from '../../src/services/BrowserRecorder';
 import { assert } from './helpers';
 
@@ -77,6 +81,22 @@ export function buildRecordingRegressionCases(): RecordingRegressionCase[] {
         result = classifyRecordedNavigation(state, 'https://example.com/detail');
         state = result.nextState;
         assert(result.action === 'forward', 'going to next known url should classify as forward');
+      }
+    },
+    {
+      name: 'recording-ignores-scroll-inside-recorder-panel',
+      run: () => {
+        assert(shouldStopRecorderPanelWheel(true) === true, 'recorder panel wheel should be blocked');
+        assert(shouldStopRecorderPanelWheel(false) === false, 'page wheel should not be blocked');
+        assert(shouldArmRecordedScroll('wheel', false) === true, 'page wheel should arm scroll recording');
+        assert(shouldArmRecordedScroll('wheel', true) === false, 'panel wheel should not arm scroll recording');
+        assert(shouldArmRecordedScroll('keydown', false, 'PageDown') === true, 'scroll hotkeys should arm scroll recording');
+        assert(shouldArmRecordedScroll('keydown', false, 'Enter') === false, 'non-scroll keys should not arm scroll recording');
+        assert(shouldRecordWindowScroll(1000, 1200) === true, 'recent scroll intent should allow window scroll recording');
+        assert(shouldRecordWindowScroll(1000, 2000) === false, 'stale scroll intent should not allow window scroll recording');
+        assert(shouldIgnoreNavigationResetScroll(true, 0, 0) === true, 'first zero scroll after navigation should be ignored');
+        assert(shouldIgnoreNavigationResetScroll(true, 0, 10) === false, 'non-zero scroll after navigation should not be ignored');
+        assert(shouldIgnoreNavigationResetScroll(false, 0, 0) === false, 'zero scroll should not be ignored without navigation suppression');
       }
     }
   ];

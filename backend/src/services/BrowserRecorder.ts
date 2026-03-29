@@ -48,21 +48,90 @@ export interface RecordingPageHistoryState {
   index: number;
 }
 
+export function shouldStopRecorderPanelWheel(targetInsidePanel: boolean): boolean {
+  return targetInsidePanel;
+}
+
+export function shouldArmRecordedScroll(
+  source: 'wheel' | 'touchmove' | 'keydown',
+  targetInsidePanel: boolean,
+  key?: string
+): boolean {
+  if (targetInsidePanel) {
+    return false;
+  }
+
+  if (source === 'wheel' || source === 'touchmove') {
+    return true;
+  }
+
+  return ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Space', ' '].includes(key || '');
+}
+
+export function shouldRecordWindowScroll(lastScrollIntentAt: number, now: number, windowMs = 450): boolean {
+  return lastScrollIntentAt > 0 && now - lastScrollIntentAt <= windowMs;
+}
+
+export function shouldIgnoreNavigationResetScroll(
+  suppressNextZeroScroll: boolean,
+  x: number,
+  y: number
+): boolean {
+  return suppressNextZeroScroll && x === 0 && y === 0;
+}
+
 const RECORDER_INIT_SCRIPT = `
 (() => {
   if (window.__aibrowserRecorderInstalled) return;
   window.__aibrowserRecorderInstalled = true;
 
+  const ROOT_ID = '__aibrowser-recorder-root';
   const state = {
     mode: 'action',
-    scrollTimer: null
+    status: '录制已启动，请开始操作',
+    events: [],
+    scrollTimer: null,
+    lastScrollIntentAt: 0,
+    lastRecordedScrollX: window.scrollX,
+    lastRecordedScrollY: window.scrollY,
+    suppressNextZeroScroll: false
   };
-
   const preferredAttributes = ['data-testid', 'data-test', 'data-qa', 'data-cy', 'aria-label', 'name'];
 
   function emit(payload) {
     if (typeof window.__aibrowserRecorderEmit === 'function') {
       window.__aibrowserRecorderEmit(payload);
+    }
+  }
+
+  function shouldStopPanelWheel(targetInsidePanel) {
+    return !!targetInsidePanel;
+  }
+
+  function shouldArmScroll(source, targetInsidePanel, key) {
+    if (targetInsidePanel) {
+      return false;
+    }
+
+    if (source === 'wheel' || source === 'touchmove') {
+      return true;
+    }
+
+    return ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', 'Space', ' '].includes(key || '');
+  }
+
+  function shouldRecordScroll(lastScrollIntentAt, now, windowMs = 450) {
+    return lastScrollIntentAt > 0 && now - lastScrollIntentAt <= windowMs;
+  }
+
+  function shouldIgnoreZeroReset(suppressNextZeroScroll, x, y) {
+    return !!suppressNextZeroScroll && x === 0 && y === 0;
+  }
+
+
+  function sendControl(payload) {
+    if (typeof window.__aibrowserRecorderControl === 'function') {
+      window.__aibrowserRecorderControl(payload);
     }
   }
 
@@ -92,13 +161,18 @@ const RECORDER_INIT_SCRIPT = `
     }
   }
 
+  function isInsidePanel(element) {
+    return element instanceof Element && !!element.closest('#' + ROOT_ID);
+  }
+
   function getActionTarget(element) {
-    if (!(element instanceof Element)) return null;
+    if (!(element instanceof Element) || isInsidePanel(element)) return null;
     return element.closest('a, button, input, textarea, select, option, [role="button"], [role="link"], [contenteditable="true"], [onclick]') || element;
   }
 
   function getMarkTarget(element) {
-    return element instanceof Element ? element : null;
+    if (!(element instanceof Element) || isInsidePanel(element)) return null;
+    return element;
   }
 
   function buildClassSelector(element) {
@@ -107,7 +181,9 @@ const RECORDER_INIT_SCRIPT = `
       .filter((className) => className && !className.startsWith('vue-'))
       .slice(0, 3)
       .map((className) => '.' + cssEscape(className));
+
     if (!classNames.length) return '';
+
     const selector = element.tagName.toLowerCase() + classNames.join('');
     return isUnique(selector) ? selector : '';
   }
@@ -143,6 +219,7 @@ const RECORDER_INIT_SCRIPT = `
       parts.unshift(part);
       const selector = parts.join(' > ');
       if (isUnique(selector)) return selector;
+
       current = current.parentElement;
       depth += 1;
     }
@@ -183,16 +260,299 @@ const RECORDER_INIT_SCRIPT = `
     };
   }
 
+  function formatTime(timestamp) {
+    try {
+      return new Date(timestamp).toLocaleTimeString();
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function summarizeEvent(event) {
+    const labels = {
+      navigate: '访问页面',
+      click: '点击元素',
+      type: '输入文本',
+      select: '选择下拉项',
+      scroll: '滚动页面',
+      back: '返回',
+      forward: '前进',
+      'field-mark': '字段标注'
+    };
+    return labels[event.action] || event.action || '未知事件';
+  }
+
+  function ensurePanel() {
+    let root = document.getElementById(ROOT_ID);
+    if (root) return root;
+
+    root = document.createElement('div');
+    root.id = ROOT_ID;
+    root.innerHTML = [
+      '<div class="__aibrowser-recorder-shell">',
+      '  <div class="__aibrowser-recorder-header">',
+      '    <div class="__aibrowser-recorder-title-wrap">',
+      '      <div class="__aibrowser-recorder-title">录制事件</div>',
+      '      <div class="__aibrowser-recorder-status" data-role="status"></div>',
+      '    </div>',
+      '    <div class="__aibrowser-recorder-actions">',
+      '      <span class="__aibrowser-recorder-mode" data-role="mode">动作模式</span>',
+      '      <button type="button" data-action="toggle-mode">切换标注模式</button>',
+      '      <button type="button" data-action="stop" class="danger">停止录制</button>',
+      '    </div>',
+      '  </div>',
+      '  <div class="__aibrowser-recorder-events" data-role="events"></div>',
+      '</div>'
+    ].join('');
+
+    const style = document.createElement('style');
+    style.textContent = [
+      '#' + ROOT_ID + ' {',
+      '  position: fixed;',
+      '  right: 24px;',
+      '  bottom: 24px;',
+      '  z-index: 2147483647;',
+      '  width: 420px;',
+      '  min-width: 320px;',
+      '  min-height: 220px;',
+      '  max-width: min(520px, calc(100vw - 32px));',
+      '  max-height: calc(100vh - 32px);',
+      '  resize: both;',
+      '  overflow: hidden;',
+      '  border-radius: 16px;',
+      '  border: 1px solid rgba(88, 166, 255, 0.32);',
+      '  background: rgba(13, 17, 23, 0.96);',
+      '  color: #e6edf3;',
+      '  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);',
+      '  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;',
+      '}',
+      '#' + ROOT_ID + ' * { box-sizing: border-box; }',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-shell {',
+      '  display: flex;',
+      '  flex-direction: column;',
+      '  width: 100%;',
+      '  height: 100%;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-header {',
+      '  display: flex;',
+      '  justify-content: space-between;',
+      '  align-items: flex-start;',
+      '  gap: 12px;',
+      '  padding: 12px 14px;',
+      '  border-bottom: 1px solid rgba(48, 54, 61, 0.92);',
+      '  cursor: move;',
+      '  user-select: none;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-title {',
+      '  font-size: 20px;',
+      '  font-weight: 700;',
+      '  color: #58a6ff;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-status {',
+      '  margin-top: 6px;',
+      '  color: #8b949e;',
+      '  font-size: 13px;',
+      '  line-height: 1.45;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-actions {',
+      '  display: flex;',
+      '  gap: 8px;',
+      '  align-items: flex-start;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mode {',
+      '  padding: 8px 12px;',
+      '  border-radius: 999px;',
+      '  border: 1px solid #58a6ff;',
+      '  color: #58a6ff;',
+      '  background: rgba(88, 166, 255, 0.12);',
+      '  white-space: nowrap;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mode.is-mark {',
+      '  border-color: #a855f7;',
+      '  color: #f0abfc;',
+      '  background: rgba(168, 85, 247, 0.16);',
+      '}',
+      '#' + ROOT_ID + ' button {',
+      '  border: none;',
+      '  border-radius: 10px;',
+      '  padding: 10px 12px;',
+      '  cursor: pointer;',
+      '  font-size: 14px;',
+      '  color: white;',
+      '  background: #1f6feb;',
+      '}',
+      '#' + ROOT_ID + ' button.danger { background: #da3633; }',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-events {',
+      '  flex: 1;',
+      '  overflow: auto;',
+      '  padding: 0 14px 14px;',
+      '  overscroll-behavior: contain;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-empty {',
+      '  padding: 16px 0;',
+      '  color: #8b949e;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-item {',
+      '  padding: 12px 0;',
+      '  border-bottom: 1px solid rgba(48, 54, 61, 0.92);',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-item:last-child { border-bottom: none; }',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-line {',
+      '  display: flex;',
+      '  gap: 10px;',
+      '  align-items: flex-start;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-time {',
+      '  min-width: 68px;',
+      '  color: #8b949e;',
+      '  font-size: 12px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-summary {',
+      '  flex: 1;',
+      '  line-height: 1.45;',
+      '  font-size: 13px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-meta {',
+      '  margin-top: 6px;',
+      '  padding-left: 78px;',
+      '  color: #8b949e;',
+      '  font-size: 12px;',
+      '  word-break: break-word;',
+      '}'
+    ].join('');
+    root.appendChild(style);
+    document.body.appendChild(root);
+
+    const header = root.querySelector('.__aibrowser-recorder-header');
+    const toggleButton = root.querySelector('[data-action="toggle-mode"]');
+    const stopButton = root.querySelector('[data-action="stop"]');
+    let dragState = null;
+
+    header.addEventListener('mousedown', (event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('button')) {
+        return;
+      }
+      const rect = root.getBoundingClientRect();
+      dragState = {
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top
+      };
+      root.style.left = rect.left + 'px';
+      root.style.top = rect.top + 'px';
+      root.style.right = 'auto';
+      root.style.bottom = 'auto';
+      event.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (event) => {
+      if (!dragState) return;
+      root.style.left = dragState.left + (event.clientX - dragState.startX) + 'px';
+      root.style.top = dragState.top + (event.clientY - dragState.startY) + 'px';
+    });
+
+    window.addEventListener('mouseup', () => {
+      dragState = null;
+    });
+
+    toggleButton.addEventListener('click', () => {
+      const nextMode = state.mode === 'mark' ? 'action' : 'mark';
+      sendControl({ action: 'set-mode', mode: nextMode });
+    });
+
+    stopButton.addEventListener('click', () => {
+      sendControl({ action: 'stop' });
+    });
+
+    root.addEventListener('wheel', (event) => {
+      if (!shouldStopPanelWheel(isInsidePanel(event.target))) {
+        return;
+      }
+      event.stopPropagation();
+    }, { capture: true });
+
+    return root;
+  }
+
+  function renderPanel() {
+    const root = ensurePanel();
+    const statusEl = root.querySelector('[data-role="status"]');
+    const modeEl = root.querySelector('[data-role="mode"]');
+    const toggleButton = root.querySelector('[data-action="toggle-mode"]');
+    const eventsEl = root.querySelector('[data-role="events"]');
+
+    statusEl.textContent = state.status || '';
+    modeEl.textContent = state.mode === 'mark' ? '标注模式' : '动作模式';
+    modeEl.classList.toggle('is-mark', state.mode === 'mark');
+    toggleButton.textContent = state.mode === 'mark' ? '切换动作模式' : '切换标注模式';
+
+    if (!state.events.length) {
+      eventsEl.innerHTML = '<div class="__aibrowser-recorder-empty">录制开始后，这里显示关键操作。</div>';
+      return;
+    }
+
+    eventsEl.innerHTML = state.events
+      .map((event) => {
+        const meta = [];
+        if (event.selector) meta.push('<div><strong>selector:</strong> ' + event.selector + '</div>');
+        if (event.fieldName) meta.push('<div><strong>字段:</strong> ' + event.fieldName + '</div>');
+        if (event.value) meta.push('<div><strong>值:</strong> ' + event.value + '</div>');
+
+        return [
+          '<div class="__aibrowser-recorder-item">',
+          '  <div class="__aibrowser-recorder-line">',
+          '    <span class="__aibrowser-recorder-time">' + formatTime(event.timestamp) + '</span>',
+          '    <span class="__aibrowser-recorder-summary">' + summarizeEvent(event) + ' · ' + (event.title || event.url || '') + '</span>',
+          '  </div>',
+          meta.length ? '  <div class="__aibrowser-recorder-meta">' + meta.join('') + '</div>' : '',
+          '</div>'
+        ].join('');
+      })
+      .join('');
+  }
+
   function emitAction(action, element, extra) {
-    emit({
+    const event = {
       kind: 'action',
       action,
+      timestamp: Date.now(),
       selector: buildSelector(element),
       url: window.location.href,
       title: document.title,
       elementMeta: getElementMeta(element),
       ...extra
-    });
+    };
+    emit(event);
+  }
+
+  function scheduleScrollRecord() {
+    if (state.scrollTimer) clearTimeout(state.scrollTimer);
+    state.scrollTimer = setTimeout(() => {
+      const nextX = window.scrollX;
+      const nextY = window.scrollY;
+      if (shouldIgnoreZeroReset(state.suppressNextZeroScroll, nextX, nextY)) {
+        state.suppressNextZeroScroll = false;
+        state.lastRecordedScrollX = nextX;
+        state.lastRecordedScrollY = nextY;
+        return;
+      }
+      if (nextX === state.lastRecordedScrollX && nextY === state.lastRecordedScrollY) {
+        return;
+      }
+      state.suppressNextZeroScroll = false;
+      state.lastRecordedScrollX = nextX;
+      state.lastRecordedScrollY = nextY;
+      emitAction('scroll', document.documentElement, {
+        value: JSON.stringify({ x: nextX, y: nextY }),
+        selector: ''
+      });
+    }, 160);
+  }
+
+  function armScrollIntent() {
+    state.lastScrollIntentAt = Date.now();
+    scheduleScrollRecord();
   }
 
   document.addEventListener('click', (event) => {
@@ -201,6 +561,8 @@ const RECORDER_INIT_SCRIPT = `
     if (!target) return;
 
     if (state.mode === 'mark') {
+      state.status = '已选中元素，请回到主页面确认字段标注';
+      renderPanel();
       emit({
         kind: 'mark-request',
         request: {
@@ -223,6 +585,7 @@ const RECORDER_INIT_SCRIPT = `
   document.addEventListener('change', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (isInsidePanel(target)) return;
 
     if (target instanceof HTMLSelectElement) {
       emitAction('select', target, { value: target.value });
@@ -234,21 +597,73 @@ const RECORDER_INIT_SCRIPT = `
     }
   }, true);
 
+  document.addEventListener('wheel', (event) => {
+    if (!shouldArmScroll('wheel', isInsidePanel(event.target))) {
+      return;
+    }
+    armScrollIntent();
+  }, { capture: true, passive: true });
+
+  document.addEventListener('touchmove', (event) => {
+    if (!shouldArmScroll('touchmove', isInsidePanel(event.target))) {
+      return;
+    }
+    armScrollIntent();
+  }, { capture: true, passive: true });
+
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    const editableTarget =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof Element && target.getAttribute('contenteditable') === 'true');
+
+    if (editableTarget || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    if (!shouldArmScroll('keydown', isInsidePanel(target), event.key)) {
+      return;
+    }
+
+    armScrollIntent();
+  }, true);
+
   window.addEventListener('scroll', () => {
-    if (state.scrollTimer) clearTimeout(state.scrollTimer);
-    state.scrollTimer = setTimeout(() => {
-      emitAction('scroll', document.documentElement, {
-        value: JSON.stringify({ x: window.scrollX, y: window.scrollY }),
-        selector: ''
-      });
-    }, 200);
+    if (!shouldRecordScroll(state.lastScrollIntentAt, Date.now())) {
+      return;
+    }
+    scheduleScrollRecord();
   }, true);
 
   window.__aibrowserRecorder = {
     setMode(mode) {
       state.mode = mode === 'mark' ? 'mark' : 'action';
+      state.status = state.mode === 'mark' ? '标注模式：点击网页元素发起字段标注' : '动作模式：继续录制点击、滚动、输入';
+      renderPanel();
+    },
+    setStatus(message) {
+      state.status = message || '';
+      renderPanel();
+    },
+    suppressNextZeroScroll() {
+      state.suppressNextZeroScroll = true;
+    },
+    appendEvent(event) {
+      state.events = [event, ...state.events].slice(0, 12);
+      renderPanel();
     }
   };
+
+  if (document.body) {
+    ensurePanel();
+    renderPanel();
+  } else {
+    window.addEventListener('DOMContentLoaded', () => {
+      ensurePanel();
+      renderPanel();
+    }, { once: true });
+  }
 })();
 `;
 
@@ -335,7 +750,6 @@ export class BrowserRecorder {
       const page = source.page as Page | undefined;
       await this.handleBrowserPayload(page, payload);
     });
-    await this.context.addInitScript({ content: RECORDER_INIT_SCRIPT });
 
     this.context.on('page', page => {
       this.attachPage(page).catch(error => {
@@ -353,20 +767,19 @@ export class BrowserRecorder {
 
     this.currentStatusMessage = '录制已开始，请在新浏览器中操作目标网站';
     this.callbacks.onStatus?.({ state: 'started', message: this.currentStatusMessage, mode: this.mode });
+    await this.broadcastStatus(this.currentStatusMessage);
   }
 
   async setMode(mode: RecordingMode): Promise<void> {
     this.mode = mode;
     this.currentStatusMessage =
       mode === 'mark'
-        ? '已切换到标注模式，点击页面元素即可标注字段'
+        ? '已切换到标注模式，点击页面元素即可发起字段标注'
         : '已切换到动作录制模式';
 
-    if (this.context) {
-      await Promise.all(this.context.pages().map(page => this.syncPageMode(page)));
-    }
-
+    await this.broadcastMode();
     this.callbacks.onStatus?.({ state: 'mode-changed', message: this.currentStatusMessage, mode });
+    await this.broadcastStatus(this.currentStatusMessage);
   }
 
   async confirmMark(
@@ -375,8 +788,10 @@ export class BrowserRecorder {
   ): Promise<void> {
     const event = createRecordedMarkEvent(request, payload);
     this.callbacks.onEvent?.(event);
-    this.currentStatusMessage = `已标注字段 ${payload.fieldName}`;
+    this.currentStatusMessage = `已标注字段：${payload.fieldName}`;
     this.callbacks.onStatus?.({ state: 'mark-saved', message: this.currentStatusMessage, mode: this.mode });
+    await this.pushEventToPageById(request.pageId, event);
+    await this.broadcastStatus(this.currentStatusMessage);
   }
 
   async stop(): Promise<void> {
@@ -402,6 +817,7 @@ export class BrowserRecorder {
         selector: payload.request?.selector || '',
         elementMeta: payload.request?.elementMeta || {}
       });
+      await this.pushStatusToPage(page, '已选中元素，请回到主页面确认字段标注');
       return;
     }
 
@@ -413,7 +829,7 @@ export class BrowserRecorder {
       id: this.nextEventId(),
       kind: 'action',
       action: payload.action,
-      timestamp: Date.now(),
+      timestamp: typeof payload.timestamp === 'number' ? payload.timestamp : Date.now(),
       pageId,
       url: typeof payload.url === 'string' ? payload.url : page.url(),
       title: typeof payload.title === 'string' ? payload.title : '',
@@ -425,6 +841,8 @@ export class BrowserRecorder {
     this.callbacks.onEvent?.(event);
     this.currentStatusMessage = `已记录：${this.describeAction(event.action)}`;
     this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
+    await this.pushEventToPage(page, event);
+    await this.pushStatusToPage(page, this.currentStatusMessage);
   }
 
   private async attachPage(page: Page): Promise<void> {
@@ -462,23 +880,85 @@ export class BrowserRecorder {
       this.callbacks.onEvent?.(event);
       this.currentStatusMessage = `已记录：${this.describeAction(action)}`;
       this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
+      await this.suppressNextZeroScroll(page);
+      await this.pushEventToPage(page, event);
+      await this.pushStatusToPage(page, this.currentStatusMessage);
     });
 
     page.on('domcontentloaded', () => {
-      this.syncPageMode(page).catch(() => null);
+      this.installRecorderRuntime(page).catch(() => null);
     });
 
+    await this.installRecorderRuntime(page);
+  }
+
+  private async installRecorderRuntime(page: Page): Promise<void> {
+    try {
+      await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => null);
+      await page.evaluate(RECORDER_INIT_SCRIPT as any);
+    } catch {
+      return;
+    }
+
     await this.syncPageMode(page);
+    await this.pushStatusToPage(page, this.currentStatusMessage);
   }
 
   private async syncPageMode(page: Page): Promise<void> {
     try {
       await page.evaluate((mode: RecordingMode) => {
-        (globalThis as any).__aibrowserRecorder?.setMode(mode);
+        (globalThis as any).__aibrowserRecorder?.setMode?.(mode);
       }, this.mode);
     } catch {
-      // Ignore pages that are not ready yet.
+      // ignore
     }
+  }
+
+  private async pushStatusToPage(page: Page, message: string): Promise<void> {
+    try {
+      await page.evaluate((status: string) => {
+        (globalThis as any).__aibrowserRecorder?.setStatus?.(status);
+      }, message);
+    } catch {
+      // ignore
+    }
+  }
+
+  private async suppressNextZeroScroll(page: Page): Promise<void> {
+    try {
+      await page.evaluate(() => {
+        (globalThis as any).__aibrowserRecorder?.suppressNextZeroScroll?.();
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  private async pushEventToPage(page: Page, event: RecordingEvent): Promise<void> {
+    try {
+      await page.evaluate((payload: RecordingEvent) => {
+        (globalThis as any).__aibrowserRecorder?.appendEvent?.(payload);
+      }, event);
+    } catch {
+      // ignore
+    }
+  }
+
+  private async pushEventToPageById(pageId: string, event: RecordingEvent): Promise<void> {
+    if (!this.context) return;
+    const page = this.context.pages().find(candidate => this.pageIds.get(candidate) === pageId);
+    if (!page) return;
+    await this.pushEventToPage(page, event);
+  }
+
+  private async broadcastMode(): Promise<void> {
+    if (!this.context) return;
+    await Promise.all(this.context.pages().map(page => this.syncPageMode(page)));
+  }
+
+  private async broadcastStatus(message: string): Promise<void> {
+    if (!this.context) return;
+    await Promise.all(this.context.pages().map(page => this.pushStatusToPage(page, message)));
   }
 
   private ensurePageId(page: Page): string {
@@ -519,11 +999,7 @@ export class BrowserRecorder {
     const userDataDir = process.env.CHROME_USER_DATA || path.join(process.cwd(), 'chrome-data');
     const launchOptions: any = {
       headless: false,
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-        '--disable-setuid-sandbox'
-      ]
+      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox', '--disable-setuid-sandbox']
     };
 
     if (chromePath) {
@@ -533,6 +1009,20 @@ export class BrowserRecorder {
     }
 
     this.context = await chromium.launchPersistentContext(userDataDir, launchOptions);
+    await this.context.exposeBinding('__aibrowserRecorderControl', async (_source, payload: any) => {
+      if (!payload || typeof payload !== 'object') {
+        return;
+      }
+
+      if (payload.action === 'stop') {
+        await this.stop();
+        return;
+      }
+
+      if (payload.action === 'set-mode') {
+        await this.setMode(payload.mode === 'mark' ? 'mark' : 'action');
+      }
+    });
   }
 
   private detectChromePath(): string | null {
