@@ -196,8 +196,8 @@
         </div>
         <div v-for="event in recordingEvents" :key="event.id" class="recording-event-item">
           <div class="recording-event-line">
-            <span class="recording-event-time">{{ formatRecordingEventTime(event.timestamp) }}</span>
             <span class="recording-event-summary">{{ formatRecordingEventSummary(event) }}</span>
+            <button class="recording-event-delete" @click="deleteRecordingEvent(event.id)">删除</button>
           </div>
           <div class="recording-event-meta" v-if="event.selector || event.fieldName || event.value">
             <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
@@ -222,35 +222,6 @@
         <div class="modal-actions">
           <button @click="startRecording" class="btn-primary">开始录制</button>
           <button @click="closeRecordingSetup" class="btn-secondary">取消</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="pendingRecordingMark" class="modal-overlay" @click="cancelRecordingMark">
-      <div class="modal-content recording-mark-modal" @click.stop>
-        <h3>确认字段标注</h3>
-        <div class="recording-mark-preview">
-          <div><strong>selector:</strong> {{ pendingRecordingMark.selector }}</div>
-          <div v-if="pendingRecordingMark.elementMeta?.text"><strong>文本:</strong> {{ pendingRecordingMark.elementMeta?.text }}</div>
-          <div v-if="pendingRecordingMark.elementMeta?.tagName"><strong>标签:</strong> {{ pendingRecordingMark.elementMeta?.tagName }}</div>
-        </div>
-        <div class="form-group">
-          <label>字段名</label>
-          <input v-model="recordingMarkForm.fieldName" placeholder="例如：title / image / content" />
-        </div>
-        <div class="form-group">
-          <label>字段类型</label>
-          <select v-model="recordingMarkForm.fieldType">
-            <option value="text">文本</option>
-            <option value="image">图片</option>
-            <option value="video">视频</option>
-            <option value="link">链接</option>
-            <option value="custom">自定义</option>
-          </select>
-        </div>
-        <div class="modal-actions">
-          <button @click="confirmRecordingMark" class="btn-primary">保存标注</button>
-          <button @click="cancelRecordingMark" class="btn-secondary">取消</button>
         </div>
       </div>
     </div>
@@ -408,14 +379,6 @@ interface RecordingEventItem {
   };
 }
 
-interface RecordingMarkRequest {
-  pageId: string;
-  url: string;
-  title?: string;
-  selector: string;
-  elementMeta?: RecordingEventItem['elementMeta'];
-}
-
 // 定义节点类型
 const nodeTypes = {
   custom: markRaw(CustomNode) as any,
@@ -447,11 +410,6 @@ const recordingMode = ref<'action' | 'mark'>('action');
 const recordingStatusText = ref('尚未开始录制');
 const recordingStartUrl = ref('');
 const recordingEvents = ref<RecordingEventItem[]>([]);
-const pendingRecordingMark = ref<RecordingMarkRequest | null>(null);
-const recordingMarkForm = reactive({
-  fieldName: '',
-  fieldType: 'text' as 'text' | 'image' | 'video' | 'link' | 'custom'
-});
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
 const executionPanelRef = ref<HTMLElement | null>(null);
@@ -670,37 +628,25 @@ function closeRecordingSetup() {
 }
 
 function clearRecordingEvents() {
-  recordingEvents.value = [];
+  socketService.clearRecordingEvents();
 }
 
-function formatRecordingEventTime(timestamp: number) {
-  return new Date(timestamp).toLocaleTimeString();
+function deleteRecordingEvent(eventId: string) {
+  socketService.deleteRecordingEvent(eventId);
 }
 
 function formatRecordingEventSummary(event: RecordingEventItem) {
-  const actionMap: Record<string, string> = {
-    navigate: '访问页面',
-    click: '点击元素',
-    type: '输入文本',
-    select: '选择下拉项',
-    scroll: '滚动页面',
-    back: '返回',
-    forward: '前进',
-    'field-mark': '标注字段'
-  };
-
-  const actionLabel = actionMap[event.action] || event.action;
   if (event.kind === 'mark') {
-    return `标注字段 ${event.fieldName || ''}`.trim();
+    return event.fieldName || '标注字段';
   }
 
-  return `${actionLabel} · ${event.elementMeta?.text || event.title || event.url || ''}`.trim();
+  return `${event.elementMeta?.text || event.title || event.url || '未命名事件'}`.trim();
 }
 
 function stopRecordingSocketListeners() {
   socketService.off('recording-status');
   socketService.off('recording-event');
-  socketService.off('recording-mark-request');
+  socketService.off('recording-events');
 }
 
 function setupRecordingListeners() {
@@ -721,20 +667,12 @@ function setupRecordingListeners() {
     if (status.state === 'stopped') {
       isRecording.value = false;
       recordingMode.value = 'action';
-      pendingRecordingMark.value = null;
       stopRecordingSocketListeners();
     }
   });
 
-  socketService.onRecordingEvent((event: RecordingEventItem) => {
-    recordingEvents.value.push(event);
-    showRecordingPanel.value = true;
-  });
-
-  socketService.onRecordingMarkRequest((request: RecordingMarkRequest) => {
-    pendingRecordingMark.value = request;
-    recordingMarkForm.fieldName = '';
-    recordingMarkForm.fieldType = 'text';
+  socketService.onRecordingEvents((events: RecordingEventItem[]) => {
+    recordingEvents.value = Array.isArray(events) ? events : [];
     showRecordingPanel.value = true;
   });
 }
@@ -753,7 +691,6 @@ function startRecording() {
     }
 
     recordingEvents.value = [];
-    pendingRecordingMark.value = null;
     recordingStatusText.value = '正在启动录制浏览器...';
     showRecordingPanel.value = true;
     const startUrl = recordingStartUrl.value.trim();
@@ -783,33 +720,6 @@ function toggleRecordingMode() {
 
   const nextMode = recordingMode.value === 'action' ? 'mark' : 'action';
   socketService.setRecordingMode(nextMode);
-}
-
-function cancelRecordingMark() {
-  pendingRecordingMark.value = null;
-  recordingMarkForm.fieldName = '';
-  recordingMarkForm.fieldType = 'text';
-}
-
-function confirmRecordingMark() {
-  if (!pendingRecordingMark.value) {
-    return;
-  }
-
-  const fieldName = recordingMarkForm.fieldName.trim();
-  if (!fieldName) {
-    toast.value?.show({ message: '请先填写字段名', type: 'warning' });
-    return;
-  }
-
-  socketService.confirmRecordMark(
-    pendingRecordingMark.value,
-    fieldName,
-    recordingMarkForm.fieldType
-  );
-  pendingRecordingMark.value = null;
-  recordingMarkForm.fieldName = '';
-  recordingMarkForm.fieldType = 'text';
 }
 
 // 初始化工作流 - 尝试从localStorage加载
@@ -2462,11 +2372,22 @@ async function executeWorkflow() {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
+  justify-content: space-between;
 }
 
-.recording-event-time {
-  min-width: 72px;
+.recording-event-delete {
+  flex-shrink: 0;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: transparent;
   color: #8b949e;
+  cursor: pointer;
+}
+
+.recording-event-delete:hover {
+  border-color: #58a6ff;
+  color: #c9d1d9;
 }
 
 .recording-event-summary {
@@ -2476,7 +2397,6 @@ async function executeWorkflow() {
 
 .recording-event-meta {
   margin-top: 0.5rem;
-  padding-left: 88px;
   color: #8b949e;
   line-height: 1.5;
   word-break: break-word;

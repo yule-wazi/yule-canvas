@@ -97,11 +97,11 @@ io.on('connection', (socket) => {
       onStatus: (status) => {
         socket.emit('recording-status', status);
       },
-      onEvent: (event) => {
-        socket.emit('recording-event', event);
+      onEventsUpdated: (events) => {
+        socket.emit('recording-events', events);
       },
-      onMarkRequest: (request) => {
-        socket.emit('recording-mark-request', request);
+      onStop: () => {
+        browserRecorders.delete(socket.id);
       }
     });
 
@@ -150,6 +150,24 @@ io.on('connection', (socket) => {
       fieldName,
       fieldType
     });
+  });
+
+  socket.on('delete-recording-event', async ({ eventId }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder || !eventId) {
+      return;
+    }
+
+    await recorder.deleteEvent(eventId);
+  });
+
+  socket.on('clear-recording-events', async () => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      return;
+    }
+
+    await recorder.clearEvents();
   });
 
   socket.on('disconnect', () => {

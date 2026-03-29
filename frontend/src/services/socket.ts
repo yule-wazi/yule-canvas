@@ -85,6 +85,14 @@ class SocketClient {
     this.socket?.emit('confirm-record-mark', { request, fieldName, fieldType });
   }
 
+  deleteRecordingEvent(eventId: string) {
+    this.socket?.emit('delete-recording-event', { eventId });
+  }
+
+  clearRecordingEvents() {
+    this.socket?.emit('clear-recording-events');
+  }
+
   onRecordingStatus(callback: (status: { state: string; message: string; mode?: 'action' | 'mark' }) => void) {
     this.socket?.on('recording-status', callback);
   }
@@ -93,8 +101,8 @@ class SocketClient {
     this.socket?.on('recording-event', callback);
   }
 
-  onRecordingMarkRequest(callback: (request: any) => void) {
-    this.socket?.on('recording-mark-request', callback);
+  onRecordingEvents(callback: (events: any[]) => void) {
+    this.socket?.on('recording-events', callback);
   }
 
   offAll() {
@@ -105,7 +113,7 @@ class SocketClient {
     this.socket?.off('saveData');
     this.socket?.off('recording-status');
     this.socket?.off('recording-event');
-    this.socket?.off('recording-mark-request');
+    this.socket?.off('recording-events');
   }
 }
 
