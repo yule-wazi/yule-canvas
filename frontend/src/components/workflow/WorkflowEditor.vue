@@ -7,6 +7,7 @@
         </button>
         <button @click="save" class="btn-primary">💾 保存</button>
         <button @click="executeWorkflow" class="btn-success">▶️ 执行</button>
+        <button @click="showRecordingSetupModal = true" class="btn-secondary" :disabled="isRecording">🎥 开始录制</button>
         <button @click="exportJson" class="btn-secondary">📤 导出JSON</button>
         <button @click="showImportModal = true" class="btn-secondary">📥 导入JSON</button>
       </div>
@@ -163,6 +164,97 @@
       </div>
     </div>
 
+    <div v-if="showRecordingPanel" class="recording-panel-floating">
+      <div class="recording-panel-header">
+        <div>
+          <h3>录制事件</h3>
+          <p>{{ recordingStatusText }}</p>
+        </div>
+        <div class="recording-panel-actions">
+          <span class="recording-mode-tag" :class="{ 'is-mark': recordingMode === 'mark' }">
+            {{ recordingMode === 'mark' ? '标注模式' : '动作模式' }}
+          </span>
+          <button
+            v-if="isRecording"
+            @click="toggleRecordingMode"
+            class="btn-secondary"
+            :class="{ 'is-active': recordingMode === 'mark' }"
+          >
+            {{ recordingMode === 'mark' ? '切到动作模式' : '切到标注模式' }}
+          </button>
+          <button v-if="isRecording" @click="stopRecording" class="btn-danger">停止录制</button>
+          <button v-else @click="showRecordingPanel = false" class="btn-secondary">关闭</button>
+        </div>
+      </div>
+      <div class="recording-panel-toolbar">
+        <span>{{ recordingEvents.length }} 条关键事件</span>
+        <button v-if="recordingEvents.length" @click="clearRecordingEvents" class="btn-icon">清空</button>
+      </div>
+      <div class="recording-events">
+        <div v-if="recordingEvents.length === 0" class="empty-recording-state">
+          录制开始后，这里只显示关键操作和字段标注。
+        </div>
+        <div v-for="event in recordingEvents" :key="event.id" class="recording-event-item">
+          <div class="recording-event-line">
+            <span class="recording-event-time">{{ formatRecordingEventTime(event.timestamp) }}</span>
+            <span class="recording-event-summary">{{ formatRecordingEventSummary(event) }}</span>
+          </div>
+          <div class="recording-event-meta" v-if="event.selector || event.fieldName || event.value">
+            <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
+            <div v-if="event.fieldName"><strong>字段:</strong> {{ event.fieldName }} <span v-if="event.fieldType">({{ event.fieldType }})</span></div>
+            <div v-if="event.value"><strong>值:</strong> {{ event.value }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showRecordingSetupModal" class="modal-overlay" @click="closeRecordingSetup">
+      <div class="modal-content recording-setup-modal" @click.stop>
+        <h3>开始录制</h3>
+        <div class="form-group">
+          <label>起始网址（可选）</label>
+          <input
+            v-model="recordingStartUrl"
+            placeholder="例如：https://news.aibase.com/zh/news"
+          />
+          <small>留空则打开一个空白浏览器页，你也可以手动输入网址开始操作。</small>
+        </div>
+        <div class="modal-actions">
+          <button @click="startRecording" class="btn-primary">开始录制</button>
+          <button @click="closeRecordingSetup" class="btn-secondary">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="pendingRecordingMark" class="modal-overlay" @click="cancelRecordingMark">
+      <div class="modal-content recording-mark-modal" @click.stop>
+        <h3>确认字段标注</h3>
+        <div class="recording-mark-preview">
+          <div><strong>selector:</strong> {{ pendingRecordingMark.selector }}</div>
+          <div v-if="pendingRecordingMark.elementMeta?.text"><strong>文本:</strong> {{ pendingRecordingMark.elementMeta?.text }}</div>
+          <div v-if="pendingRecordingMark.elementMeta?.tagName"><strong>标签:</strong> {{ pendingRecordingMark.elementMeta?.tagName }}</div>
+        </div>
+        <div class="form-group">
+          <label>字段名</label>
+          <input v-model="recordingMarkForm.fieldName" placeholder="例如：title / image / content" />
+        </div>
+        <div class="form-group">
+          <label>字段类型</label>
+          <select v-model="recordingMarkForm.fieldType">
+            <option value="text">文本</option>
+            <option value="image">图片</option>
+            <option value="video">视频</option>
+            <option value="link">链接</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button @click="confirmRecordingMark" class="btn-primary">保存标注</button>
+          <button @click="cancelRecordingMark" class="btn-secondary">取消</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 数据表管理弹窗 -->
     <div v-if="showDataTableModal" class="modal-overlay" @click="showDataTableModal = false">
       <div class="modal-content data-table-modal" @click.stop>
@@ -293,6 +385,37 @@ const ConfirmDialog = defineAsyncComponent(() => import('../ConfirmDialog.vue'))
 const Toast = defineAsyncComponent(() => import('../Toast.vue'));
 const WorkflowManager = defineAsyncComponent(() => import('./WorkflowManager.vue'));
 
+interface RecordingEventItem {
+  id: string;
+  kind: 'action' | 'mark';
+  action: string;
+  timestamp: number;
+  pageId: string;
+  url: string;
+  title?: string;
+  selector?: string;
+  value?: string;
+  fieldName?: string;
+  fieldType?: 'text' | 'image' | 'video' | 'link' | 'custom';
+  elementMeta?: {
+    tagName?: string;
+    text?: string;
+    id?: string;
+    className?: string;
+    href?: string;
+    src?: string;
+    value?: string;
+  };
+}
+
+interface RecordingMarkRequest {
+  pageId: string;
+  url: string;
+  title?: string;
+  selector: string;
+  elementMeta?: RecordingEventItem['elementMeta'];
+}
+
 // 定义节点类型
 const nodeTypes = {
   custom: markRaw(CustomNode) as any,
@@ -311,12 +434,24 @@ const showVariablesModal = ref(false);
 const showVariableForm = ref(false);
 const showWorkflowManager = ref(false);
 const showImportModal = ref(false);
+const showRecordingSetupModal = ref(false);
+const showRecordingPanel = ref(false);
 const importJsonText = ref('');
 const importJsonError = ref('');
 const editingVariableIndex = ref<number | null>(null);
 const newVariable = ref({ name: '', value: '', description: '' });
 const variableNameError = ref('');
 const isExecuting = ref(false);
+const isRecording = ref(false);
+const recordingMode = ref<'action' | 'mark'>('action');
+const recordingStatusText = ref('尚未开始录制');
+const recordingStartUrl = ref('');
+const recordingEvents = ref<RecordingEventItem[]>([]);
+const pendingRecordingMark = ref<RecordingMarkRequest | null>(null);
+const recordingMarkForm = reactive({
+  fieldName: '',
+  fieldType: 'text' as 'text' | 'image' | 'video' | 'link' | 'custom'
+});
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
 const executionPanelRef = ref<HTMLElement | null>(null);
@@ -529,6 +664,154 @@ function closeVariablesModal() {
   variableNameError.value = '';
 }
 
+function closeRecordingSetup() {
+  showRecordingSetupModal.value = false;
+  recordingStartUrl.value = '';
+}
+
+function clearRecordingEvents() {
+  recordingEvents.value = [];
+}
+
+function formatRecordingEventTime(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString();
+}
+
+function formatRecordingEventSummary(event: RecordingEventItem) {
+  const actionMap: Record<string, string> = {
+    navigate: '访问页面',
+    click: '点击元素',
+    type: '输入文本',
+    select: '选择下拉项',
+    scroll: '滚动页面',
+    back: '返回',
+    forward: '前进',
+    'field-mark': '标注字段'
+  };
+
+  const actionLabel = actionMap[event.action] || event.action;
+  if (event.kind === 'mark') {
+    return `标注字段 ${event.fieldName || ''}`.trim();
+  }
+
+  return `${actionLabel} · ${event.elementMeta?.text || event.title || event.url || ''}`.trim();
+}
+
+function stopRecordingSocketListeners() {
+  socketService.off('recording-status');
+  socketService.off('recording-event');
+  socketService.off('recording-mark-request');
+}
+
+function setupRecordingListeners() {
+  stopRecordingSocketListeners();
+
+  socketService.onRecordingStatus((status) => {
+    if (status.mode) {
+      recordingMode.value = status.mode;
+    }
+
+    recordingStatusText.value = status.message;
+
+    if (status.state === 'started') {
+      isRecording.value = true;
+      showRecordingPanel.value = true;
+    }
+
+    if (status.state === 'stopped') {
+      isRecording.value = false;
+      recordingMode.value = 'action';
+      pendingRecordingMark.value = null;
+      stopRecordingSocketListeners();
+    }
+  });
+
+  socketService.onRecordingEvent((event: RecordingEventItem) => {
+    recordingEvents.value.push(event);
+    showRecordingPanel.value = true;
+  });
+
+  socketService.onRecordingMarkRequest((request: RecordingMarkRequest) => {
+    pendingRecordingMark.value = request;
+    recordingMarkForm.fieldName = '';
+    recordingMarkForm.fieldType = 'text';
+    showRecordingPanel.value = true;
+  });
+}
+
+function startRecording() {
+  try {
+    if (isExecuting.value) {
+      toast.value?.show({ message: '当前已有工作流在执行，请先停止执行后再开始录制', type: 'warning' });
+      return;
+    }
+
+    if (isRecording.value) {
+      showRecordingPanel.value = true;
+      toast.value?.show({ message: '录制已在进行中', type: 'warning' });
+      return;
+    }
+
+    recordingEvents.value = [];
+    pendingRecordingMark.value = null;
+    recordingStatusText.value = '正在启动录制浏览器...';
+    showRecordingPanel.value = true;
+    const startUrl = recordingStartUrl.value.trim();
+    closeRecordingSetup();
+
+    socketService.connect();
+    setupRecordingListeners();
+    socketService.onError((error) => {
+      toast.value?.show({ message: error.message || '录制失败', type: 'error' });
+    });
+    socketService.startRecording(startUrl);
+  } catch (error: any) {
+    toast.value?.show({ message: error.message || '启动录制失败', type: 'error' });
+  }
+}
+
+function stopRecording() {
+  socketService.stopRecording();
+  recordingStatusText.value = '正在停止录制...';
+  recordingMode.value = 'action';
+}
+
+function toggleRecordingMode() {
+  if (!isRecording.value) {
+    return;
+  }
+
+  const nextMode = recordingMode.value === 'action' ? 'mark' : 'action';
+  socketService.setRecordingMode(nextMode);
+}
+
+function cancelRecordingMark() {
+  pendingRecordingMark.value = null;
+  recordingMarkForm.fieldName = '';
+  recordingMarkForm.fieldType = 'text';
+}
+
+function confirmRecordingMark() {
+  if (!pendingRecordingMark.value) {
+    return;
+  }
+
+  const fieldName = recordingMarkForm.fieldName.trim();
+  if (!fieldName) {
+    toast.value?.show({ message: '请先填写字段名', type: 'warning' });
+    return;
+  }
+
+  socketService.confirmRecordMark(
+    pendingRecordingMark.value,
+    fieldName,
+    recordingMarkForm.fieldType
+  );
+  pendingRecordingMark.value = null;
+  recordingMarkForm.fieldName = '';
+  recordingMarkForm.fieldType = 'text';
+}
+
 // 初始化工作流 - 尝试从localStorage加载
 const WORKFLOWS_KEY = 'saved_workflows';
 const CURRENT_WORKFLOW_ID_KEY = 'current_workflow_id';
@@ -666,6 +949,10 @@ onBeforeUnmount(() => {
   stopExecutionPanelDrag();
   executionPanelResizeObserver?.disconnect();
   executionPanelResizeObserver = null;
+  if (isRecording.value) {
+    socketService.stopRecording();
+  }
+  stopRecordingSocketListeners();
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer);
   }
@@ -2083,6 +2370,132 @@ async function executeWorkflow() {
 
 :deep(.vue-flow__arrowhead path) {
   fill: inherit;
+}
+
+.recording-panel-floating {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 520px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(22, 27, 34, 0.98);
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  z-index: 1200;
+}
+
+.recording-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #30363d;
+}
+
+.recording-panel-header h3 {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #58a6ff;
+}
+
+.recording-panel-header p {
+  margin: 0.5rem 0 0;
+  color: #8b949e;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.recording-panel-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.recording-mode-tag {
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid #58a6ff;
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.12);
+  white-space: nowrap;
+}
+
+.recording-mode-tag.is-mark {
+  border-color: #a855f7;
+  color: #e9d5ff;
+  background: rgba(168, 85, 247, 0.16);
+}
+
+.recording-panel-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid #30363d;
+  color: #8b949e;
+}
+
+.recording-events {
+  overflow-y: auto;
+  padding: 0 1.25rem 1rem;
+}
+
+.empty-recording-state {
+  padding: 1rem 0;
+  color: #8b949e;
+}
+
+.recording-event-item {
+  padding: 1rem 0;
+  border-bottom: 1px solid #30363d;
+}
+
+.recording-event-item:last-child {
+  border-bottom: none;
+}
+
+.recording-event-line {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.recording-event-time {
+  min-width: 72px;
+  color: #8b949e;
+}
+
+.recording-event-summary {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.recording-event-meta {
+  margin-top: 0.5rem;
+  padding-left: 88px;
+  color: #8b949e;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.recording-setup-modal,
+.recording-mark-modal {
+  width: min(520px, 92vw);
+}
+
+.recording-mark-preview {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  color: #8b949e;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 </style>

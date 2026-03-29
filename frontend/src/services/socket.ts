@@ -69,12 +69,43 @@ class SocketClient {
     this.socket?.emit('stop-execution');
   }
 
+  startRecording(startUrl?: string) {
+    this.socket?.emit('start-recording', { startUrl });
+  }
+
+  stopRecording() {
+    this.socket?.emit('stop-recording');
+  }
+
+  setRecordingMode(mode: 'action' | 'mark') {
+    this.socket?.emit('set-recording-mode', { mode });
+  }
+
+  confirmRecordMark(request: any, fieldName: string, fieldType: string) {
+    this.socket?.emit('confirm-record-mark', { request, fieldName, fieldType });
+  }
+
+  onRecordingStatus(callback: (status: { state: string; message: string; mode?: 'action' | 'mark' }) => void) {
+    this.socket?.on('recording-status', callback);
+  }
+
+  onRecordingEvent(callback: (event: any) => void) {
+    this.socket?.on('recording-event', callback);
+  }
+
+  onRecordingMarkRequest(callback: (request: any) => void) {
+    this.socket?.on('recording-mark-request', callback);
+  }
+
   offAll() {
     this.socket?.off('log');
     this.socket?.off('progress');
     this.socket?.off('complete');
     this.socket?.off('error');
     this.socket?.off('saveData');
+    this.socket?.off('recording-status');
+    this.socket?.off('recording-event');
+    this.socket?.off('recording-mark-request');
   }
 }
 

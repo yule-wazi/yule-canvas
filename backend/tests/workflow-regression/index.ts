@@ -4,6 +4,7 @@ import { buildWorkflowRegressionCases } from './cases';
 import { assert, normalizeVariables } from './helpers';
 import { buildLoopGuardCases } from './loopGuardCases';
 import { MockPage } from './mockPage';
+import { buildRecordingRegressionCases } from './recordingCases';
 import { REQUIRED_BLOCK_TYPES, WorkflowTestCase } from './types';
 
 async function runCase(testCase: WorkflowTestCase): Promise<void> {
@@ -72,17 +73,20 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const allCases = buildWorkflowRegressionCases();
   const loopGuardCases = buildLoopGuardCases();
+  const recordingCases = buildRecordingRegressionCases();
 
   if (args.listOnly) {
     allCases.forEach(testCase => console.log(testCase.name));
     loopGuardCases.forEach(testCase => console.log(testCase.name));
+    recordingCases.forEach(testCase => console.log(testCase.name));
     return;
   }
 
   const testCases = allCases.filter(testCase => !args.caseFilter || testCase.name === args.caseFilter);
   const selectedLoopGuardCases = loopGuardCases.filter(testCase => !args.caseFilter || testCase.name === args.caseFilter);
+  const selectedRecordingCases = recordingCases.filter(testCase => !args.caseFilter || testCase.name === args.caseFilter);
   assert(
-    testCases.length + selectedLoopGuardCases.length > 0,
+    testCases.length + selectedLoopGuardCases.length + selectedRecordingCases.length > 0,
     args.caseFilter
       ? `No workflow regression case named "${args.caseFilter}"`
       : 'No workflow regression cases configured'
@@ -112,7 +116,13 @@ async function main(): Promise<void> {
     console.log(`PASS ${testCase.name}`);
   }
 
-  console.log(`Workflow regression suite passed: ${passed}/${testCases.length + selectedLoopGuardCases.length}`);
+  for (const testCase of selectedRecordingCases) {
+    testCase.run();
+    passed++;
+    console.log(`PASS ${testCase.name}`);
+  }
+
+  console.log(`Workflow regression suite passed: ${passed}/${testCases.length + selectedLoopGuardCases.length + selectedRecordingCases.length}`);
 }
 
 main().catch((error: any) => {

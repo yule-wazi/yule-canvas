@@ -5,6 +5,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import apiRoutes from './routes/api';
 import workflowRoutes from './routes/workflow';
+import { BrowserRecorder } from './services/BrowserRecorder';
 import { WorkflowExecutor } from './services/WorkflowExecutor';
 
 dotenv.config();
@@ -39,12 +40,18 @@ app.get('/api/health', (req, res) => {
 });
 
 const workflowExecutors = new Map<string, WorkflowExecutor>();
+const browserRecorders = new Map<string, BrowserRecorder>();
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
   socket.on('execute-workflow', async ({ workflowId, workflow }) => {
     console.log('Received workflow execution request:', workflowId);
+
+    if (browserRecorders.has(socket.id)) {
+      socket.emit('error', { message: '当前已有录制任务正在进行，请先停止录制后再执行工作流' });
+      return;
+    }
 
     const executor = new WorkflowExecutor({
       onLog: (entry) => {
@@ -75,6 +82,76 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('start-recording', async ({ startUrl }) => {
+    if (workflowExecutors.has(socket.id)) {
+      socket.emit('error', { message: '当前已有工作流正在执行，请先停止执行后再开始录制' });
+      return;
+    }
+
+    if (browserRecorders.has(socket.id)) {
+      socket.emit('recording-status', { state: 'started', message: '录制已在进行中', mode: 'action' });
+      return;
+    }
+
+    const recorder = new BrowserRecorder({
+      onStatus: (status) => {
+        socket.emit('recording-status', status);
+      },
+      onEvent: (event) => {
+        socket.emit('recording-event', event);
+      },
+      onMarkRequest: (request) => {
+        socket.emit('recording-mark-request', request);
+      }
+    });
+
+    browserRecorders.set(socket.id, recorder);
+
+    try {
+      await recorder.start({ startUrl });
+    } catch (error: any) {
+      browserRecorders.delete(socket.id);
+      socket.emit('error', { message: error.message || '启动录制失败' });
+    }
+  });
+
+  socket.on('stop-recording', async () => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      return;
+    }
+
+    await recorder.stop();
+    browserRecorders.delete(socket.id);
+  });
+
+  socket.on('set-recording-mode', async ({ mode }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      socket.emit('error', { message: '录制尚未开始，无法切换模式' });
+      return;
+    }
+
+    try {
+      await recorder.setMode(mode === 'mark' ? 'mark' : 'action');
+    } catch (error: any) {
+      socket.emit('error', { message: error.message || '切换录制模式失败' });
+    }
+  });
+
+  socket.on('confirm-record-mark', async ({ request, fieldName, fieldType }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      socket.emit('error', { message: '录制尚未开始，无法保存字段标注' });
+      return;
+    }
+
+    await recorder.confirmMark(request, {
+      fieldName,
+      fieldType
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
 
@@ -82,6 +159,12 @@ io.on('connection', (socket) => {
     if (workflowExecutor) {
       workflowExecutor.stop();
       workflowExecutors.delete(socket.id);
+    }
+
+    const recorder = browserRecorders.get(socket.id);
+    if (recorder) {
+      recorder.stop();
+      browserRecorders.delete(socket.id);
     }
   });
 });
