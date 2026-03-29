@@ -104,6 +104,7 @@ const RECORDER_INIT_SCRIPT = `
   window.__aibrowserRecorderInstalled = true;
 
   const ROOT_ID = '__aibrowser-recorder-root';
+  const HIGHLIGHT_ID = '__aibrowser-recorder-highlight';
   const state = {
     mode: 'action',
     status: '录制已启动，请开始操作',
@@ -115,7 +116,8 @@ const RECORDER_INIT_SCRIPT = `
       lastRecordedScrollY: window.scrollY,
       suppressNextZeroScroll: false,
       pendingScrollTarget: null,
-      lastRecordedElementScrolls: {}
+      lastRecordedElementScrolls: {},
+      hoverTarget: null
     };
   const preferredAttributes = ['data-testid', 'data-test', 'data-qa', 'data-cy', 'aria-label', 'name'];
 
@@ -206,6 +208,10 @@ const RECORDER_INIT_SCRIPT = `
   function getMarkTarget(element) {
     if (!(element instanceof Element) || isInsidePanel(element)) return null;
     return element;
+  }
+
+  function getHoverTarget(element) {
+    return state.mode === 'mark' ? getMarkTarget(element) : getActionTarget(element);
   }
 
   function isScrollableElement(element) {
@@ -361,7 +367,18 @@ const RECORDER_INIT_SCRIPT = `
       return event.fieldName || '标注字段';
     }
 
-    return String(event.elementMeta?.text || event.title || event.url || '').trim() || '未命名事件';
+    const labels = {
+      navigate: '访问页面',
+      click: '点击元素',
+      type: '输入文本',
+      select: '选择下拉项',
+      scroll: '滚动页面',
+      back: '后退',
+      forward: '前进',
+      'field-mark': '字段标注'
+    };
+
+    return labels[event.action] || '未命名事件';
   }
 
   function ensurePanel() {
@@ -553,10 +570,52 @@ const RECORDER_INIT_SCRIPT = `
       '  color: #8b949e;',
       '  font-size: 12px;',
       '  word-break: break-word;',
+      '}',
+      '#' + HIGHLIGHT_ID + ' {',
+      '  position: fixed;',
+      '  left: 0;',
+      '  top: 0;',
+      '  width: 0;',
+      '  height: 0;',
+      '  z-index: 2147483646;',
+      '  pointer-events: none;',
+      '  border: 2px solid rgba(88, 166, 255, 0.95);',
+      '  border-radius: 10px;',
+      '  background: rgba(88, 166, 255, 0.12);',
+      '  box-shadow: 0 0 0 1px rgba(13, 17, 23, 0.58), 0 0 0 9999px rgba(13, 17, 23, 0.06);',
+      '  opacity: 0;',
+      '  transition: opacity 120ms ease, width 120ms ease, height 120ms ease, transform 120ms ease;',
+      '}',
+      '#' + HIGHLIGHT_ID + '.is-visible {',
+      '  opacity: 1;',
+      '}',
+      '#' + HIGHLIGHT_ID + '::after {',
+      '  content: attr(data-label);',
+      '  position: absolute;',
+      '  left: 0;',
+      '  top: -28px;',
+      '  max-width: min(280px, 60vw);',
+      '  padding: 4px 8px;',
+      '  border-radius: 999px;',
+      '  background: rgba(13, 17, 23, 0.94);',
+      '  color: #c9d1d9;',
+      '  font-size: 12px;',
+      '  font-weight: 600;',
+      '  white-space: nowrap;',
+      '  overflow: hidden;',
+      '  text-overflow: ellipsis;',
+      '  border: 1px solid rgba(88, 166, 255, 0.35);',
       '}'
     ].join('');
     root.appendChild(style);
     document.body.appendChild(root);
+
+    let highlight = document.getElementById(HIGHLIGHT_ID);
+    if (!highlight) {
+      highlight = document.createElement('div');
+      highlight.id = HIGHLIGHT_ID;
+      document.body.appendChild(highlight);
+    }
 
     const header = root.querySelector('.__aibrowser-recorder-header');
     const toggleButton = root.querySelector('[data-action="toggle-mode"]');
@@ -717,6 +776,7 @@ const RECORDER_INIT_SCRIPT = `
     eventsEl.innerHTML = state.events
       .map((event) => {
         const meta = [];
+        if (event.title) meta.push('<div><strong>页面:</strong> ' + event.title + '</div>');
         if (event.selector) meta.push('<div><strong>selector:</strong> ' + event.selector + '</div>');
         if (event.fieldName) meta.push('<div><strong>字段:</strong> ' + event.fieldName + '</div>');
         if (event.value) meta.push('<div><strong>值:</strong> ' + event.value + '</div>');
@@ -732,6 +792,70 @@ const RECORDER_INIT_SCRIPT = `
         ].join('');
       })
       .join('');
+  }
+
+  function getHighlightLabel(element) {
+    if (!(element instanceof Element)) {
+      return '';
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    const role = element.getAttribute('role');
+    const text = truncate(element.textContent || '', 36);
+
+    if (text) {
+      return role ? tagName + '[' + role + '] ' + text : tagName + ' ' + text;
+    }
+
+    if (role) {
+      return tagName + '[' + role + ']';
+    }
+
+    return tagName;
+  }
+
+  function hideHighlight() {
+    const highlight = document.getElementById(HIGHLIGHT_ID);
+    if (!(highlight instanceof HTMLElement)) {
+      return;
+    }
+
+    highlight.classList.remove('is-visible');
+    highlight.style.width = '0px';
+    highlight.style.height = '0px';
+    highlight.removeAttribute('data-label');
+  }
+
+  function updateHighlight() {
+    const highlight = document.getElementById(HIGHLIGHT_ID);
+    const target = state.hoverTarget;
+
+    if (!(highlight instanceof HTMLElement) || !(target instanceof Element) || !target.isConnected) {
+      hideHighlight();
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) {
+      hideHighlight();
+      return;
+    }
+
+    highlight.style.left = rect.left + 'px';
+    highlight.style.top = rect.top + 'px';
+    highlight.style.width = rect.width + 'px';
+    highlight.style.height = rect.height + 'px';
+    highlight.setAttribute('data-label', getHighlightLabel(target));
+    highlight.classList.add('is-visible');
+  }
+
+  function setHoverTarget(element) {
+    if (element === state.hoverTarget) {
+      return;
+    }
+
+    state.hoverTarget = element;
+    updateHighlight();
   }
 
   function emitAction(action, element, extra) {
@@ -826,6 +950,17 @@ const RECORDER_INIT_SCRIPT = `
     emitAction('click', target);
   }, true);
 
+  document.addEventListener('mousemove', (event) => {
+    const target = getHoverTarget(event.target);
+    setHoverTarget(target);
+  }, true);
+
+  document.addEventListener('mouseout', (event) => {
+    if (!(event.relatedTarget instanceof Element)) {
+      setHoverTarget(null);
+    }
+  }, true);
+
   document.addEventListener('change', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -875,15 +1010,22 @@ const RECORDER_INIT_SCRIPT = `
 
   window.addEventListener('scroll', () => {
     if (!shouldRecordScroll(state.lastScrollIntentAt, Date.now())) {
+      updateHighlight();
       return;
     }
     scheduleScrollRecord();
+    updateHighlight();
   }, true);
+
+  window.addEventListener('resize', () => {
+    updateHighlight();
+  });
 
   window.__aibrowserRecorder = {
     setMode(mode) {
       state.mode = mode === 'mark' ? 'mark' : 'action';
       state.status = state.mode === 'mark' ? '标注模式：点击网页元素发起字段标注' : '动作模式：继续录制点击、滚动、输入';
+      setHoverTarget(null);
       renderPanel();
     },
     setStatus(message) {

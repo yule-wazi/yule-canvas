@@ -200,6 +200,7 @@
             <button class="recording-event-delete" @click="deleteRecordingEvent(event.id)">删除</button>
           </div>
           <div class="recording-event-meta" v-if="event.selector || event.fieldName || event.value">
+            <div v-if="event.title"><strong>页面:</strong> {{ event.title }}</div>
             <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
             <div v-if="event.fieldName"><strong>字段:</strong> {{ event.fieldName }} <span v-if="event.fieldType">({{ event.fieldType }})</span></div>
             <div v-if="event.value"><strong>值:</strong> {{ event.value }}</div>
@@ -640,7 +641,18 @@ function formatRecordingEventSummary(event: RecordingEventItem) {
     return event.fieldName || '标注字段';
   }
 
-  return `${event.elementMeta?.text || event.title || event.url || '未命名事件'}`.trim();
+  const labels: Record<string, string> = {
+    navigate: '访问页面',
+    click: '点击元素',
+    type: '输入文本',
+    select: '选择下拉项',
+    scroll: '滚动页面',
+    back: '后退',
+    forward: '前进',
+    'field-mark': '字段标注'
+  };
+
+  return labels[event.action] || '未命名事件';
 }
 
 function stopRecordingSocketListeners() {
