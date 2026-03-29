@@ -80,6 +80,23 @@ export function shouldIgnoreNavigationResetScroll(
   return suppressNextZeroScroll && x === 0 && y === 0;
 }
 
+export function shouldRecordScrollableElementCandidate(candidate: {
+  targetInsidePanel: boolean;
+  isDialogLike: boolean;
+  isFixedOverlay: boolean;
+  areaRatio: number;
+}): boolean {
+  if (candidate.targetInsidePanel || candidate.isDialogLike) {
+    return false;
+  }
+
+  if (candidate.isFixedOverlay && candidate.areaRatio < 0.45) {
+    return false;
+  }
+
+  return candidate.areaRatio >= 0.18;
+}
+
 const RECORDER_INIT_SCRIPT = `
 (() => {
   if (window.__aibrowserRecorderInstalled) return;
@@ -93,9 +110,11 @@ const RECORDER_INIT_SCRIPT = `
     scrollTimer: null,
     lastScrollIntentAt: 0,
     lastRecordedScrollX: window.scrollX,
-    lastRecordedScrollY: window.scrollY,
-    suppressNextZeroScroll: false
-  };
+      lastRecordedScrollY: window.scrollY,
+      suppressNextZeroScroll: false,
+      pendingScrollTarget: null,
+      lastRecordedElementScrolls: {}
+    };
   const preferredAttributes = ['data-testid', 'data-test', 'data-qa', 'data-cy', 'aria-label', 'name'];
 
   function emit(payload) {
@@ -126,6 +145,18 @@ const RECORDER_INIT_SCRIPT = `
 
   function shouldIgnoreZeroReset(suppressNextZeroScroll, x, y) {
     return !!suppressNextZeroScroll && x === 0 && y === 0;
+  }
+
+  function shouldRecordScrollableCandidate(targetInsidePanel, isDialogLike, isFixedOverlay, areaRatio) {
+    if (targetInsidePanel || isDialogLike) {
+      return false;
+    }
+
+    if (isFixedOverlay && areaRatio < 0.45) {
+      return false;
+    }
+
+    return areaRatio >= 0.18;
   }
 
 
@@ -173,6 +204,69 @@ const RECORDER_INIT_SCRIPT = `
   function getMarkTarget(element) {
     if (!(element instanceof Element) || isInsidePanel(element)) return null;
     return element;
+  }
+
+  function isScrollableElement(element) {
+    if (!(element instanceof Element)) return false;
+    const style = window.getComputedStyle(element);
+    const overflowY = style.overflowY || style.overflow;
+    const overflowX = style.overflowX || style.overflow;
+    const canScrollY =
+      ['auto', 'scroll', 'overlay'].includes(overflowY) && element.scrollHeight > element.clientHeight + 4;
+    const canScrollX =
+      ['auto', 'scroll', 'overlay'].includes(overflowX) && element.scrollWidth > element.clientWidth + 4;
+    return canScrollY || canScrollX;
+  }
+
+  function isDialogLikeElement(element) {
+    if (!(element instanceof Element)) return false;
+    const role = (element.getAttribute('role') || '').toLowerCase();
+    const ariaModal = (element.getAttribute('aria-modal') || '').toLowerCase();
+    const className = typeof element.className === 'string' ? element.className.toLowerCase() : '';
+    return (
+      role === 'dialog' ||
+      ariaModal === 'true' ||
+      className.includes('modal') ||
+      className.includes('dialog') ||
+      className.includes('drawer') ||
+      className.includes('popover')
+    );
+  }
+
+  function getElementAreaRatio(element) {
+    if (!(element instanceof Element)) return 0;
+    const rect = element.getBoundingClientRect();
+    const viewportArea = Math.max(window.innerWidth * window.innerHeight, 1);
+    const elementArea = Math.max(rect.width * rect.height, 0);
+    return elementArea / viewportArea;
+  }
+
+  function getNearestScrollableTarget(element) {
+    let current = element instanceof Element ? element : null;
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      if (isInsidePanel(current)) {
+        return null;
+      }
+
+      if (isScrollableElement(current)) {
+        const style = window.getComputedStyle(current);
+        const areaRatio = getElementAreaRatio(current);
+        const isFixedOverlay = style.position === 'fixed' || style.position === 'sticky';
+        const isDialogLike = isDialogLikeElement(current);
+
+        if (shouldRecordScrollableCandidate(false, isDialogLike, isFixedOverlay, areaRatio)) {
+          const selector = buildSelector(current);
+          if (selector) {
+            return { kind: 'element', selector };
+          }
+        }
+      }
+
+      current = current.parentElement;
+    }
+
+    return null;
   }
 
   function buildClassSelector(element) {
@@ -529,29 +623,54 @@ const RECORDER_INIT_SCRIPT = `
   function scheduleScrollRecord() {
     if (state.scrollTimer) clearTimeout(state.scrollTimer);
     state.scrollTimer = setTimeout(() => {
+      const pendingTarget = state.pendingScrollTarget;
+
+      if (pendingTarget && pendingTarget.kind === 'element' && pendingTarget.selector) {
+        const element = document.querySelector(pendingTarget.selector);
+        if (element instanceof Element) {
+          const nextLeft = element.scrollLeft || 0;
+          const nextTop = element.scrollTop || 0;
+          const lastElementScroll = state.lastRecordedElementScrolls[pendingTarget.selector] || { x: 0, y: 0 };
+
+          if (nextLeft !== lastElementScroll.x || nextTop !== lastElementScroll.y) {
+            state.lastRecordedElementScrolls[pendingTarget.selector] = { x: nextLeft, y: nextTop };
+            emitAction('scroll', element, {
+              value: JSON.stringify({ target: 'element', x: nextLeft, y: nextTop }),
+              selector: pendingTarget.selector
+            });
+            state.pendingScrollTarget = null;
+            return;
+          }
+        }
+      }
+
       const nextX = window.scrollX;
       const nextY = window.scrollY;
       if (shouldIgnoreZeroReset(state.suppressNextZeroScroll, nextX, nextY)) {
         state.suppressNextZeroScroll = false;
         state.lastRecordedScrollX = nextX;
         state.lastRecordedScrollY = nextY;
+        state.pendingScrollTarget = null;
         return;
       }
       if (nextX === state.lastRecordedScrollX && nextY === state.lastRecordedScrollY) {
+        state.pendingScrollTarget = null;
         return;
       }
       state.suppressNextZeroScroll = false;
       state.lastRecordedScrollX = nextX;
       state.lastRecordedScrollY = nextY;
       emitAction('scroll', document.documentElement, {
-        value: JSON.stringify({ x: nextX, y: nextY }),
+        value: JSON.stringify({ target: 'page', x: nextX, y: nextY }),
         selector: ''
       });
+      state.pendingScrollTarget = null;
     }, 160);
   }
 
-  function armScrollIntent() {
+  function armScrollIntent(target) {
     state.lastScrollIntentAt = Date.now();
+    state.pendingScrollTarget = getNearestScrollableTarget(target) || { kind: 'page', selector: '' };
     scheduleScrollRecord();
   }
 
@@ -601,14 +720,14 @@ const RECORDER_INIT_SCRIPT = `
     if (!shouldArmScroll('wheel', isInsidePanel(event.target))) {
       return;
     }
-    armScrollIntent();
+    armScrollIntent(event.target);
   }, { capture: true, passive: true });
 
   document.addEventListener('touchmove', (event) => {
     if (!shouldArmScroll('touchmove', isInsidePanel(event.target))) {
       return;
     }
-    armScrollIntent();
+    armScrollIntent(event.target);
   }, { capture: true, passive: true });
 
   document.addEventListener('keydown', (event) => {
@@ -626,7 +745,7 @@ const RECORDER_INIT_SCRIPT = `
       return;
     }
 
-    armScrollIntent();
+    armScrollIntent(target);
   }, true);
 
   window.addEventListener('scroll', () => {

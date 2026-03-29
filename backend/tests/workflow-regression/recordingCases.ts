@@ -4,6 +4,7 @@ import {
   RecordingPageHistoryState,
   shouldArmRecordedScroll,
   shouldIgnoreNavigationResetScroll,
+  shouldRecordScrollableElementCandidate,
   shouldRecordWindowScroll,
   shouldStopRecorderPanelWheel,
 } from '../../src/services/BrowserRecorder';
@@ -97,6 +98,33 @@ export function buildRecordingRegressionCases(): RecordingRegressionCase[] {
         assert(shouldIgnoreNavigationResetScroll(true, 0, 0) === true, 'first zero scroll after navigation should be ignored');
         assert(shouldIgnoreNavigationResetScroll(true, 0, 10) === false, 'non-zero scroll after navigation should not be ignored');
         assert(shouldIgnoreNavigationResetScroll(false, 0, 0) === false, 'zero scroll should not be ignored without navigation suppression');
+        assert(
+          shouldRecordScrollableElementCandidate({
+            targetInsidePanel: false,
+            isDialogLike: false,
+            isFixedOverlay: false,
+            areaRatio: 0.3
+          }) === true,
+          'large content scroll container should be recorded'
+        );
+        assert(
+          shouldRecordScrollableElementCandidate({
+            targetInsidePanel: true,
+            isDialogLike: false,
+            isFixedOverlay: false,
+            areaRatio: 0.3
+          }) === false,
+          'recorder panel container should never be recorded'
+        );
+        assert(
+          shouldRecordScrollableElementCandidate({
+            targetInsidePanel: false,
+            isDialogLike: true,
+            isFixedOverlay: true,
+            areaRatio: 0.25
+          }) === false,
+          'small dialog-like overlay scroll container should be ignored'
+        );
       }
     }
   ];
