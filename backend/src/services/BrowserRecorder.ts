@@ -37,6 +37,20 @@ export interface RecordingMarkRequest {
   elementMeta?: RecordingElementMeta;
 }
 
+export function createRecordingMarkRequest(
+  pageId: string,
+  request: Partial<RecordingMarkRequest> | undefined,
+  fallback: { url: string; title?: string }
+): RecordingMarkRequest {
+  return {
+    pageId,
+    url: request?.url || fallback.url,
+    title: request?.title || fallback.title || '',
+    selector: request?.selector || '',
+    elementMeta: request?.elementMeta || {}
+  };
+}
+
 interface BrowserRecorderCallbacks {
   onStatus?: (status: { state: string; message: string; mode?: RecordingMode }) => void;
   onEventsUpdated?: (events: RecordingEvent[]) => void;
@@ -932,15 +946,17 @@ const RECORDER_INIT_SCRIPT = `
     if (!target) return;
 
     if (state.mode === 'mark') {
-      state.pendingMarkRequest = {
-        pageId: '',
-        url: window.location.href,
-        title: document.title,
-        selector: buildSelector(target),
-        elementMeta: getElementMeta(target)
-      };
-      state.status = '已选中元素，请在当前面板中确认字段标注';
+      state.status = '已选中元素，正在准备字段标注...';
       renderPanel();
+      emit({
+        kind: 'mark-request',
+        request: {
+          url: window.location.href,
+          title: document.title,
+          selector: buildSelector(target),
+          elementMeta: getElementMeta(target)
+        }
+      });
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -1220,13 +1236,10 @@ export class BrowserRecorder {
     const pageId = this.ensurePageId(page);
 
     if (payload.kind === 'mark-request' && payload.request) {
-      const request: RecordingMarkRequest = {
-        pageId,
-        url: payload.request?.url || page.url(),
-        title: payload.request?.title || '',
-        selector: payload.request?.selector || '',
-        elementMeta: payload.request?.elementMeta || {}
-      };
+      const request = createRecordingMarkRequest(pageId, payload.request, {
+        url: page.url(),
+        title: payload.request?.title || ''
+      });
       this.pendingMarkRequests.set(pageId, request);
       this.currentStatusMessage = '已选中元素，请确认字段标注';
       this.callbacks.onStatus?.({ state: 'mark-requested', message: this.currentStatusMessage, mode: this.mode });

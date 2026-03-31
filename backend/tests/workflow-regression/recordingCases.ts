@@ -1,5 +1,6 @@
 import {
   classifyRecordedNavigation,
+  createRecordingMarkRequest,
   createRecordedMarkEvent,
   RecordingPageHistoryState,
   shouldArmRecordedScroll,
@@ -17,6 +18,27 @@ export interface RecordingRegressionCase {
 
 export function buildRecordingRegressionCases(): RecordingRegressionCase[] {
   return [
+    {
+      name: 'recording-mark-request-fills-page-context',
+      run: () => {
+        const request = createRecordingMarkRequest(
+          'page-ctx-1',
+          {
+            selector: '.card > img',
+            elementMeta: { tagName: 'img' }
+          },
+          {
+            url: 'https://example.com/detail',
+            title: 'Detail Page'
+          }
+        );
+
+        assert(request.pageId === 'page-ctx-1', 'recording mark request should preserve injected page id');
+        assert(request.url === 'https://example.com/detail', 'recording mark request should fallback to page url');
+        assert(request.title === 'Detail Page', 'recording mark request should fallback to page title');
+        assert(request.selector === '.card > img', 'recording mark request should preserve selector');
+      }
+    },
     {
       name: 'recording-mark-event-preserves-selector-and-field',
       run: () => {

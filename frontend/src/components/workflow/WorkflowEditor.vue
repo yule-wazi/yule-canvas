@@ -188,7 +188,16 @@
       </div>
       <div class="recording-panel-toolbar">
         <span>{{ recordingEvents.length }} 条关键事件</span>
-        <button v-if="recordingEvents.length" @click="clearRecordingEvents" class="btn-icon">清空</button>
+        <div class="recording-panel-toolbar-actions">
+          <button
+            v-if="!isRecording && recordingEvents.length"
+            @click="copyRecordingJson"
+            class="btn-secondary"
+          >
+            复制 JSON
+          </button>
+          <button v-if="recordingEvents.length" @click="clearRecordingEvents" class="btn-icon">清空</button>
+        </div>
       </div>
       <div class="recording-events">
         <div v-if="recordingEvents.length === 0" class="empty-recording-state">
@@ -629,11 +638,52 @@ function closeRecordingSetup() {
 }
 
 function clearRecordingEvents() {
-  socketService.clearRecordingEvents();
+  if (isRecording.value) {
+    socketService.clearRecordingEvents();
+    return;
+  }
+
+  recordingEvents.value = [];
 }
 
 function deleteRecordingEvent(eventId: string) {
-  socketService.deleteRecordingEvent(eventId);
+  if (isRecording.value) {
+    socketService.deleteRecordingEvent(eventId);
+    return;
+  }
+
+  recordingEvents.value = recordingEvents.value.filter(event => event.id !== eventId);
+}
+
+async function copyRecordingJson() {
+  if (!recordingEvents.value.length) {
+    toast.value?.show({ message: '当前没有可复制的录制事件', type: 'warning' });
+    return;
+  }
+
+  const orderedEvents = [...recordingEvents.value]
+    .reverse()
+    .map((event, index) => ({
+      step: index + 1,
+      ...event
+    }));
+
+  const exportPayload = {
+    exportedAt: new Date().toISOString(),
+    mode: recordingMode.value,
+    status: recordingStatusText.value,
+    events: orderedEvents
+  };
+
+  const jsonText = JSON.stringify(exportPayload, null, 2);
+
+  try {
+    await navigator.clipboard.writeText(jsonText);
+    toast.value?.show({ message: '录制事件 JSON 已复制到剪贴板', type: 'success' });
+  } catch (error) {
+    console.error('复制录制 JSON 失败:', error);
+    toast.value?.show({ message: '复制失败，请检查浏览器剪贴板权限', type: 'error' });
+  }
 }
 
 function formatRecordingEventSummary(event: RecordingEventItem) {
@@ -2359,6 +2409,12 @@ async function executeWorkflow() {
   padding: 0.9rem 1.25rem;
   border-bottom: 1px solid #30363d;
   color: #8b949e;
+}
+
+.recording-panel-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .recording-events {
