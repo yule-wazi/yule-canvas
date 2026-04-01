@@ -17,7 +17,17 @@ export interface RecordingElementMeta {
 export interface RecordingEvent {
   id: string;
   kind: 'action' | 'mark';
-  action: 'navigate' | 'click' | 'type' | 'select' | 'scroll' | 'back' | 'forward' | 'field-mark';
+  action:
+    | 'navigate'
+    | 'click'
+    | 'contextmenu'
+    | 'middle-click'
+    | 'type'
+    | 'select'
+    | 'scroll'
+    | 'back'
+    | 'forward'
+    | 'field-mark';
   timestamp: number;
   pageId: string;
   url: string;
@@ -27,6 +37,11 @@ export interface RecordingEvent {
   fieldName?: string;
   fieldType?: 'text' | 'image' | 'video' | 'link' | 'custom';
   elementMeta?: RecordingElementMeta;
+  openerPageId?: string;
+  openerUrl?: string;
+  openerSelector?: string;
+  openerAction?: 'contextmenu' | 'middle-click';
+  openerElementMeta?: RecordingElementMeta;
 }
 
 export interface RecordingMarkRequest {
@@ -56,6 +71,16 @@ interface BrowserRecorderCallbacks {
   onEventsUpdated?: (events: RecordingEvent[]) => void;
   onMarkRequest?: (request: RecordingMarkRequest) => void;
   onStop?: () => void;
+}
+
+interface PendingOpenIntent {
+  timestamp: number;
+  pageId: string;
+  url: string;
+  title?: string;
+  selector?: string;
+  action: 'contextmenu' | 'middle-click';
+  elementMeta?: RecordingElementMeta;
 }
 
 export interface RecordingPageHistoryState {
@@ -384,6 +409,8 @@ const RECORDER_INIT_SCRIPT = `
     const labels = {
       navigate: '访问页面',
       click: '点击元素',
+      contextmenu: '右键元素',
+      'middle-click': '中键打开',
       type: '输入文本',
       select: '选择下拉项',
       scroll: '滚动页面',
@@ -966,6 +993,32 @@ const RECORDER_INIT_SCRIPT = `
     emitAction('click', target);
   }, true);
 
+  document.addEventListener('contextmenu', (event) => {
+    if (state.mode !== 'action') {
+      return;
+    }
+
+    const target = getActionTarget(event.target);
+    if (!target) {
+      return;
+    }
+
+    emitAction('contextmenu', target);
+  }, true);
+
+  document.addEventListener('auxclick', (event) => {
+    if (state.mode !== 'action' || event.button !== 1) {
+      return;
+    }
+
+    const target = getActionTarget(event.target);
+    if (!target) {
+      return;
+    }
+
+    emitAction('middle-click', target);
+  }, true);
+
   document.addEventListener('mousemove', (event) => {
     const target = getHoverTarget(event.target);
     setHoverTarget(target);
@@ -1143,6 +1196,7 @@ export class BrowserRecorder {
   private eventSequence = 0;
   private recordedEvents: RecordingEvent[] = [];
   private pendingMarkRequests = new Map<string, RecordingMarkRequest>();
+  private pendingOpenIntents: PendingOpenIntent[] = [];
 
   constructor(callbacks: BrowserRecorderCallbacks = {}) {
     this.callbacks = callbacks;
@@ -1266,6 +1320,7 @@ export class BrowserRecorder {
     };
 
     this.addRecordedEvent(event);
+    this.capturePendingOpenIntent(event);
     this.currentStatusMessage = `已记录：${this.describeAction(event.action)}`;
     this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
     await this.broadcastEvents();
@@ -1294,6 +1349,7 @@ export class BrowserRecorder {
       }
 
       const action = this.resolveNavigationAction(page, url);
+      const opener = action === 'navigate' ? this.consumePendingOpenIntent(url) : undefined;
       const event: RecordingEvent = {
         id: this.nextEventId(),
         kind: 'action',
@@ -1301,7 +1357,12 @@ export class BrowserRecorder {
         timestamp: Date.now(),
         pageId,
         url,
-        title
+        title,
+        openerPageId: opener?.pageId,
+        openerUrl: opener?.url,
+        openerSelector: opener?.selector,
+        openerAction: opener?.action,
+        openerElementMeta: opener?.elementMeta
       };
 
       this.addRecordedEvent(event);
@@ -1446,6 +1507,8 @@ export class BrowserRecorder {
     const labels: Record<RecordingEvent['action'], string> = {
       navigate: '访问页面',
       click: '点击元素',
+      contextmenu: '右键元素',
+      'middle-click': '中键打开',
       type: '输入文本',
       select: '选择下拉项',
       scroll: '滚动页面',
@@ -1454,6 +1517,46 @@ export class BrowserRecorder {
       'field-mark': '标注字段'
     };
     return labels[action] || action;
+  }
+
+  private capturePendingOpenIntent(event: RecordingEvent): void {
+    if (
+      (event.action !== 'contextmenu' && event.action !== 'middle-click') ||
+      !event.selector ||
+      !event.elementMeta?.href
+    ) {
+      return;
+    }
+
+    this.pendingOpenIntents.push({
+      timestamp: event.timestamp,
+      pageId: event.pageId,
+      url: event.url,
+      title: event.title,
+      selector: event.selector,
+      action: event.action,
+      elementMeta: event.elementMeta
+    });
+
+    this.pendingOpenIntents = this.pendingOpenIntents
+      .filter(intent => event.timestamp - intent.timestamp <= 15000)
+      .slice(-8);
+  }
+
+  private consumePendingOpenIntent(navigatedUrl: string): PendingOpenIntent | undefined {
+    const now = Date.now();
+    this.pendingOpenIntents = this.pendingOpenIntents.filter(intent => now - intent.timestamp <= 15000);
+
+    if (this.pendingOpenIntents.length === 0) {
+      return undefined;
+    }
+
+    const exactIndex = this.pendingOpenIntents.findIndex(intent => intent.elementMeta?.href === navigatedUrl);
+    if (exactIndex >= 0) {
+      return this.pendingOpenIntents.splice(exactIndex, 1)[0];
+    }
+
+    return this.pendingOpenIntents.pop();
   }
 
   private async launchBrowser(): Promise<void> {

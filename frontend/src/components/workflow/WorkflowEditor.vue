@@ -208,11 +208,17 @@
             <span class="recording-event-summary">{{ formatRecordingEventSummary(event) }}</span>
             <button class="recording-event-delete" @click="deleteRecordingEvent(event.id)">删除</button>
           </div>
-          <div class="recording-event-meta" v-if="event.selector || event.fieldName || event.value">
+          <div
+            class="recording-event-meta"
+            v-if="event.selector || event.fieldName || event.value || event.openerSelector || event.openerElementMeta?.href"
+          >
             <div v-if="event.title"><strong>页面:</strong> {{ event.title }}</div>
             <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
             <div v-if="event.fieldName"><strong>字段:</strong> {{ event.fieldName }} <span v-if="event.fieldType">({{ event.fieldType }})</span></div>
             <div v-if="event.value"><strong>值:</strong> {{ event.value }}</div>
+            <div v-if="event.openerSelector"><strong>来源元素:</strong> {{ event.openerSelector }}</div>
+            <div v-if="event.openerAction"><strong>来源动作:</strong> {{ event.openerAction === 'contextmenu' ? '右键元素' : '中键打开' }}</div>
+            <div v-if="event.openerElementMeta?.href"><strong>来源链接:</strong> {{ event.openerElementMeta.href }}</div>
           </div>
         </div>
       </div>
@@ -379,6 +385,19 @@ interface RecordingEventItem {
   fieldName?: string;
   fieldType?: 'text' | 'image' | 'video' | 'link' | 'custom';
   elementMeta?: {
+    tagName?: string;
+    text?: string;
+    id?: string;
+    className?: string;
+    href?: string;
+    src?: string;
+    value?: string;
+  };
+  openerPageId?: string;
+  openerUrl?: string;
+  openerSelector?: string;
+  openerAction?: 'contextmenu' | 'middle-click';
+  openerElementMeta?: {
     tagName?: string;
     text?: string;
     id?: string;
@@ -655,25 +674,257 @@ function deleteRecordingEvent(eventId: string) {
   recordingEvents.value = recordingEvents.value.filter(event => event.id !== eventId);
 }
 
+function normalizeRecordingText(value?: string) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function parseRecordingScrollValue(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === 'object') {
+      return parsed;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function getRecordingEventLabel(action: string) {
+  const labels: Record<string, string> = {
+    navigate: '访问页面',
+    click: '点击元素',
+    contextmenu: '右键元素',
+    'middle-click': '中键打开',
+    type: '输入文本',
+    select: '选择下拉项',
+    scroll: '滚动页面',
+    back: '后退',
+    forward: '前进',
+    'field-mark': '字段标注'
+  };
+
+  return labels[action] || '未命名事件';
+}
+
+function buildRecordingEventSummaryText(event: RecordingEventItem) {
+  if (event.kind === 'mark') {
+    const fieldType = event.fieldType ? ` (${event.fieldType})` : '';
+    return `标注字段 ${event.fieldName || '未命名字段'}${fieldType}`;
+  }
+
+  const targetText = normalizeRecordingText(event.elementMeta?.text);
+  const selector = event.selector || '';
+
+  if (event.action === 'navigate') {
+    if (event.openerSelector) {
+      return `新页面导航，由${event.openerAction === 'contextmenu' ? '右键' : '中键'}元素触发: ${event.url}`;
+    }
+    return `访问页面: ${event.url}`;
+  }
+
+  if (event.action === 'type') {
+    return `在 ${selector || '目标元素'} 输入文本`;
+  }
+
+  if (event.action === 'select') {
+    return `在 ${selector || '目标元素'} 选择选项`;
+  }
+
+  if (event.action === 'scroll') {
+    const scroll = parseRecordingScrollValue(event.value);
+    if (scroll?.target === 'element' && selector) {
+      return `滚动元素: ${selector}`;
+    }
+    return '滚动页面';
+  }
+
+  if (event.action === 'contextmenu') {
+    return `右键元素${selector ? `: ${selector}` : targetText ? `: ${targetText}` : ''}`;
+  }
+
+  if (event.action === 'middle-click') {
+    return `中键打开${selector ? `: ${selector}` : targetText ? `: ${targetText}` : ''}`;
+  }
+
+  return `${getRecordingEventLabel(event.action)}${selector ? `: ${selector}` : targetText ? `: ${targetText}` : ''}`;
+}
+
+function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'mark', status: string) {
+  const orderedEvents = [...events]
+    .reverse()
+    .map((event, index) => {
+      const scroll = event.action === 'scroll' ? parseRecordingScrollValue(event.value) : null;
+
+      return {
+        step: index + 1,
+        stepId: event.id,
+        summary: buildRecordingEventSummaryText(event),
+        kind: event.kind,
+        action: event.action,
+        timestamp: event.timestamp,
+        pageId: event.pageId,
+        page: {
+          url: event.url,
+          title: event.title || ''
+        },
+        target: {
+          selector: event.selector || '',
+          tagName: event.elementMeta?.tagName || '',
+          text: normalizeRecordingText(event.elementMeta?.text),
+          id: event.elementMeta?.id || '',
+          className: event.elementMeta?.className || '',
+          href: event.elementMeta?.href || '',
+          src: event.elementMeta?.src || '',
+          value: event.elementMeta?.value || ''
+        },
+        input: event.action === 'type' || event.action === 'select'
+          ? {
+              value: event.value || ''
+            }
+          : undefined,
+        scroll: scroll || undefined,
+        field: event.kind === 'mark'
+          ? {
+              name: event.fieldName || '',
+              type: event.fieldType || 'text'
+            }
+          : undefined,
+        opener: event.openerSelector || event.openerPageId || event.openerElementMeta?.href
+          ? {
+              pageId: event.openerPageId || '',
+              url: event.openerUrl || '',
+              selector: event.openerSelector || '',
+              action: event.openerAction || '',
+              href: event.openerElementMeta?.href || '',
+              text: normalizeRecordingText(event.openerElementMeta?.text),
+              tagName: event.openerElementMeta?.tagName || ''
+            }
+          : undefined,
+        raw: {
+          value: event.value || ''
+        }
+      };
+    });
+
+  const pageOrder: string[] = [];
+  const pages = new Map<string, {
+    pageId: string;
+    firstSeenStep: number;
+    latestUrl: string;
+    latestTitle: string;
+    urls: Set<string>;
+    titles: Set<string>;
+    openedFrom?: {
+      pageId: string;
+      url: string;
+      selector: string;
+      action: string;
+      href: string;
+    };
+  }>();
+  const actionCounts: Record<string, number> = {};
+  const markedFields: Array<{ name: string; type: string; pageId: string; selector: string }> = [];
+
+  orderedEvents.forEach(event => {
+    actionCounts[event.action] = (actionCounts[event.action] || 0) + 1;
+
+    if (!pages.has(event.pageId)) {
+      pages.set(event.pageId, {
+        pageId: event.pageId,
+        firstSeenStep: event.step,
+        latestUrl: event.page.url,
+        latestTitle: event.page.title,
+        urls: new Set(event.page.url ? [event.page.url] : []),
+        titles: new Set(event.page.title ? [event.page.title] : []),
+        openedFrom: event.opener
+          ? {
+              pageId: event.opener.pageId,
+              url: event.opener.url,
+              selector: event.opener.selector,
+              action: event.opener.action,
+              href: event.opener.href
+            }
+          : undefined
+      });
+      pageOrder.push(event.pageId);
+    } else {
+      const page = pages.get(event.pageId)!;
+      if (event.page.url) {
+        page.latestUrl = event.page.url;
+        page.urls.add(event.page.url);
+      }
+      if (event.page.title) {
+        page.latestTitle = event.page.title;
+        page.titles.add(event.page.title);
+      }
+      if (!page.openedFrom && event.opener) {
+        page.openedFrom = {
+          pageId: event.opener.pageId,
+          url: event.opener.url,
+          selector: event.opener.selector,
+          action: event.opener.action,
+          href: event.opener.href
+        };
+      }
+    }
+
+    if (event.field?.name) {
+      markedFields.push({
+        name: event.field.name,
+        type: event.field.type,
+        pageId: event.pageId,
+        selector: event.target.selector
+      });
+    }
+  });
+
+  return {
+    schemaVersion: 'recording.v2',
+    exportedAt: new Date().toISOString(),
+    recorder: {
+      mode,
+      status
+    },
+    summary: {
+      totalSteps: orderedEvents.length,
+      pageCount: pageOrder.length,
+      actionCounts,
+      markedFields
+    },
+    pages: pageOrder.map((pageId, index) => {
+      const page = pages.get(pageId)!;
+      return {
+        pageId,
+        pageIndex: index + 1,
+        firstSeenStep: page.firstSeenStep,
+        latestUrl: page.latestUrl,
+        latestTitle: page.latestTitle,
+        urls: Array.from(page.urls),
+        titles: Array.from(page.titles),
+        openedFrom: page.openedFrom || null
+      };
+    }),
+    events: orderedEvents
+  };
+}
+
 async function copyRecordingJson() {
   if (!recordingEvents.value.length) {
     toast.value?.show({ message: '当前没有可复制的录制事件', type: 'warning' });
     return;
   }
 
-  const orderedEvents = [...recordingEvents.value]
-    .reverse()
-    .map((event, index) => ({
-      step: index + 1,
-      ...event
-    }));
-
-  const exportPayload = {
-    exportedAt: new Date().toISOString(),
-    mode: recordingMode.value,
-    status: recordingStatusText.value,
-    events: orderedEvents
-  };
+  const exportPayload = buildRecordingExport(
+    recordingEvents.value,
+    recordingMode.value,
+    recordingStatusText.value
+  );
 
   const jsonText = JSON.stringify(exportPayload, null, 2);
 
@@ -691,18 +942,7 @@ function formatRecordingEventSummary(event: RecordingEventItem) {
     return event.fieldName || '标注字段';
   }
 
-  const labels: Record<string, string> = {
-    navigate: '访问页面',
-    click: '点击元素',
-    type: '输入文本',
-    select: '选择下拉项',
-    scroll: '滚动页面',
-    back: '后退',
-    forward: '前进',
-    'field-mark': '字段标注'
-  };
-
-  return labels[event.action] || '未命名事件';
+  return getRecordingEventLabel(event.action);
 }
 
 function stopRecordingSocketListeners() {
