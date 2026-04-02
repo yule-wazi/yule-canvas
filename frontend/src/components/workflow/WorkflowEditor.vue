@@ -191,6 +191,13 @@
         <div class="recording-panel-toolbar-actions">
           <button
             v-if="!isRecording && recordingEvents.length"
+            @click="openAIGenerateModal"
+            class="btn-primary"
+          >
+            AI 生成
+          </button>
+          <button
+            v-if="!isRecording && recordingEvents.length"
             @click="copyRecordingJson"
             class="btn-secondary"
           >
@@ -238,6 +245,97 @@
         <div class="modal-actions">
           <button @click="startRecording" class="btn-primary">开始录制</button>
           <button @click="closeRecordingSetup" class="btn-secondary">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showAIGenerateModal" class="modal-overlay" @click="closeAIGenerateModal">
+      <div class="modal-content ai-generate-modal" @click.stop>
+        <div class="ai-generate-header">
+          <div>
+            <h3>AI 生成 Workflow</h3>
+            <p>基于当前录制记录进行单轮生成。生成成功后会记住 Provider、模型和 API Key。</p>
+          </div>
+          <button @click="closeAIGenerateModal" class="btn-secondary">关闭</button>
+        </div>
+
+        <div class="ai-generate-layout">
+          <div class="ai-config-card">
+            <div class="ai-card-title">
+              <span>模型配置</span>
+              <small>这里只保存成功调用后的配置</small>
+            </div>
+
+            <div class="ai-generate-form">
+              <div class="form-group ai-field">
+                <label>Provider</label>
+                <select v-model="aiProvider" class="ai-input">
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="siliconflow">硅基流动</option>
+                  <option value="qwen">阿里千问</option>
+                </select>
+              </div>
+
+              <div class="form-group ai-field">
+                <label>模型</label>
+                <input v-model="aiModelName" class="ai-input" placeholder="例如：openai/gpt-4.1-mini" />
+              </div>
+
+              <div class="form-group ai-field ai-field-full">
+                <label>API Key</label>
+                <input v-model="aiApiKey" class="ai-input" type="password" placeholder="可临时覆盖后端环境变量中的 API Key" />
+              </div>
+
+              <div class="form-group ai-field ai-field-full">
+                <label>补充提示（可选）</label>
+                <textarea
+                  v-model="aiTaskHint"
+                  rows="4"
+                  class="ai-input ai-textarea"
+                  placeholder="例如：这个录制是为了批量采集新闻详情页的标题、正文和封面"
+                ></textarea>
+              </div>
+            </div>
+
+            <div class="ai-generate-actions">
+              <button @click="generateWorkflowWithAI" class="btn-primary" :disabled="aiGenerating || !recordingEvents.length">
+                {{ aiGenerating ? '生成中...' : '开始生成' }}
+              </button>
+              <button @click="copyAIResult" class="btn-secondary" :disabled="!aiResultText">复制结果</button>
+            </div>
+
+            <div v-if="aiError" class="json-error">
+              ❌ {{ aiError }}
+              <ul v-if="aiErrorDetails.length" class="ai-detail-list">
+                <li v-for="(item, index) in aiErrorDetails" :key="`err-${index}`">{{ item }}</li>
+              </ul>
+              <ul v-if="aiWarningDetails.length" class="ai-detail-list is-warning">
+                <li v-for="(item, index) in aiWarningDetails" :key="`warn-${index}`">{{ item }}</li>
+              </ul>
+              <textarea
+                v-if="aiRawPreview"
+                :value="aiRawPreview"
+                readonly
+                rows="8"
+                class="json-textarea ai-error-preview"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="ai-output-card">
+            <div class="ai-card-title">
+              <span>AI 输出</span>
+              <small>当前是单轮生成，方便先复制到工作区验证</small>
+            </div>
+
+            <textarea
+              v-model="aiResultText"
+              rows="18"
+              readonly
+              placeholder="生成后的 Workflow JSON 会显示在这里"
+              class="json-textarea ai-result-textarea"
+            ></textarea>
+          </div>
         </div>
       </div>
     </div>
@@ -343,6 +441,7 @@ import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
 import { useDataTableStore } from '../../stores/dataTable';
+import api from '../../services/api';
 import socketService from '../../services/socket';
 import type { BlockType } from '../../types/block';
 import { simpleLogWorkflow } from '../../examples/workflowExample';
@@ -428,6 +527,7 @@ const showWorkflowManager = ref(false);
 const showImportModal = ref(false);
 const showRecordingSetupModal = ref(false);
 const showRecordingPanel = ref(false);
+const showAIGenerateModal = ref(false);
 const importJsonText = ref('');
 const importJsonError = ref('');
 const editingVariableIndex = ref<number | null>(null);
@@ -439,6 +539,16 @@ const recordingMode = ref<'action' | 'mark'>('action');
 const recordingStatusText = ref('尚未开始录制');
 const recordingStartUrl = ref('');
 const recordingEvents = ref<RecordingEventItem[]>([]);
+const aiProvider = ref<'openrouter' | 'siliconflow' | 'qwen'>('openrouter');
+const aiModelName = ref('openai/gpt-4.1-mini');
+const aiApiKey = ref('');
+const aiTaskHint = ref('');
+const aiGenerating = ref(false);
+const aiResultText = ref('');
+const aiError = ref('');
+const aiErrorDetails = ref<string[]>([]);
+const aiWarningDetails = ref<string[]>([]);
+const aiRawPreview = ref('');
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
 const executionPanelRef = ref<HTMLElement | null>(null);
@@ -449,6 +559,7 @@ const executionPanelDragOffset = reactive({ x: 0, y: 0 });
 let executionPanelResizeObserver: ResizeObserver | null = null;
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
+const AI_GENERATE_SETTINGS_KEY = 'ai_generate_settings_v1';
 
 // 工作流变量
 const workflowVariables = computed(() => {
@@ -654,6 +765,81 @@ function closeVariablesModal() {
 function closeRecordingSetup() {
   showRecordingSetupModal.value = false;
   recordingStartUrl.value = '';
+}
+
+function loadAIGenerateSettings() {
+  try {
+    const raw = localStorage.getItem(AI_GENERATE_SETTINGS_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (parsed?.provider && ['openrouter', 'siliconflow', 'qwen'].includes(parsed.provider)) {
+      aiProvider.value = parsed.provider;
+    }
+    if (typeof parsed?.model === 'string' && parsed.model.trim()) {
+      aiModelName.value = parsed.model.trim();
+    }
+    if (typeof parsed?.apiKey === 'string') {
+      aiApiKey.value = parsed.apiKey;
+    }
+  } catch (error) {
+    console.error('加载 AI 生成配置失败:', error);
+  }
+}
+
+function saveAIGenerateSettings() {
+  try {
+    localStorage.setItem(AI_GENERATE_SETTINGS_KEY, JSON.stringify({
+      provider: aiProvider.value,
+      model: aiModelName.value.trim(),
+      apiKey: aiApiKey.value
+    }));
+  } catch (error) {
+    console.error('保存 AI 生成配置失败:', error);
+  }
+}
+
+function getDefaultAIModel(provider: 'openrouter' | 'siliconflow' | 'qwen') {
+  switch (provider) {
+    case 'siliconflow':
+      return 'Qwen/Qwen2.5-7B-Instruct';
+    case 'qwen':
+      return 'qwen-turbo';
+    case 'openrouter':
+    default:
+      return 'openai/gpt-4.1-mini';
+  }
+}
+
+watch(aiProvider, (provider, previousProvider) => {
+  const previousDefault = previousProvider ? getDefaultAIModel(previousProvider) : '';
+  if (!aiModelName.value.trim() || aiModelName.value === previousDefault) {
+    aiModelName.value = getDefaultAIModel(provider);
+  }
+});
+
+function openAIGenerateModal() {
+  if (!recordingEvents.value.length) {
+    toast.value?.show({ message: '当前没有可用于生成的录制事件', type: 'warning' });
+    return;
+  }
+
+  aiError.value = '';
+  aiErrorDetails.value = [];
+  aiWarningDetails.value = [];
+  aiRawPreview.value = '';
+  aiResultText.value = '';
+  showAIGenerateModal.value = true;
+}
+
+function closeAIGenerateModal() {
+  if (aiGenerating.value) {
+    return;
+  }
+
+  showAIGenerateModal.value = false;
 }
 
 function clearRecordingEvents() {
@@ -937,6 +1123,70 @@ async function copyRecordingJson() {
   }
 }
 
+async function generateWorkflowWithAI() {
+  if (!recordingEvents.value.length) {
+    toast.value?.show({ message: '当前没有可用于生成的录制事件', type: 'warning' });
+    return;
+  }
+
+  aiGenerating.value = true;
+  aiError.value = '';
+  aiErrorDetails.value = [];
+  aiWarningDetails.value = [];
+  aiRawPreview.value = '';
+  aiResultText.value = '';
+
+  try {
+    const recording = buildRecordingExport(
+      recordingEvents.value,
+      recordingMode.value,
+      recordingStatusText.value
+    );
+
+    const response: any = await api.post('/ai/generate-workflow-from-recording', {
+      recording,
+      model: aiProvider.value,
+      options: {
+        model: aiModelName.value.trim() || getDefaultAIModel(aiProvider.value),
+        apiKey: aiApiKey.value.trim() || undefined,
+        taskHint: aiTaskHint.value.trim() || undefined,
+        timeoutMs: 120000,
+        httpReferer: window.location.origin,
+        appTitle: 'AIBrowser'
+      }
+    }, {
+      timeout: 120000
+    });
+
+    aiResultText.value = JSON.stringify(response.workflow, null, 2);
+    saveAIGenerateSettings();
+    aiWarningDetails.value = Array.isArray(response.warnings) ? response.warnings : [];
+    toast.value?.show({ message: 'AI 已生成 Workflow JSON', type: 'success' });
+  } catch (error: any) {
+    aiError.value = error.response?.data?.error || error.message || 'AI 生成失败';
+    aiErrorDetails.value = Array.isArray(error.response?.data?.errors) ? error.response.data.errors : [];
+    aiWarningDetails.value = Array.isArray(error.response?.data?.warnings) ? error.response.data.warnings : [];
+    aiRawPreview.value = typeof error.response?.data?.rawPreview === 'string' ? error.response.data.rawPreview : '';
+  } finally {
+    aiGenerating.value = false;
+  }
+}
+
+async function copyAIResult() {
+  if (!aiResultText.value) {
+    toast.value?.show({ message: '当前没有可复制的 AI 输出', type: 'warning' });
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(aiResultText.value);
+    toast.value?.show({ message: 'AI 输出已复制到剪贴板', type: 'success' });
+  } catch (error) {
+    console.error('复制 AI 输出失败:', error);
+    toast.value?.show({ message: '复制失败，请检查剪贴板权限', type: 'error' });
+  }
+}
+
 function formatRecordingEventSummary(event: RecordingEventItem) {
   if (event.kind === 'mark') {
     return event.fieldName || '标注字段';
@@ -1053,6 +1303,7 @@ workflowStore.migrateConditionBlocks();
 onMounted(() => {
   dataTableStore.init();
   workflowStore.migrateConditionBlocks();
+  loadAIGenerateSettings();
   updateHandleStyles();
 });
 
@@ -2713,6 +2964,180 @@ async function executeWorkflow() {
 .recording-setup-modal,
 .recording-mark-modal {
   width: min(520px, 92vw);
+}
+
+.ai-generate-modal {
+  width: min(1080px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(88, 166, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98));
+  border: 1px solid rgba(88, 166, 255, 0.2);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.ai-generate-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.25rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem 0.25rem 0.9rem;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+}
+
+.ai-generate-header h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1.9rem;
+  letter-spacing: 0.01em;
+}
+
+.ai-generate-header p {
+  margin: 0;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+.ai-generate-header .btn-secondary {
+  background: rgba(31, 41, 55, 0.92);
+  border: 1px solid rgba(71, 85, 105, 0.55);
+}
+
+.ai-generate-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 620px;
+}
+
+.ai-config-card,
+.ai-output-card {
+  background: rgba(15, 20, 28, 0.8);
+  border: 1px solid rgba(48, 54, 61, 0.92);
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.ai-config-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-output-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ai-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.ai-card-title span {
+  color: #e6edf3;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.ai-card-title small {
+  color: #8b949e;
+  line-height: 1.4;
+}
+
+.ai-generate-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.ai-field {
+  margin: 0;
+}
+
+.ai-field-full,
+.ai-generate-form .form-group:last-child {
+  grid-column: 1 / -1;
+}
+
+.ai-field label {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: #c9d1d9;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ai-input {
+  width: 100%;
+  border: 1px solid rgba(71, 85, 105, 0.55);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(13, 17, 23, 0.96), rgba(17, 24, 39, 0.96));
+  color: #f3f4f6;
+  padding: 0.8rem 0.9rem;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  appearance: none;
+}
+
+.ai-input:focus {
+  outline: none;
+  border-color: rgba(88, 166, 255, 0.92);
+  box-shadow: 0 0 0 4px rgba(56, 139, 253, 0.12);
+}
+
+.ai-textarea {
+  min-height: 110px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.ai-generate-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+}
+
+@media (max-width: 720px) {
+  .ai-generate-layout {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .ai-generate-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-result-textarea {
+  flex: 1;
+  min-height: 540px;
+  border-radius: 14px;
+  border-color: rgba(48, 54, 61, 0.95);
+  background:
+    linear-gradient(180deg, rgba(10, 14, 20, 0.98), rgba(12, 18, 26, 0.98));
+}
+
+.ai-detail-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  line-height: 1.5;
+}
+
+.ai-detail-list.is-warning {
+  color: #fde68a;
+}
+
+.ai-error-preview {
+  margin-top: 0.85rem;
+  min-height: 160px;
+  border-color: rgba(248, 81, 73, 0.45);
 }
 
 .recording-mark-preview {
