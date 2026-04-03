@@ -191,6 +191,13 @@
         <div class="recording-panel-toolbar-actions">
           <button
             v-if="!isRecording && recordingEvents.length"
+            @click="mapRecordingToWorkflow"
+            class="btn-success"
+          >
+            映射工作流
+          </button>
+          <button
+            v-if="!isRecording && recordingEvents.length"
             @click="openAIGenerateModal"
             class="btn-primary"
           >
@@ -301,8 +308,35 @@
               <button @click="generateWorkflowWithAI" class="btn-primary" :disabled="aiGenerating || !recordingEvents.length">
                 {{ aiGenerating ? '生成中...' : '开始生成' }}
               </button>
+              <button @click="copyAIRequestPayload" class="btn-secondary" :disabled="!aiRequestPayloadText">复制请求</button>
               <button @click="copyAIResult" class="btn-secondary" :disabled="!aiResultText">复制结果</button>
             </div>
+
+            <div class="ai-card-title ai-subsection-title">
+              <span>请求参数</span>
+              <small>这里显示前端实际提交给 AI 接口的完整 payload</small>
+            </div>
+
+            <textarea
+              :value="aiRequestPayloadText"
+              rows="14"
+              readonly
+              placeholder="生成前会在这里显示完整请求参数"
+              class="json-textarea ai-request-textarea"
+            ></textarea>
+
+            <div class="ai-card-title ai-subsection-title">
+              <span>后端最终请求</span>
+              <small>这里显示后端真正发给模型接口的完整参数，包含 prompts、headers、body</small>
+            </div>
+
+            <textarea
+              :value="aiProviderRequestText"
+              rows="16"
+              readonly
+              placeholder="这里会显示后端最终发给模型接口的完整请求"
+              class="json-textarea ai-request-textarea"
+            ></textarea>
 
             <div v-if="aiError" class="json-error">
               ❌ {{ aiError }}
@@ -549,6 +583,8 @@ const aiError = ref('');
 const aiErrorDetails = ref<string[]>([]);
 const aiWarningDetails = ref<string[]>([]);
 const aiRawPreview = ref('');
+const aiRequestPayloadText = ref('');
+const aiProviderRequestText = ref('');
 const executionLogs = ref<string[]>([]);
 const executionResult = ref<any>(null);
 const executionPanelRef = ref<HTMLElement | null>(null);
@@ -557,6 +593,8 @@ const executionPanelPosition = reactive({ x: 24, y: 96, width: 520, height: 420 
 const executionPanelDragging = ref(false);
 const executionPanelDragOffset = reactive({ x: 0, y: 0 });
 let executionPanelResizeObserver: ResizeObserver | null = null;
+let aiPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+let aiPreviewRequestId = 0;
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 const AI_GENERATE_SETTINGS_KEY = 'ai_generate_settings_v1';
@@ -818,6 +856,7 @@ watch(aiProvider, (provider, previousProvider) => {
   if (!aiModelName.value.trim() || aiModelName.value === previousDefault) {
     aiModelName.value = getDefaultAIModel(provider);
   }
+  refreshAIRequestPayload();
 });
 
 function openAIGenerateModal() {
@@ -832,6 +871,7 @@ function openAIGenerateModal() {
   aiRawPreview.value = '';
   aiResultText.value = '';
   showAIGenerateModal.value = true;
+  refreshAIRequestPayload();
 }
 
 function closeAIGenerateModal() {
@@ -1135,26 +1175,13 @@ async function generateWorkflowWithAI() {
   aiWarningDetails.value = [];
   aiRawPreview.value = '';
   aiResultText.value = '';
+  aiProviderRequestText.value = '';
 
   try {
-    const recording = buildRecordingExport(
-      recordingEvents.value,
-      recordingMode.value,
-      recordingStatusText.value
-    );
+    const requestPayload = buildAIRequestPayload();
+    aiRequestPayloadText.value = JSON.stringify(requestPayload, null, 2);
 
-    const response: any = await api.post('/ai/generate-workflow-from-recording', {
-      recording,
-      model: aiProvider.value,
-      options: {
-        model: aiModelName.value.trim() || getDefaultAIModel(aiProvider.value),
-        apiKey: aiApiKey.value.trim() || undefined,
-        taskHint: aiTaskHint.value.trim() || undefined,
-        timeoutMs: 120000,
-        httpReferer: window.location.origin,
-        appTitle: 'AIBrowser'
-      }
-    }, {
+    const response: any = await api.post('/ai/generate-workflow-from-recording', requestPayload, {
       timeout: 120000
     });
 
@@ -1172,6 +1199,126 @@ async function generateWorkflowWithAI() {
   }
 }
 
+async function mapRecordingToWorkflow() {
+  if (!recordingEvents.value.length) {
+    toast.value?.show({ message: '当前没有可用于转换的录制事件', type: 'warning' });
+    return;
+  }
+
+  try {
+    const recording = buildRecordingExport(
+      recordingEvents.value,
+      recordingMode.value,
+      recordingStatusText.value
+    );
+
+    const response: any = await api.post('/recording/map-workflow', {
+      recording
+    });
+
+    const mappedWorkflow = {
+      ...(workflowStore.currentWorkflow || {
+        id: Date.now().toString(),
+        name: '录制映射工作流',
+        description: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }),
+      blocks: response.workflow.blocks,
+      connections: response.workflow.connections,
+      variables: response.workflow.variables || {},
+      updatedAt: Date.now()
+    };
+
+    workflowStore.loadWorkflow(mappedWorkflow as any);
+    showRecordingPanel.value = false;
+    toast.value?.show({
+      message: `已映射 ${response.workflow.blocks.length} 个模块到工作区`,
+      type: 'success'
+    });
+  } catch (error: any) {
+    console.error('录制映射工作流失败:', error);
+    toast.value?.show({
+      message: error.response?.data?.error || error.message || '录制映射失败',
+      type: 'error'
+    });
+  }
+}
+
+function buildAIRequestPayload() {
+  const recording = buildRecordingExport(
+    recordingEvents.value,
+    recordingMode.value,
+    recordingStatusText.value
+  );
+
+  return {
+    recording,
+    model: aiProvider.value,
+    options: {
+      model: aiModelName.value.trim() || getDefaultAIModel(aiProvider.value),
+      apiKey: aiApiKey.value.trim() || undefined,
+      taskHint: aiTaskHint.value.trim() || undefined,
+      timeoutMs: 120000,
+      httpReferer: window.location.origin,
+      appTitle: 'AIBrowser'
+    }
+  };
+}
+
+function refreshAIRequestPayload() {
+  if (!showAIGenerateModal.value) {
+    return;
+  }
+
+  if (!recordingEvents.value.length) {
+    aiRequestPayloadText.value = '';
+    return;
+  }
+
+  aiRequestPayloadText.value = JSON.stringify(buildAIRequestPayload(), null, 2);
+  scheduleAIProviderRequestPreview();
+}
+
+function scheduleAIProviderRequestPreview() {
+  if (aiPreviewTimer) {
+    clearTimeout(aiPreviewTimer);
+  }
+
+  aiPreviewTimer = setTimeout(() => {
+    refreshAIProviderRequestPreview();
+  }, 250);
+}
+
+async function refreshAIProviderRequestPreview() {
+  if (!showAIGenerateModal.value || !recordingEvents.value.length) {
+    aiProviderRequestText.value = '';
+    return;
+  }
+
+  const requestId = ++aiPreviewRequestId;
+
+  try {
+    const response: any = await api.post('/ai/preview-generate-workflow-from-recording', buildAIRequestPayload(), {
+      timeout: 30000
+    });
+
+    if (requestId !== aiPreviewRequestId) {
+      return;
+    }
+
+    aiProviderRequestText.value = JSON.stringify(response.preview, null, 2);
+  } catch (error: any) {
+    if (requestId !== aiPreviewRequestId) {
+      return;
+    }
+
+    aiProviderRequestText.value = JSON.stringify({
+      error: error.response?.data?.error || error.message || '预览后端最终请求失败'
+    }, null, 2);
+  }
+}
+
 async function copyAIResult() {
   if (!aiResultText.value) {
     toast.value?.show({ message: '当前没有可复制的 AI 输出', type: 'warning' });
@@ -1183,6 +1330,21 @@ async function copyAIResult() {
     toast.value?.show({ message: 'AI 输出已复制到剪贴板', type: 'success' });
   } catch (error) {
     console.error('复制 AI 输出失败:', error);
+    toast.value?.show({ message: '复制失败，请检查剪贴板权限', type: 'error' });
+  }
+}
+
+async function copyAIRequestPayload() {
+  if (!aiRequestPayloadText.value) {
+    toast.value?.show({ message: '当前没有可复制的请求参数', type: 'warning' });
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(aiRequestPayloadText.value);
+    toast.value?.show({ message: '请求参数已复制到剪贴板', type: 'success' });
+  } catch (error) {
+    console.error('复制请求参数失败:', error);
     toast.value?.show({ message: '复制失败，请检查剪贴板权限', type: 'error' });
   }
 }
@@ -1331,6 +1493,22 @@ watch(showExecutionModal, async (visible) => {
     executionPanelResizeObserver.observe(executionPanelRef.value);
   }
 });
+
+watch(
+  () => [
+    showAIGenerateModal.value,
+    aiModelName.value,
+    aiApiKey.value,
+    aiTaskHint.value,
+    recordingMode.value,
+    recordingStatusText.value,
+    recordingEvents.value
+  ],
+  () => {
+    refreshAIRequestPayload();
+  },
+  { deep: true }
+);
 
 // 监听连接变化，更新 handle 样式
 watch(
@@ -3051,6 +3229,10 @@ async function executeWorkflow() {
   line-height: 1.4;
 }
 
+.ai-subsection-title {
+  margin: 1rem 0 0.75rem;
+}
+
 .ai-generate-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3118,6 +3300,14 @@ async function executeWorkflow() {
 .ai-result-textarea {
   flex: 1;
   min-height: 540px;
+  border-radius: 14px;
+  border-color: rgba(48, 54, 61, 0.95);
+  background:
+    linear-gradient(180deg, rgba(10, 14, 20, 0.98), rgba(12, 18, 26, 0.98));
+}
+
+.ai-request-textarea {
+  min-height: 260px;
   border-radius: 14px;
   border-color: rgba(48, 54, 61, 0.95);
   background:

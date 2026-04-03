@@ -16,6 +16,14 @@ export interface AIModelAdapter {
   getHeaders?(options?: Record<string, any>): Record<string, string>;
 }
 
+export interface ProviderRequestPreview {
+  endpoint: string;
+  headers: Record<string, string>;
+  body: any;
+  systemPrompt: string;
+  userPrompt: string;
+}
+
 export class WorkflowGenerationError extends Error {
   stage: 'parse' | 'shape-validation' | 'semantic-validation' | 'provider';
   errors: string[];
@@ -41,56 +49,22 @@ export class WorkflowGenerationError extends Error {
   }
 }
 
-const WORKFLOW_JSON_SYSTEM_PROMPT = `你是一个网页采集工作流生成助手。
-
-你的唯一任务是根据输入生成合法的 Workflow JSON。
-
-输出要求：
-1. 只能输出 JSON，不要输出解释、Markdown、代码块。
-2. 顶层对象必须包含 blocks、connections、variables。
-3. 所有 block.id 和 connection.id 必须唯一。
-4. blocks 需要从左到右布局，position.x 递增，position.y 合理分层。
-5. 如果用户录制里出现字段标注，优先把它们转成 extract 节点中的 data.extractions。
-6. 如果存在列表页 -> 详情页链路，要尽量生成可复现、可批量执行的工作流，而不是只复现一次手动操作。
-
-可用 block.type：
-- navigate
-- click
-- type
-- select
-- scroll
-- wait
-- extract
-- extract-links
-- back
-- forward
-- log
-- loop
-- condition
-
-连接规则：
-- 普通流程：sourceHandle 使用 out 或 source-right；targetHandle 使用 in 或 target-left
-- 循环开始：sourceHandle 使用 loop-start
-- 循环结束：targetHandle 使用 loop-end
-
-额外约束：
-- 不要臆造输入中没有证据支持的复杂逻辑。
-- 如果录制里已经标注字段，说明目标页面和采集字段优先级最高。
-- 如果录制中存在新标签页/详情页跳转，应优先保留该链路。
-- selector 应尽量使用输入里已经出现的 selector，不要随意改写。
-
+const WORKFLOW_JSON_SYSTEM_PROMPT = `You generate executable Workflow JSON only.
+Output rules:
+1. Output JSON only. No markdown, no code fences, no explanation.
+2. Root keys must be blocks, connections, variables.
+3. All block ids and connection ids must be unique.
+4. Reuse selectors and URLs from the input evidence whenever possible.
+5. If the recording contains marked fields, prefer converting them into extract.data.extractions.
 ${createWorkflowCapabilityPromptCompact()}`;
 
 const RECORDING_TO_WORKFLOW_SYSTEM_PROMPT = `${WORKFLOW_JSON_SYSTEM_PROMPT}
 
-当前输入不是自然语言需求，而是“语义化录制包”。
-你需要从录制包里推断用户的真实采集意图，并生成最合理的 Workflow JSON。
-
-推断原则：
-1. 优先识别目标页面、字段标注、导航链路。
-2. 试探性滚动、重复点击、无后续结果的动作可以忽略或降权。
-3. 如果录制明显是在“列表页打开详情页并采字段”，优先生成可批量遍历的流程。
-4. 如果信息不足，不要捏造复杂逻辑，保持最小可执行工作流。`;
+The input is a semantic recording package, not a natural language request.
+Infer the smallest executable workflow from the evidence.
+Prefer marked fields, navigation chains, and high-signal steps.
+Do not invent unsupported loop/dataflow behavior.
+Do not invent URLs, selectors, or field names outside the evidence.`;
 
 function buildPromptSemanticRecording(recording: RecordingSemanticPackage) {
   return {
@@ -138,8 +112,56 @@ function buildPromptHarness(harness: ReturnType<typeof WorkflowGenerationHarness
   };
 }
 
+function buildRecordingWorkflowPrompt(
+  semanticRecording: RecordingSemanticPackage,
+  harness: ReturnType<typeof WorkflowGenerationHarnessBuilder.build>,
+  options: Record<string, any> = {}
+) {
+  const promptRecording = buildPromptSemanticRecording(semanticRecording);
+  const promptHarness = buildPromptHarness(harness);
+  const taskHint = options.taskHint ? `\n补充业务提示：${String(options.taskHint).trim()}` : '';
+
+  return {
+    systemPrompt: RECORDING_TO_WORKFLOW_SYSTEM_PROMPT,
+    userPrompt: `请根据下面的语义化录制包，生成最合理的 Workflow JSON。${taskHint}
+
+注意：
+- 重点关注 markedFields、navigationChains、semanticSteps 中 signal=high 的步骤。
+- 在证据不足时，优先生成最小可执行 workflow。
+- 绝不能虚构 URL、selector、字段名、变量流转或循环能力。
+
+语义化录制包：
+${JSON.stringify(promptRecording, null, 2)}
+
+生成约束 harness：
+${JSON.stringify(promptHarness, null, 2)}`
+  };
+}
+
+function createProviderRequest(
+  adapter: AIModelAdapter,
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  options: Record<string, any> = {}
+): ProviderRequestPreview {
+  return {
+    endpoint: adapter.getApiEndpoint(),
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      ...(adapter.getHeaders?.(options) || {})
+    },
+    body: adapter.formatChatRequest(systemPrompt, userPrompt, options),
+    systemPrompt,
+    userPrompt
+  };
+}
+
 function sanitizeJsonResponse(content: string): string {
   let cleanJson = String(content || '').trim();
+
+  cleanJson = cleanJson.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
   if (cleanJson.startsWith('```json')) {
     cleanJson = cleanJson.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
@@ -155,11 +177,11 @@ function parseWorkflowJson(content: string): any {
   try {
     return JSON.parse(cleanJson);
   } catch (parseError: any) {
-    console.error('AI 返回的原始内容解析失败:', cleanJson);
+    console.error('AI raw content parse failed:', cleanJson);
     throw new WorkflowGenerationError({
       message: `AI 返回的 JSON 格式无效: ${parseError.message}`,
       stage: 'parse',
-      errors: ['模型返回了非 JSON 内容，或在 JSON 前混入了解释文本/思考内容。'],
+      errors: ['模型返回了非 JSON 内容，或在 JSON 前混入了解释文本。'],
       rawPreview: cleanJson.slice(0, 1200)
     });
   }
@@ -181,7 +203,7 @@ function parseToolWorkflowArguments(response: any): any {
   try {
     return JSON.parse(argumentsText);
   } catch (error: any) {
-    console.error('工具调用参数解析失败:', argumentsText);
+    console.error('Tool call arguments parse failed:', argumentsText);
     throw new WorkflowGenerationError({
       message: `工具调用参数不是合法 JSON: ${error.message}`,
       stage: 'parse',
@@ -425,29 +447,12 @@ export class AIAdapterManager {
   ): Promise<{ workflow: any; semanticRecording: RecordingSemanticPackage }> {
     const semanticRecording = this.buildSemanticRecording(payload);
     const harness = WorkflowGenerationHarnessBuilder.build(semanticRecording);
-    const promptRecording = buildPromptSemanticRecording(semanticRecording);
-    const promptHarness = buildPromptHarness(harness);
-    const taskHint = options.taskHint
-      ? `\n补充业务提示：${String(options.taskHint).trim()}`
-      : '';
-    const prompt = `请根据下面的语义化录制包，生成一个最合理的 Workflow JSON。${taskHint}
-
-注意：
-- 重点关注 markedFields、navigationChains、semanticSteps 中 signal=high 的步骤。
-- 尽量输出能批量复用的采集工作流，而不是只回放一次用户动作。
-- 如果用户明显是在列表页进入详情页采集字段，优先考虑 loop + click/navigate + extract 的结构。
-- 但你绝不能生成超出 harness 允许范围的结构，尤其不能虚构 URL、selector、字段名或循环能力。
-
-语义化录制包如下：
-${JSON.stringify(promptRecording, null, 2)}
-
-生成约束 harness 如下：
-${JSON.stringify(promptHarness, null, 2)}`;
+    const prompts = buildRecordingWorkflowPrompt(semanticRecording, harness, options);
 
     const workflow = await this.generateWorkflowFromMessages(
       modelId,
-      RECORDING_TO_WORKFLOW_SYSTEM_PROMPT,
-      prompt,
+      prompts.systemPrompt,
+      prompts.userPrompt,
       {
         ...options,
         maxTokens: options.maxTokens ?? 2200,
@@ -461,32 +466,43 @@ ${JSON.stringify(promptHarness, null, 2)}`;
     };
   }
 
+  previewWorkflowFromRecordingRequest(
+    modelId: string,
+    payload: { events?: RecordingInputEvent[]; mode?: string; status?: string; recorder?: { mode?: string; status?: string } } | RecordingInputEvent[],
+    options: Record<string, any> = {}
+  ) {
+    const semanticRecording = this.buildSemanticRecording(payload);
+    const harness = WorkflowGenerationHarnessBuilder.build(semanticRecording);
+    const prompts = buildRecordingWorkflowPrompt(semanticRecording, harness, options);
+    const providerRequest = this.buildProviderRequest(modelId, prompts.systemPrompt, prompts.userPrompt, {
+      ...options,
+      maxTokens: options.maxTokens ?? 2200,
+      harness
+    });
+
+    return {
+      semanticRecording,
+      harness,
+      providerRequest
+    };
+  }
+
   private async generateWorkflowFromMessages(
     modelId: string,
     systemPrompt: string,
     userPrompt: string,
     options: Record<string, any> = {}
   ): Promise<any> {
+    const providerRequest = this.buildProviderRequest(modelId, systemPrompt, userPrompt, options);
     const adapter = this.getAdapter(modelId);
+
     if (!adapter) {
       throw new Error(`不支持的模型: ${modelId}`);
     }
 
-    const apiKey = adapter.getApiKey(options);
-    if (!apiKey) {
-      throw new Error(`${adapter.name} API 密钥未配置`);
-    }
-
-    const requestData = adapter.formatChatRequest(systemPrompt, userPrompt, options);
-    const endpoint = adapter.getApiEndpoint();
-
     try {
-      const response = await axios.post(endpoint, requestData, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          ...(adapter.getHeaders?.(options) || {})
-        },
+      const response = await axios.post(providerRequest.endpoint, providerRequest.body, {
+        headers: providerRequest.headers,
         timeout: options.timeoutMs ?? 120000
       });
 
@@ -537,12 +553,32 @@ ${JSON.stringify(promptHarness, null, 2)}`;
           errors: ['模型提供方在限定时间内没有返回结果，后端已主动结束此次请求。']
         });
       }
-      console.error('AI API 调用失败:', error.response?.data || error.message);
+
+      console.error('AI API call failed:', error.response?.data || error.message);
       throw new WorkflowGenerationError({
         message: `AI 生成失败: ${error.response?.data?.error?.message || error.response?.data?.message || error.message}`,
         stage: 'provider',
         statusCode: 502
       });
     }
+  }
+
+  private buildProviderRequest(
+    modelId: string,
+    systemPrompt: string,
+    userPrompt: string,
+    options: Record<string, any> = {}
+  ): ProviderRequestPreview {
+    const adapter = this.getAdapter(modelId);
+    if (!adapter) {
+      throw new Error(`不支持的模型: ${modelId}`);
+    }
+
+    const apiKey = adapter.getApiKey(options);
+    if (!apiKey) {
+      throw new Error(`${adapter.name} API 密钥未配置`);
+    }
+
+    return createProviderRequest(adapter, apiKey, systemPrompt, userPrompt, options);
   }
 }

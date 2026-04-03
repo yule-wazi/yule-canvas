@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { AIAdapterManager, WorkflowGenerationError } from '../services/AIAdapter';
+import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
 const aiManager = new AIAdapterManager();
@@ -26,6 +27,34 @@ router.post('/ai/normalize-recording', (req, res) => {
     res.status(400).json({
       success: false,
       semanticRecording: null,
+      error: error.message
+    });
+  }
+});
+
+router.post('/recording/map-workflow', (req, res) => {
+  try {
+    const { recording } = req.body;
+
+    if (!recording) {
+      return res.status(400).json({
+        success: false,
+        workflow: null,
+        error: '请提供录制记录'
+      });
+    }
+
+    const workflow = RecordingWorkflowMapper.map(recording);
+
+    return res.json({
+      success: true,
+      workflow,
+      error: null
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      workflow: null,
       error: error.message
     });
   }
@@ -97,6 +126,37 @@ router.post('/ai/generate-workflow-from-recording', async (req, res) => {
       errors: error instanceof WorkflowGenerationError ? error.errors : [],
       warnings: error instanceof WorkflowGenerationError ? error.warnings : [],
       rawPreview: error instanceof WorkflowGenerationError ? error.rawPreview || null : null
+    });
+  }
+});
+
+router.post('/ai/preview-generate-workflow-from-recording', (req, res) => {
+  try {
+    const { recording, model = 'openrouter', options = {} } = req.body;
+
+    if (!recording) {
+      return res.status(400).json({
+        success: false,
+        preview: null,
+        error: '璇锋彁渚涘綍鍒惰褰?'
+      });
+    }
+
+    const preview = aiManager.previewWorkflowFromRecordingRequest(model, recording, {
+      ...options,
+      useTools: model === 'openrouter'
+    });
+
+    return res.json({
+      success: true,
+      preview,
+      error: null
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      preview: null,
+      error: error.message
     });
   }
 });
