@@ -22,6 +22,9 @@ interface RecordingV2Event {
   field?: {
     name?: string;
     type?: string;
+    tableId?: string;
+    tableName?: string;
+    attribute?: string;
   };
 }
 
@@ -30,7 +33,15 @@ interface RecordingV2Payload {
   events?: RecordingV2Event[];
 }
 
-type SupportedAction = 'navigate' | 'click' | 'type' | 'select' | 'scroll' | 'back' | 'forward' | 'field-mark';
+type SupportedAction =
+  | 'navigate'
+  | 'click'
+  | 'type'
+  | 'select'
+  | 'scroll'
+  | 'back'
+  | 'forward'
+  | 'field-mark';
 
 function createPorts(type: string) {
   switch (type) {
@@ -87,6 +98,23 @@ function isSupportedAction(action: string): action is SupportedAction {
   return ['navigate', 'click', 'type', 'select', 'scroll', 'back', 'forward', 'field-mark'].includes(action);
 }
 
+function pushExtractBlock(
+  blocks: any[],
+  extractions: Array<{ selector: string; attribute: string; saveToColumn: string }>,
+  tableId: string
+) {
+  if (extractions.length === 0) {
+    return;
+  }
+
+  blocks.push(createBlock('extract', '提取已标注字段', 'extraction', blocks.length, {
+    multiple: false,
+    timeout: 5000,
+    saveToTable: tableId,
+    extractions
+  }));
+}
+
 export class RecordingWorkflowMapper {
   static map(payload: RecordingV2Payload): Workflow {
     const events = normalizeEvents(payload);
@@ -105,7 +133,9 @@ export class RecordingWorkflowMapper {
 
       if (action === 'field-mark') {
         const pageId = event.pageId || '';
-        const extractions: Array<{ selector: string; attribute: string; saveToColumn: string }> = [];
+        let tableId = event.field?.tableId || '';
+        let extractions: Array<{ selector: string; attribute: string; saveToColumn: string }> = [];
+        const seenFieldNames = new Set<string>();
 
         while (index < events.length) {
           const markEvent = events[index];
@@ -114,24 +144,29 @@ export class RecordingWorkflowMapper {
           }
 
           if (markEvent.target?.selector && markEvent.field?.name) {
+            const fieldName = markEvent.field.name;
+            const currentTableId = markEvent.field.tableId || '';
+
+            if ((tableId && currentTableId && currentTableId !== tableId) || seenFieldNames.has(fieldName)) {
+              pushExtractBlock(blocks, extractions, tableId);
+              extractions = [];
+              seenFieldNames.clear();
+            }
+
+            tableId = currentTableId || tableId;
+
             extractions.push({
               selector: markEvent.target.selector,
-              attribute: 'innerText',
-              saveToColumn: markEvent.field.name
+              attribute: markEvent.field.attribute || 'innerText',
+              saveToColumn: fieldName
             });
+            seenFieldNames.add(fieldName);
           }
 
           index += 1;
         }
 
-        if (extractions.length > 0) {
-          blocks.push(createBlock('extract', '提取已标注字段', 'extraction', blocks.length, {
-            multiple: false,
-            timeout: 5000,
-            saveToTable: '',
-            extractions
-          }));
-        }
+        pushExtractBlock(blocks, extractions, tableId);
         continue;
       }
 

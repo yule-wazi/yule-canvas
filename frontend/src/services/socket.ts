@@ -81,8 +81,25 @@ class SocketClient {
     this.socket?.emit('set-recording-mode', { mode });
   }
 
-  confirmRecordMark(request: any, fieldName: string, fieldType: string) {
-    this.socket?.emit('confirm-record-mark', { request, fieldName, fieldType });
+  setRecordingMarkConfig(config: {
+    selectedTableId: string;
+    tables: Array<{
+      id: string;
+      name: string;
+      fields: Array<{ name: string; type: string }>;
+    }>;
+  }) {
+    this.socket?.emit('set-recording-mark-config', config);
+  }
+
+  confirmRecordMark(request: any, payload: {
+    fieldName: string;
+    fieldType: string;
+    tableId: string;
+    tableName: string;
+    attribute: string;
+  }) {
+    this.socket?.emit('confirm-record-mark', { request, ...payload });
   }
 
   deleteRecordingEvent(eventId: string) {

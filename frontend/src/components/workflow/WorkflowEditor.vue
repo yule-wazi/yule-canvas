@@ -186,6 +186,22 @@
           <button v-else @click="showRecordingPanel = false" class="btn-secondary">关闭</button>
         </div>
       </div>
+      <div v-if="isRecording && recordingMode === 'mark'" class="recording-mark-config">
+        <div class="recording-mark-config-label">目标数据表</div>
+        <div v-if="dataTableStore.tables.length" class="recording-mark-config-row">
+          <select v-model="recordingMarkTableId" class="recording-mark-table-select">
+            <option v-for="table in dataTableStore.tables" :key="table.id" :value="table.id">
+              {{ table.name }}
+            </option>
+          </select>
+          <span class="recording-mark-config-hint">
+            当前可选字段 {{ recordingMarkFieldOptions.length }} 个
+          </span>
+        </div>
+        <div v-else class="recording-mark-config-empty">
+          暂无数据表，请先在工作台创建数据表和字段后再进行标注。
+        </div>
+      </div>
       <div class="recording-panel-toolbar">
         <span>{{ recordingEvents.length }} 条关键事件</span>
         <div class="recording-panel-toolbar-actions">
@@ -224,11 +240,13 @@
           </div>
           <div
             class="recording-event-meta"
-            v-if="event.selector || event.fieldName || event.value || event.openerSelector || event.openerElementMeta?.href"
+            v-if="event.selector || event.fieldName || event.tableName || event.attribute || event.value || event.openerSelector || event.openerElementMeta?.href"
           >
             <div v-if="event.title"><strong>页面:</strong> {{ event.title }}</div>
             <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
             <div v-if="event.fieldName"><strong>字段:</strong> {{ event.fieldName }} <span v-if="event.fieldType">({{ event.fieldType }})</span></div>
+            <div v-if="event.tableName"><strong>数据表:</strong> {{ event.tableName }}</div>
+            <div v-if="event.attribute"><strong>提取属性:</strong> {{ event.attribute }}</div>
             <div v-if="event.value"><strong>值:</strong> {{ event.value }}</div>
             <div v-if="event.openerSelector"><strong>来源元素:</strong> {{ event.openerSelector }}</div>
             <div v-if="event.openerAction"><strong>来源动作:</strong> {{ event.openerAction === 'contextmenu' ? '右键元素' : '中键打开' }}</div>
@@ -475,6 +493,7 @@ import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
 import { useDataTableStore } from '../../stores/dataTable';
+import type { DataTableColumn } from '../../stores/dataTable';
 import api from '../../services/api';
 import socketService from '../../services/socket';
 import type { BlockType } from '../../types/block';
@@ -517,6 +536,9 @@ interface RecordingEventItem {
   value?: string;
   fieldName?: string;
   fieldType?: 'text' | 'image' | 'video' | 'link' | 'custom';
+  tableId?: string;
+  tableName?: string;
+  attribute?: string;
   elementMeta?: {
     tagName?: string;
     text?: string;
@@ -573,6 +595,7 @@ const recordingMode = ref<'action' | 'mark'>('action');
 const recordingStatusText = ref('尚未开始录制');
 const recordingStartUrl = ref('');
 const recordingEvents = ref<RecordingEventItem[]>([]);
+const recordingMarkTableId = ref('');
 const aiProvider = ref<'openrouter' | 'siliconflow' | 'qwen'>('openrouter');
 const aiModelName = ref('openai/gpt-4.1-mini');
 const aiApiKey = ref('');
@@ -599,6 +622,32 @@ const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 const AI_GENERATE_SETTINGS_KEY = 'ai_generate_settings_v1';
 
+const recordingMarkTable = computed(() => {
+  if (!recordingMarkTableId.value) {
+    return null;
+  }
+
+  return dataTableStore.getTableById(recordingMarkTableId.value) || null;
+});
+
+const recordingMarkFieldOptions = computed(() => {
+  return (recordingMarkTable.value?.columns || []).map(column => ({
+    name: column.key,
+    type: mapDataTableColumnTypeToRecordingFieldType(column.type)
+  }));
+});
+
+const recordingMarkTableOptions = computed(() => {
+  return dataTableStore.tables.map(table => ({
+    id: table.id,
+    name: table.name,
+    fields: table.columns.map(column => ({
+      name: column.key,
+      type: mapDataTableColumnTypeToRecordingFieldType(column.type) || 'text'
+    }))
+  }));
+});
+
 // 工作流变量
 const workflowVariables = computed(() => {
   const vars = workflowStore.variables;
@@ -613,6 +662,41 @@ const workflowVariables = computed(() => {
 const currentWorkflowName = computed(() => {
   return workflowStore.currentWorkflow?.name || '未命名工作流';
 });
+
+function mapDataTableColumnTypeToRecordingFieldType(columnType: DataTableColumn['type']): RecordingEventItem['fieldType'] {
+  if (columnType === 'image') {
+    return 'image';
+  }
+
+  if (columnType === 'video') {
+    return 'video';
+  }
+
+  if (columnType === 'url') {
+    return 'link';
+  }
+
+  return 'text';
+}
+
+function ensureRecordingMarkTableSelected() {
+  if (recordingMarkTableId.value && dataTableStore.getTableById(recordingMarkTableId.value)) {
+    return;
+  }
+
+  recordingMarkTableId.value = dataTableStore.tables[0]?.id || '';
+}
+
+function syncRecordingMarkConfig() {
+  if (!isRecording.value || recordingMode.value !== 'mark') {
+    return;
+  }
+
+  socketService.setRecordingMarkConfig({
+    selectedTableId: recordingMarkTableId.value || '',
+    tables: recordingMarkTableOptions.value
+  });
+}
 
 // 验证变量名
 const executionPanelStyle = computed(() => ({
@@ -1018,7 +1102,10 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
         field: event.kind === 'mark'
           ? {
               name: event.fieldName || '',
-              type: event.fieldType || 'text'
+              type: event.fieldType || 'text',
+              tableId: event.tableId || '',
+              tableName: event.tableName || '',
+              attribute: event.attribute || 'innerText'
             }
           : undefined,
         opener: event.openerSelector || event.openerPageId || event.openerElementMeta?.href
@@ -1055,7 +1142,7 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
     };
   }>();
   const actionCounts: Record<string, number> = {};
-  const markedFields: Array<{ name: string; type: string; pageId: string; selector: string }> = [];
+  const markedFields: Array<{ name: string; type: string; pageId: string; selector: string; tableId: string; tableName: string; attribute: string }> = [];
 
   orderedEvents.forEach(event => {
     actionCounts[event.action] = (actionCounts[event.action] || 0) + 1;
@@ -1105,7 +1192,10 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
         name: event.field.name,
         type: event.field.type,
         pageId: event.pageId,
-        selector: event.target.selector
+        selector: event.target.selector,
+        tableId: event.field.tableId || '',
+        tableName: event.field.tableName || '',
+        attribute: event.field.attribute || 'innerText'
       });
     }
   });
@@ -1433,6 +1523,12 @@ function toggleRecordingMode() {
   }
 
   const nextMode = recordingMode.value === 'action' ? 'mark' : 'action';
+  if (nextMode === 'mark') {
+    ensureRecordingMarkTableSelected();
+    if (!dataTableStore.tables.length) {
+      toast.value?.show({ message: '当前还没有数据表，进入标注模式后暂时无法保存字段', type: 'warning' });
+    }
+  }
   socketService.setRecordingMode(nextMode);
 }
 
@@ -1464,10 +1560,34 @@ workflowStore.migrateConditionBlocks();
 // 初始化数据表 store
 onMounted(() => {
   dataTableStore.init();
+  ensureRecordingMarkTableSelected();
   workflowStore.migrateConditionBlocks();
   loadAIGenerateSettings();
   updateHandleStyles();
 });
+
+watch(
+  () => dataTableStore.tables,
+  () => {
+    ensureRecordingMarkTableSelected();
+    syncRecordingMarkConfig();
+  },
+  { deep: true }
+);
+
+watch(recordingMarkTableId, () => {
+  syncRecordingMarkConfig();
+});
+
+watch(
+  () => [isRecording.value, recordingMode.value],
+  ([recording, mode]) => {
+    if (recording && mode === 'mark') {
+      ensureRecordingMarkTableSelected();
+      syncRecordingMarkConfig();
+    }
+  }
+);
 
 watch(
   () => executionLogs.value.length,
@@ -3054,6 +3174,42 @@ async function executeWorkflow() {
   display: flex;
   gap: 0.75rem;
   align-items: flex-start;
+}
+
+.recording-mark-config {
+  padding: 0.9rem 1.25rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.recording-mark-config-label {
+  color: #8b949e;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+}
+
+.recording-mark-config-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.recording-mark-table-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #c9d1d9;
+}
+
+.recording-mark-config-hint,
+.recording-mark-config-empty {
+  color: #8b949e;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .recording-mode-tag {

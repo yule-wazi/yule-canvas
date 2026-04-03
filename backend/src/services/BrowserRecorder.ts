@@ -36,6 +36,9 @@ export interface RecordingEvent {
   value?: string;
   fieldName?: string;
   fieldType?: 'text' | 'image' | 'video' | 'link' | 'custom';
+  tableId?: string;
+  tableName?: string;
+  attribute?: string;
   elementMeta?: RecordingElementMeta;
   openerPageId?: string;
   openerUrl?: string;
@@ -81,6 +84,22 @@ interface PendingOpenIntent {
   selector?: string;
   action: 'contextmenu' | 'middle-click';
   elementMeta?: RecordingElementMeta;
+}
+
+export interface RecordingMarkFieldOption {
+  name: string;
+  type: 'text' | 'image' | 'video' | 'link' | 'custom';
+}
+
+export interface RecordingMarkTableOption {
+  id: string;
+  name: string;
+  fields: RecordingMarkFieldOption[];
+}
+
+export interface RecordingMarkConfig {
+  selectedTableId: string;
+  tables: RecordingMarkTableOption[];
 }
 
 export interface RecordingPageHistoryState {
@@ -148,6 +167,10 @@ const RECORDER_INIT_SCRIPT = `
     mode: 'action',
     status: '录制已启动，请开始操作',
     events: [],
+    markConfig: {
+      selectedTableId: '',
+      tables: []
+    },
     pendingMarkRequest: null,
     scrollTimer: null,
     lastScrollIntentAt: 0,
@@ -222,8 +245,46 @@ const RECORDER_INIT_SCRIPT = `
     return compact.length > maxLength ? compact.slice(0, maxLength) : compact;
   }
 
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function escapeAttributeValue(value) {
     return String(value).replace(/"/g, '\\\\\"');
+  }
+
+  function getCurrentMarkTable() {
+    const tables = Array.isArray(state.markConfig?.tables) ? state.markConfig.tables : [];
+    const selectedTableId = state.markConfig?.selectedTableId || '';
+    return tables.find((table) => table.id === selectedTableId) || tables[0] || null;
+  }
+
+  function getDefaultAttribute(tagName, fieldType) {
+    const normalizedTag = String(tagName || '').toLowerCase();
+    const normalizedFieldType = String(fieldType || '').toLowerCase();
+
+    if (normalizedTag === 'img' || normalizedFieldType === 'image') {
+      return 'src';
+    }
+
+    if (normalizedTag === 'a' || normalizedFieldType === 'link') {
+      return 'href';
+    }
+
+    if (normalizedTag === 'video' || normalizedFieldType === 'video') {
+      return 'src';
+    }
+
+    if (normalizedTag === 'input' || normalizedTag === 'textarea' || normalizedTag === 'select') {
+      return 'value';
+    }
+
+    return 'innerText';
   }
 
   function isUnique(selector) {
@@ -568,6 +629,21 @@ const RECORDER_INIT_SCRIPT = `
       '  color: #e6edf3;',
       '  font-size: 13px;',
       '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-table {',
+      '  padding: 9px 10px;',
+      '  border: 1px solid #30363d;',
+      '  border-radius: 8px;',
+      '  background: #0d1117;',
+      '  color: #e6edf3;',
+      '  font-size: 13px;',
+      '  word-break: break-word;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-hint {',
+      '  margin-bottom: 10px;',
+      '  color: #8b949e;',
+      '  font-size: 12px;',
+      '  line-height: 1.5;',
+      '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark-actions {',
       '  display: flex;',
       '  gap: 8px;',
@@ -726,13 +802,25 @@ const RECORDER_INIT_SCRIPT = `
           return;
         }
 
-        const fieldNameInput = root.querySelector('[data-role="mark-field-name"]');
-        const fieldTypeSelect = root.querySelector('[data-role="mark-field-type"]');
-        const fieldName = fieldNameInput instanceof HTMLInputElement ? fieldNameInput.value.trim() : '';
-        const fieldType = fieldTypeSelect instanceof HTMLSelectElement ? fieldTypeSelect.value : 'text';
+        const tableSelect = root.querySelector('[data-role="mark-table-id"]');
+        const fieldNameSelect = root.querySelector('[data-role="mark-field-name"]');
+        const attributeSelect = root.querySelector('[data-role="mark-attribute"]');
+        const tableId = tableSelect instanceof HTMLSelectElement ? tableSelect.value.trim() : '';
+        const selectedTableOption = tableSelect instanceof HTMLSelectElement ? tableSelect.selectedOptions?.[0] : null;
+        const tableName = selectedTableOption?.getAttribute('data-table-name') || '';
+        const fieldName = fieldNameSelect instanceof HTMLSelectElement ? fieldNameSelect.value.trim() : '';
+        const selectedFieldOption = fieldNameSelect instanceof HTMLSelectElement ? fieldNameSelect.selectedOptions?.[0] : null;
+        const fieldType = selectedFieldOption?.getAttribute('data-field-type') || 'text';
+        const attribute = attributeSelect instanceof HTMLSelectElement ? attributeSelect.value : 'innerText';
+
+        if (!tableId) {
+          state.status = '请先选择数据表';
+          renderPanel();
+          return;
+        }
 
         if (!fieldName) {
-          state.status = '请先填写字段名';
+          state.status = '请先选择字段';
           renderPanel();
           return;
         }
@@ -741,11 +829,37 @@ const RECORDER_INIT_SCRIPT = `
           action: 'confirm-mark',
           request: state.pendingMarkRequest,
           fieldName,
-          fieldType
+          fieldType,
+          tableId,
+          tableName,
+          attribute
         });
         state.pendingMarkRequest = null;
         state.status = '正在保存字段标注...';
         renderPanel();
+      }
+    });
+
+    root.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLSelectElement)) {
+        return;
+      }
+
+      if (target.getAttribute('data-role') === 'mark-table-id') {
+        state.markConfig.selectedTableId = target.value || '';
+        renderPanel();
+        return;
+      }
+
+      if (target.getAttribute('data-role') === 'mark-field-name') {
+        const attributeSelect = root.querySelector('[data-role="mark-attribute"]');
+        const selectedFieldOption = target.selectedOptions?.[0] || null;
+        const fieldType = selectedFieldOption?.getAttribute('data-field-type') || 'text';
+        const nextAttribute = getDefaultAttribute(state.pendingMarkRequest?.elementMeta?.tagName, fieldType);
+        if (attributeSelect instanceof HTMLSelectElement) {
+          attributeSelect.value = nextAttribute;
+        }
       }
     });
 
@@ -773,6 +887,38 @@ const RECORDER_INIT_SCRIPT = `
     toggleButton.textContent = state.mode === 'mark' ? '切换动作模式' : '切换标注模式';
 
     if (state.pendingMarkRequest) {
+      const markTables = Array.isArray(state.markConfig?.tables) ? state.markConfig.tables : [];
+      const selectedTableId = state.markConfig?.selectedTableId || markTables[0]?.id || '';
+      const selectedTable = markTables.find((table) => table.id === selectedTableId) || markTables[0] || null;
+      const markFields = Array.isArray(selectedTable?.fields) ? selectedTable.fields : [];
+      const hasMarkTables = markTables.length > 0;
+      const hasMarkFields = markFields.length > 0;
+      const defaultAttribute = getDefaultAttribute(
+        state.pendingMarkRequest?.elementMeta?.tagName,
+        markFields[0]?.type || 'text'
+      );
+      const tableOptions = hasMarkTables
+        ? markTables
+            .map((table) => {
+              const optionId = escapeAttributeValue(table.id || '');
+              const optionName = escapeAttributeValue(table.name || '');
+              const label = escapeHtml(table.name || '');
+              const selected = table.id === selectedTableId ? ' selected' : '';
+              return '    <option value="' + optionId + '" data-table-name="' + optionName + '"' + selected + '>' + label + '</option>';
+            })
+            .join('')
+        : '    <option value="">暂无数据表</option>';
+      const markFieldOptions = hasMarkFields
+        ? markFields
+            .map((field, index) => {
+              const fieldName = escapeAttributeValue(field.name || '');
+              const fieldType = escapeAttributeValue(field.type || 'text');
+              const label = escapeHtml(field.name || '') + ' (' + escapeHtml(field.type || 'text') + ')';
+              const selected = index === 0 ? ' selected' : '';
+              return '    <option value="' + fieldName + '" data-field-type="' + fieldType + '"' + selected + '>' + label + '</option>';
+            })
+            .join('')
+        : '    <option value="">当前数据表没有可选字段</option>';
       markBox.classList.add('is-visible');
       markBox.innerHTML = [
         '<div class="__aibrowser-recorder-mark-title">确认字段标注</div>',
@@ -786,21 +932,37 @@ const RECORDER_INIT_SCRIPT = `
           : '',
         '</div>',
         '<div class="__aibrowser-recorder-mark-field">',
-        '  <label>字段名</label>',
-        '  <input data-role="mark-field-name" placeholder="例如：title / image / content" />',
-        '</div>',
-        '<div class="__aibrowser-recorder-mark-field">',
-        '  <label>字段类型</label>',
-        '  <select data-role="mark-field-type">',
-        '    <option value="text">文本</option>',
-        '    <option value="image">图片</option>',
-        '    <option value="video">视频</option>',
-        '    <option value="link">链接</option>',
-        '    <option value="custom">自定义</option>',
+        '  <label>数据表</label>',
+        '  <select data-role="mark-table-id"' + (hasMarkTables ? '' : ' disabled') + '>',
+             tableOptions,
         '  </select>',
         '</div>',
+        '<div class="__aibrowser-recorder-mark-field">',
+        '  <label>字段名</label>',
+        '  <select data-role="mark-field-name"' + (hasMarkFields ? '' : ' disabled') + '>',
+             markFieldOptions,
+        '  </select>',
+        '</div>',
+        '<div class="__aibrowser-recorder-mark-field">',
+        '  <label>提取属性</label>',
+        '  <select data-role="mark-attribute">',
+        '    <option value="innerText"' + (defaultAttribute === 'innerText' ? ' selected' : '') + '>显示文本 (innerText)</option>',
+        '    <option value="text"' + (defaultAttribute === 'text' ? ' selected' : '') + '>文本内容 (textContent)</option>',
+        '    <option value="innerHTML"' + (defaultAttribute === 'innerHTML' ? ' selected' : '') + '>HTML 内容</option>',
+        '    <option value="href"' + (defaultAttribute === 'href' ? ' selected' : '') + '>链接地址 (href)</option>',
+        '    <option value="src"' + (defaultAttribute === 'src' ? ' selected' : '') + '>图片/资源地址 (src)</option>',
+        '    <option value="backgroundImage"' + (defaultAttribute === 'backgroundImage' ? ' selected' : '') + '>背景图 (background-image)</option>',
+        '    <option value="poster"' + (defaultAttribute === 'poster' ? ' selected' : '') + '>视频封面 (poster)</option>',
+        '    <option value="value"' + (defaultAttribute === 'value' ? ' selected' : '') + '>表单值 (value)</option>',
+        '    <option value="alt"' + (defaultAttribute === 'alt' ? ' selected' : '') + '>替代文本 (alt)</option>',
+        '    <option value="title"' + (defaultAttribute === 'title' ? ' selected' : '') + '>标题 (title)</option>',
+        '  </select>',
+        '</div>',
+        hasMarkFields
+          ? ''
+          : '<div class="__aibrowser-recorder-mark-hint">' + (hasMarkTables ? '当前数据表没有字段，请先在工作台的数据表中创建字段。' : '当前还没有数据表，请先在工作台创建数据表。') + '</div>',
         '<div class="__aibrowser-recorder-mark-actions">',
-        '  <button type="button" data-action="save-mark">保存标注</button>',
+        '  <button type="button" data-action="save-mark"' + (hasMarkFields ? '' : ' disabled') + '>保存标注</button>',
         '  <button type="button" data-action="cancel-mark" class="secondary">取消</button>',
         '</div>'
       ].join('');
@@ -820,6 +982,7 @@ const RECORDER_INIT_SCRIPT = `
         if (event.title) meta.push('<div><strong>页面:</strong> ' + event.title + '</div>');
         if (event.selector) meta.push('<div><strong>selector:</strong> ' + event.selector + '</div>');
         if (event.fieldName) meta.push('<div><strong>字段:</strong> ' + event.fieldName + '</div>');
+        if (event.tableName) meta.push('<div><strong>数据表:</strong> ' + event.tableName + '</div>');
         if (event.value) meta.push('<div><strong>值:</strong> ' + event.value + '</div>');
 
         return [
@@ -1105,6 +1268,15 @@ const RECORDER_INIT_SCRIPT = `
       state.events = Array.isArray(events) ? events.slice(0, 200) : [];
       renderPanel();
     },
+    setMarkConfig(config) {
+      state.markConfig = config && typeof config === 'object'
+        ? {
+            selectedTableId: config.selectedTableId || '',
+            tables: Array.isArray(config.tables) ? config.tables : []
+          }
+        : { selectedTableId: '', tables: [] };
+      renderPanel();
+    },
     setPendingMark(request) {
       state.pendingMarkRequest = request || null;
       renderPanel();
@@ -1135,6 +1307,9 @@ export function createRecordedMarkEvent(
   payload: {
     fieldName: string;
     fieldType: RecordingEvent['fieldType'];
+    tableId?: string;
+    tableName?: string;
+    attribute?: string;
   }
 ): RecordingEvent {
   return {
@@ -1148,6 +1323,9 @@ export function createRecordedMarkEvent(
     selector: request.selector,
     fieldName: payload.fieldName,
     fieldType: payload.fieldType,
+    tableId: payload.tableId,
+    tableName: payload.tableName,
+    attribute: payload.attribute || 'innerText',
     elementMeta: request.elementMeta
   };
 }
@@ -1197,6 +1375,10 @@ export class BrowserRecorder {
   private recordedEvents: RecordingEvent[] = [];
   private pendingMarkRequests = new Map<string, RecordingMarkRequest>();
   private pendingOpenIntents: PendingOpenIntent[] = [];
+  private markConfig: RecordingMarkConfig = {
+    selectedTableId: '',
+    tables: []
+  };
 
   constructor(callbacks: BrowserRecorderCallbacks = {}) {
     this.callbacks = callbacks;
@@ -1248,9 +1430,23 @@ export class BrowserRecorder {
     await this.broadcastStatus(this.currentStatusMessage);
   }
 
+  async setMarkConfig(config: RecordingMarkConfig): Promise<void> {
+    this.markConfig = {
+      selectedTableId: config.selectedTableId || '',
+      tables: Array.isArray(config.tables) ? config.tables : []
+    };
+    await this.broadcastMarkConfig();
+  }
+
   async confirmMark(
     request: RecordingMarkRequest,
-    payload: { fieldName: string; fieldType: RecordingEvent['fieldType'] }
+    payload: {
+      fieldName: string;
+      fieldType: RecordingEvent['fieldType'];
+      tableId?: string;
+      tableName?: string;
+      attribute?: string;
+    }
   ): Promise<void> {
     const event = createRecordedMarkEvent(request, payload);
     this.addRecordedEvent(event);
@@ -1389,6 +1585,7 @@ export class BrowserRecorder {
     }
 
     await this.syncPageMode(page);
+    await this.pushMarkConfigToPage(page);
     await this.pushStatusToPage(page, this.currentStatusMessage);
   }
 
@@ -1432,6 +1629,16 @@ export class BrowserRecorder {
     }
   }
 
+  private async pushMarkConfigToPage(page: Page): Promise<void> {
+    try {
+      await page.evaluate((config: RecordingMarkConfig) => {
+        (globalThis as any).__aibrowserRecorder?.setMarkConfig?.(config);
+      }, this.markConfig);
+    } catch {
+      // ignore
+    }
+  }
+
   private async pushEventToPageById(pageId: string, event: RecordingEvent): Promise<void> {
     if (!this.context) return;
     const page = this.context.pages().find(candidate => this.pageIds.get(candidate) === pageId);
@@ -1466,6 +1673,11 @@ export class BrowserRecorder {
   private async broadcastMode(): Promise<void> {
     if (!this.context) return;
     await Promise.all(this.context.pages().map(page => this.syncPageMode(page)));
+  }
+
+  private async broadcastMarkConfig(): Promise<void> {
+    if (!this.context) return;
+    await Promise.all(this.context.pages().map(page => this.pushMarkConfigToPage(page)));
   }
 
   private async broadcastStatus(message: string): Promise<void> {
@@ -1592,7 +1804,10 @@ export class BrowserRecorder {
       if (payload.action === 'confirm-mark' && payload.request && payload.fieldName && payload.fieldType) {
         await this.confirmMark(payload.request, {
           fieldName: payload.fieldName,
-          fieldType: payload.fieldType
+          fieldType: payload.fieldType,
+          tableId: typeof payload.tableId === 'string' ? payload.tableId : '',
+          tableName: typeof payload.tableName === 'string' ? payload.tableName : '',
+          attribute: typeof payload.attribute === 'string' ? payload.attribute : 'innerText'
         });
         return;
       }

@@ -139,7 +139,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('confirm-record-mark', async ({ request, fieldName, fieldType }) => {
+  socket.on('confirm-record-mark', async ({ request, fieldName, fieldType, tableId, tableName, attribute }) => {
     const recorder = browserRecorders.get(socket.id);
     if (!recorder) {
       socket.emit('error', { message: '录制尚未开始，无法保存字段标注' });
@@ -148,8 +148,42 @@ io.on('connection', (socket) => {
 
     await recorder.confirmMark(request, {
       fieldName,
-      fieldType
+      fieldType,
+      tableId,
+      tableName,
+      attribute
     });
+  });
+
+  socket.on('set-recording-mark-config', async ({ selectedTableId, tables }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      return;
+    }
+
+    try {
+      await recorder.setMarkConfig({
+        selectedTableId: typeof selectedTableId === 'string' ? selectedTableId : '',
+        tables: Array.isArray(tables)
+          ? tables
+              .map((table: any) => ({
+                id: typeof table?.id === 'string' ? table.id : '',
+                name: typeof table?.name === 'string' ? table.name : '',
+                fields: Array.isArray(table?.fields)
+                  ? table.fields
+                      .map((field: any) => ({
+                        name: typeof field?.name === 'string' ? field.name : '',
+                        type: typeof field?.type === 'string' ? field.type : 'text'
+                      }))
+                      .filter((field: any) => field.name)
+                  : []
+              }))
+              .filter((table: any) => table.id && table.name)
+          : []
+      });
+    } catch (error: any) {
+      socket.emit('error', { message: error.message || '同步标注配置失败' });
+    }
   });
 
   socket.on('delete-recording-event', async ({ eventId }) => {
