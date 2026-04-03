@@ -36,6 +36,18 @@
     </div>
 
     <div class="form-group" v-if="localData.saveToTable && !localData.multiple">
+      <label>
+        <input
+          v-model="localData.useMergeKey"
+          type="checkbox"
+          @change="emitUpdate"
+        />
+        启用合并键
+      </label>
+      <small>关闭时按默认新增方式保存。只有单元素提取时才支持启用合并键。</small>
+    </div>
+
+    <div class="form-group" v-if="localData.saveToTable && !localData.multiple && localData.useMergeKey">
       <label>合并键模板（可选）</label>
       <input
         v-model="localData.mergeKey"
@@ -106,7 +118,7 @@
       </div>
 
       <div v-if="localData.extractions.length === 0" class="empty-extractions">
-        点击“+ 添加提取项”开始配置。
+        点击“添加提取项”开始配置。
       </div>
 
       <button @click="addExtraction" class="btn-add-extraction">+ 添加提取项</button>
@@ -139,6 +151,7 @@ const defaultData = {
   multiple: true,
   timeout: 5000,
   saveToTable: '',
+  useMergeKey: false,
   mergeKey: '',
   extractions: [] as Array<{
     selector: string;
@@ -148,20 +161,21 @@ const defaultData = {
   }>
 };
 
-const localData = ref({ ...defaultData, ...props.block.data });
-
-if (!Array.isArray(localData.value.extractions)) {
-  localData.value.extractions = [];
+function normalizeData(data: any) {
+  return {
+    ...defaultData,
+    ...data,
+    useMergeKey: typeof data?.useMergeKey === 'boolean' ? data.useMergeKey : Boolean(String(data?.mergeKey || '').trim()),
+    extractions: Array.isArray(data?.extractions) ? data.extractions : []
+  };
 }
+
+const localData = ref(normalizeData(props.block.data));
 
 watch(
   () => props.block.data,
   (newData) => {
-    localData.value = {
-      ...defaultData,
-      ...newData,
-      extractions: Array.isArray(newData.extractions) ? newData.extractions : []
-    };
+    localData.value = normalizeData(newData);
   },
   { deep: true }
 );
@@ -210,15 +224,31 @@ function getDefaultMergeKey(): string {
 }
 
 watch(
-  () => [localData.value.saveToTable, localData.value.multiple, localData.value.mergeKey] as const,
-  ([saveToTable, multiple, mergeKey]) => {
-    if (multiple && String(mergeKey || '').trim()) {
+  () => [localData.value.saveToTable, localData.value.multiple, localData.value.useMergeKey, localData.value.mergeKey] as const,
+  ([saveToTable, multiple, useMergeKey, mergeKey]) => {
+    if (multiple) {
+      let changed = false;
+      if (localData.value.useMergeKey) {
+        localData.value.useMergeKey = false;
+        changed = true;
+      }
+      if (String(mergeKey || '').trim()) {
+        localData.value.mergeKey = '';
+        changed = true;
+      }
+      if (changed) {
+        emitUpdate();
+      }
+      return;
+    }
+
+    if ((!saveToTable || !useMergeKey) && String(mergeKey || '').trim()) {
       localData.value.mergeKey = '';
       emitUpdate();
       return;
     }
 
-    if (saveToTable && !multiple && !String(mergeKey || '').trim()) {
+    if (saveToTable && useMergeKey && !String(mergeKey || '').trim()) {
       localData.value.mergeKey = getDefaultMergeKey();
       emitUpdate();
     }
