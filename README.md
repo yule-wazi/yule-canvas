@@ -1,173 +1,197 @@
-# 数据爬取Agent
+# YuleCanvas
 
-一个AI驱动的网页数据爬取工具，支持通过AI自动生成Playwright爬虫脚本。
+Turn imagination into reality with a true what-you-see-is-what-you-get experience.
 
-## 技术栈
+YuleCanvas is a workflow-based platform for browser automation, structured data extraction, and data-driven page building.
 
-### 前端
-- Vue 3 + Vite
+Current focus:
+- Record browser actions and field annotations
+- Map recordings into executable workflows deterministically
+- Extract structured data into local data tables
+
+Planned next stage:
+- Use extracted data to power AI-generated and DIY pages
+
+## Core Capabilities
+
+- Visual workflow editor built with drag-and-drop blocks
+- Browser recording with action mode and data annotation mode
+- Deterministic mapping from recording events to executable workflows
+- Data table system for storing extracted results
+- Workflow execution engine based on Playwright
+- Local-first development flow with frontend and backend separated
+
+## Current Product Direction
+
+YuleCanvas is not just a crawler builder.
+
+The long-term product direction has two connected parts:
+
+1. A data extraction agent
+   Record user behavior, annotate fields, and turn that into reusable scraping workflows.
+
+2. A page-building agent
+   Build DIY pages or AI-generated pages that are powered by the extracted data.
+
+At the current stage, development is focused on the first part:
+recording, annotation, workflow mapping, and execution correctness.
+
+## Tech Stack
+
+### Frontend
+
+- Vue 3
+- Vite
 - TypeScript
-- Vue Router
-- Pinia (状态管理)
-- Monaco Editor (代码编辑器)
-- Socket.io-client (实时通信)
-- Axios (HTTP客户端)
+- Pinia
+- Vue Flow
+- Socket.IO Client
+- Axios
 
-### 后端
+### Backend
+
+- Node.js
 - Express
 - TypeScript
-- Socket.io (WebSocket服务)
-- Playwright (浏览器自动化)
-- 阿里千问 & 硅基流动 (AI模型)
+- Socket.IO
+- Playwright
 
-## 项目结构
+## Project Structure
 
-```
+```text
 .
-├── frontend/          # Vue3前端项目
-│   ├── src/
-│   │   ├── components/   # 组件
-│   │   ├── views/        # 页面
-│   │   ├── router/       # 路由配置
-│   │   ├── stores/       # Pinia状态管理
-│   │   ├── services/     # 服务层(API, Socket, Storage)
-│   │   └── main.ts       # 入口文件
-│   └── package.json
-│
-└── backend/           # Express后端项目
-    ├── src/
-    │   ├── routes/       # API路由
-    │   ├── services/     # 业务服务
-    │   └── server.ts     # 服务器入口
-    └── package.json
+├─ frontend/
+│  ├─ src/
+│  │  ├─ components/
+│  │  ├─ services/
+│  │  ├─ stores/
+│  │  ├─ types/
+│  │  └─ views/
+│  └─ vite.config.js
+├─ backend/
+│  ├─ src/
+│  │  ├─ routes/
+│  │  └─ services/
+│  └─ tsconfig.json
+├─ shared/
+└─ package.json
 ```
 
-## 快速开始
+## Getting Started
 
-### 1. 安装依赖
+### 1. Install dependencies
 
 ```bash
-# 安装前端依赖
+npm install
+cd frontend && npm install
+cd ../backend && npm install
+```
+
+### 2. Configure environment variables
+
+Create local env files if needed.
+
+Backend example:
+
+```env
+QWEN_API_KEY=your_qwen_api_key
+SILICONFLOW_API_KEY=your_siliconflow_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_HTTP_REFERER=http://localhost:5173
+OPENROUTER_APP_TITLE=YuleCanvas
+```
+
+These files are local-only and should not be committed:
+
+- `backend/.env`
+- `frontend/.env`
+
+### 3. Start development servers
+
+Backend:
+
+```bash
+cd backend
+npm run dev
+```
+
+Frontend:
+
+```bash
 cd frontend
-npm install
-
-# 安装后端依赖
-cd ../backend
-npm install
-```
-
-### 2. 配置环境变量
-
-编辑 `backend/.env` 文件，填入你的AI API密钥：
-
-```env
-QWEN_API_KEY=your_qwen_api_key_here
-SILICONFLOW_API_KEY=your_siliconflow_api_key_here
-```
-
-### 3. 启动项目
-
-```bash
-# 启动后端 (在backend目录)
-npm run dev
-
-# 启动前端 (在frontend目录，新开一个终端)
 npm run dev
 ```
 
-### 4. 访问应用
+### 4. Open the app
 
-打开浏览器访问: http://localhost:5173
+Frontend:
 
-## 功能特性
-
-- ✅ 基础框架搭建完成
-- ✅ 前后端通信配置
-- ✅ Socket.io实时通信
-- ✅ LocalStorage数据管理
-- ✅ AI脚本生成（阿里千问 & 硅基流动）
-- ✅ Monaco代码编辑器
-- ✅ Playwright执行引擎
-- ✅ 实时日志显示
-- ✅ 脚本管理（CRUD）
-- ✅ 数据预览和管理
-- 🚧 脚本模板库（计划中）
-- 🚧 定时任务（计划中）
-
-## 使用指南
-
-### 1. 生成脚本
-
-1. 进入"脚本管理"页面
-2. 在左侧"AI生成脚本"区域：
-   - 选择AI模型（阿里千问或硅基流动）
-   - 输入需求描述，例如："爬取百度首页的标题"
-   - 点击"生成脚本"
-3. 等待AI生成代码
-4. 查看生成的代码，可以手动编辑
-5. 点击"保存脚本"
-
-### 2. 执行脚本
-
-1. 在脚本列表中选择一个脚本，或使用刚生成的脚本
-2. 代码会显示在右侧编辑器中
-3. 点击"执行脚本"按钮
-4. 实时查看执行日志
-5. 执行完成后查看结果
-
-### 3. 管理数据
-
-1. 进入"数据管理"页面
-2. 查看所有爬取记录
-3. 点击记录查看详细数据
-4. 支持JSON和表格两种视图
-5. 可以导出数据为JSON文件
-
-### 4. 配置API密钥
-
-编辑 `backend/.env` 文件：
-
-```env
-# 阿里千问
-QWEN_API_KEY=sk-your-qwen-key-here
-
-# 硅基流动
-SILICONFLOW_API_KEY=sk-your-siliconflow-key-here
+```text
+http://localhost:5173
 ```
 
-## 脚本编写指南
+Backend API:
 
-生成的Playwright脚本可以使用以下API：
-
-```javascript
-// page对象 - Playwright页面实例
-await page.goto('https://example.com');
-await page.waitForLoadState('networkidle');
-const title = await page.title();
-
-// log函数 - 输出日志
-log('开始执行');
-log('访问页面成功');
-
-// 返回数据
-return { title, data: [...] };
+```text
+http://localhost:3000
 ```
 
-### 示例脚本
+## Main Workflow
 
-```javascript
-log('开始访问百度');
-await page.goto('https://www.baidu.com');
-log('等待页面加载');
-await page.waitForLoadState('networkidle');
-const title = await page.title();
-log(`获取到标题: ${title}`);
-return { title };
-```
+### Record and map a workflow
 
-## 开发进度
+1. Start recording from the visual editor
+2. Switch between action mode and annotation mode
+3. Annotate elements into a selected data table and field
+4. Stop recording
+5. Click `映射工作流`
+6. Import the generated workflow directly into the workspace
+7. Execute the workflow and inspect extracted results in data tables
 
-查看 `.kiro/specs/data-scraping-agent/tasks.md` 了解详细的开发任务列表。
+### Data annotation behavior
+
+In annotation mode:
+
+- Choose a target data table
+- Choose an existing field from that table
+- Choose the extraction attribute, such as `innerText`, `href`, or `src`
+
+These choices are recorded and mapped into extract blocks automatically.
+
+## Current Status
+
+Implemented:
+
+- Visual workflow editing
+- Workflow execution
+- Browser recording
+- Action and annotation modes
+- Recording-to-workflow mapping
+- Data table integration
+- Edge reconnection in the editor
+- Ignoring isolated blocks during execution
+
+In progress:
+
+- Improve recording-to-workflow mapping accuracy
+- Improve selector stability
+- Improve extraction semantics for repeated annotations
+
+Later:
+
+- AI-assisted workflow optimization
+- AI-powered page generation based on extracted data
+
+## Safety Notes
+
+Before publishing the repository, make sure these are not tracked:
+
+- `backend/.env`
+- `frontend/.env`
+- `backend/chrome-data/`
+- `.vscode/`
+- `.codex/`
+- `.kiro/`
 
 ## License
 
