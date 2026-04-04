@@ -139,7 +139,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('confirm-record-mark', async ({ request, fieldName, fieldType, tableId, tableName, attribute }) => {
+  socket.on('confirm-record-mark', async ({ request, fieldName, fieldType, tableId, tableName, attribute, recordAction }) => {
     const recorder = browserRecorders.get(socket.id);
     if (!recorder) {
       socket.emit('error', { message: '录制尚未开始，无法保存字段标注' });
@@ -151,7 +151,8 @@ io.on('connection', (socket) => {
       fieldType,
       tableId,
       tableName,
-      attribute
+      attribute,
+      recordAction
     });
   });
 

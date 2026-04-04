@@ -39,6 +39,7 @@ export interface RecordingEvent {
   tableId?: string;
   tableName?: string;
   attribute?: string;
+  recordAction?: 'new' | 'append';
   elementMeta?: RecordingElementMeta;
   openerPageId?: string;
   openerUrl?: string;
@@ -171,6 +172,7 @@ const RECORDER_INIT_SCRIPT = `
       selectedTableId: '',
       tables: []
     },
+    nextRecordAction: 'append',
     pendingMarkRequest: null,
     scrollTimer: null,
     lastScrollIntentAt: 0,
@@ -644,6 +646,21 @@ const RECORDER_INIT_SCRIPT = `
       '  font-size: 12px;',
       '  line-height: 1.5;',
       '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-write-mode {',
+      '  display: flex;',
+      '  flex-direction: column;',
+      '  gap: 8px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-write-hint {',
+      '  color: #8b949e;',
+      '  font-size: 12px;',
+      '  line-height: 1.5;',
+      '}',
+      '#' + ROOT_ID + ' button.is-active {',
+      '  background: #1f6feb;',
+      '  color: #ffffff;',
+      '  border: 1px solid rgba(88, 166, 255, 0.45);',
+      '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark-actions {',
       '  display: flex;',
       '  gap: 8px;',
@@ -783,6 +800,7 @@ const RECORDER_INIT_SCRIPT = `
 
       const action = actionTarget.getAttribute('data-action');
       if (action === 'cancel-mark') {
+        state.nextRecordAction = 'append';
         state.pendingMarkRequest = null;
         state.status = '已取消字段标注';
         renderPanel();
@@ -794,6 +812,13 @@ const RECORDER_INIT_SCRIPT = `
         if (eventId) {
           sendControl({ action: 'delete-event', eventId });
         }
+        return;
+      }
+
+      if (action === 'start-new-record') {
+        state.nextRecordAction = 'new';
+        state.status = '当前标注将开始新记录';
+        renderPanel();
         return;
       }
 
@@ -812,6 +837,7 @@ const RECORDER_INIT_SCRIPT = `
         const selectedFieldOption = fieldNameSelect instanceof HTMLSelectElement ? fieldNameSelect.selectedOptions?.[0] : null;
         const fieldType = selectedFieldOption?.getAttribute('data-field-type') || 'text';
         const attribute = attributeSelect instanceof HTMLSelectElement ? attributeSelect.value : 'innerText';
+        const recordAction = state.nextRecordAction === 'new' ? 'new' : 'append';
 
         if (!tableId) {
           state.status = '请先选择数据表';
@@ -832,8 +858,10 @@ const RECORDER_INIT_SCRIPT = `
           fieldType,
           tableId,
           tableName,
-          attribute
+          attribute,
+          recordAction
         });
+        state.nextRecordAction = 'append';
         state.pendingMarkRequest = null;
         state.status = '正在保存字段标注...';
         renderPanel();
@@ -897,6 +925,7 @@ const RECORDER_INIT_SCRIPT = `
         state.pendingMarkRequest?.elementMeta?.tagName,
         markFields[0]?.type || 'text'
       );
+      const nextRecordAction = state.nextRecordAction === 'new' ? 'new' : 'append';
       const tableOptions = hasMarkTables
         ? markTables
             .map((table) => {
@@ -958,6 +987,13 @@ const RECORDER_INIT_SCRIPT = `
         '    <option value="title"' + (defaultAttribute === 'title' ? ' selected' : '') + '>标题 (title)</option>',
         '  </select>',
         '</div>',
+        '<div class="__aibrowser-recorder-mark-field">',
+        '  <label>写入方式</label>',
+        '  <div class="__aibrowser-recorder-mark-write-mode">',
+        '    <button type="button" data-action="start-new-record"' + (nextRecordAction === 'new' ? ' class="secondary is-active"' : ' class="secondary"') + '>开始新记录</button>',
+        '    <div class="__aibrowser-recorder-mark-write-hint">' + (nextRecordAction === 'new' ? '本次保存将开始新记录' : '默认继续当前记录') + '</div>',
+        '  </div>',
+        '</div>',
         hasMarkFields
           ? ''
           : '<div class="__aibrowser-recorder-mark-hint">' + (hasMarkTables ? '当前数据表没有字段，请先在工作台的数据表中创建字段。' : '当前还没有数据表，请先在工作台创建数据表。') + '</div>',
@@ -983,6 +1019,7 @@ const RECORDER_INIT_SCRIPT = `
         if (event.selector) meta.push('<div><strong>selector:</strong> ' + event.selector + '</div>');
         if (event.fieldName) meta.push('<div><strong>字段:</strong> ' + event.fieldName + '</div>');
         if (event.tableName) meta.push('<div><strong>数据表:</strong> ' + event.tableName + '</div>');
+        if (event.recordAction) meta.push('<div><strong>写入方式:</strong> ' + (event.recordAction === 'new' ? '开始新记录' : '继续当前记录') + '</div>');
         if (event.value) meta.push('<div><strong>值:</strong> ' + event.value + '</div>');
 
         return [
@@ -1285,6 +1322,7 @@ const RECORDER_INIT_SCRIPT = `
       state.suppressNextZeroScroll = true;
     },
     clearPendingMark() {
+      state.nextRecordAction = 'append';
       state.pendingMarkRequest = null;
       renderPanel();
     },
@@ -1310,6 +1348,7 @@ export function createRecordedMarkEvent(
     tableId?: string;
     tableName?: string;
     attribute?: string;
+    recordAction?: RecordingEvent['recordAction'];
   }
 ): RecordingEvent {
   return {
@@ -1326,6 +1365,7 @@ export function createRecordedMarkEvent(
     tableId: payload.tableId,
     tableName: payload.tableName,
     attribute: payload.attribute || 'innerText',
+    recordAction: payload.recordAction || 'append',
     elementMeta: request.elementMeta
   };
 }
@@ -1446,6 +1486,7 @@ export class BrowserRecorder {
       tableId?: string;
       tableName?: string;
       attribute?: string;
+      recordAction?: RecordingEvent['recordAction'];
     }
   ): Promise<void> {
     const event = createRecordedMarkEvent(request, payload);
@@ -1807,7 +1848,8 @@ export class BrowserRecorder {
           fieldType: payload.fieldType,
           tableId: typeof payload.tableId === 'string' ? payload.tableId : '',
           tableName: typeof payload.tableName === 'string' ? payload.tableName : '',
-          attribute: typeof payload.attribute === 'string' ? payload.attribute : 'innerText'
+          attribute: typeof payload.attribute === 'string' ? payload.attribute : 'innerText',
+          recordAction: payload.recordAction === 'new' ? 'new' : 'append'
         });
         return;
       }

@@ -242,13 +242,14 @@
           </div>
           <div
             class="recording-event-meta"
-            v-if="event.selector || event.fieldName || event.tableName || event.attribute || event.value || event.openerSelector || event.openerElementMeta?.href"
+            v-if="event.selector || event.fieldName || event.tableName || event.attribute || event.recordAction || event.value || event.openerSelector || event.openerElementMeta?.href"
           >
             <div v-if="event.title"><strong>页面:</strong> {{ event.title }}</div>
             <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
             <div v-if="event.fieldName"><strong>字段:</strong> {{ event.fieldName }} <span v-if="event.fieldType">({{ event.fieldType }})</span></div>
             <div v-if="event.tableName"><strong>数据表:</strong> {{ event.tableName }}</div>
             <div v-if="event.attribute"><strong>提取属性:</strong> {{ event.attribute }}</div>
+            <div v-if="event.recordAction"><strong>写入方式:</strong> {{ event.recordAction === 'new' ? '开始新记录' : '继续当前记录' }}</div>
             <div v-if="event.value"><strong>值:</strong> {{ event.value }}</div>
             <div v-if="event.openerSelector"><strong>来源元素:</strong> {{ event.openerSelector }}</div>
             <div v-if="event.openerAction"><strong>来源动作:</strong> {{ event.openerAction === 'contextmenu' ? '右键元素' : '中键打开' }}</div>
@@ -541,6 +542,7 @@ interface RecordingEventItem {
   tableId?: string;
   tableName?: string;
   attribute?: string;
+  recordAction?: 'new' | 'append';
   elementMeta?: {
     tagName?: string;
     text?: string;
@@ -1107,7 +1109,8 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
               type: event.fieldType || 'text',
               tableId: event.tableId || '',
               tableName: event.tableName || '',
-              attribute: event.attribute || 'innerText'
+              attribute: event.attribute || 'innerText',
+              recordAction: event.recordAction || 'new'
             }
           : undefined,
         opener: event.openerSelector || event.openerPageId || event.openerElementMeta?.href
@@ -1144,7 +1147,7 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
     };
   }>();
   const actionCounts: Record<string, number> = {};
-  const markedFields: Array<{ name: string; type: string; pageId: string; selector: string; tableId: string; tableName: string; attribute: string }> = [];
+  const markedFields: Array<{ name: string; type: string; pageId: string; selector: string; tableId: string; tableName: string; attribute: string; recordAction: string }> = [];
 
   orderedEvents.forEach(event => {
     actionCounts[event.action] = (actionCounts[event.action] || 0) + 1;
@@ -1197,7 +1200,8 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
         selector: event.target.selector,
         tableId: event.field.tableId || '',
         tableName: event.field.tableName || '',
-        attribute: event.field.attribute || 'innerText'
+        attribute: event.field.attribute || 'innerText',
+        recordAction: event.field.recordAction || 'new'
       });
     }
   });

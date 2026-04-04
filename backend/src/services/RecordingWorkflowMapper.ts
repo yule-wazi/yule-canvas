@@ -25,6 +25,7 @@ interface RecordingV2Event {
     tableId?: string;
     tableName?: string;
     attribute?: string;
+    recordAction?: 'new' | 'append' | string;
   };
 }
 
@@ -101,7 +102,8 @@ function isSupportedAction(action: string): action is SupportedAction {
 function pushExtractBlock(
   blocks: any[],
   extractions: Array<{ selector: string; attribute: string; saveToColumn: string }>,
-  tableId: string
+  tableId: string,
+  mergeKey: string
 ) {
   if (extractions.length === 0) {
     return;
@@ -111,6 +113,7 @@ function pushExtractBlock(
     multiple: false,
     timeout: 5000,
     saveToTable: tableId,
+    mergeKey,
     extractions
   }));
 }
@@ -120,6 +123,10 @@ export class RecordingWorkflowMapper {
     const events = normalizeEvents(payload);
     const blocks: any[] = [];
     const connections: any[] = [];
+    const recordCounters = new Map<string, number>();
+
+    let activeTableId = '';
+    let activeMergeKey = '';
 
     let index = 0;
     while (index < events.length) {
@@ -134,6 +141,7 @@ export class RecordingWorkflowMapper {
       if (action === 'field-mark') {
         const pageId = event.pageId || '';
         let tableId = event.field?.tableId || '';
+        let mergeKey = '';
         let extractions: Array<{ selector: string; attribute: string; saveToColumn: string }> = [];
         const seenFieldNames = new Set<string>();
 
@@ -146,14 +154,28 @@ export class RecordingWorkflowMapper {
           if (markEvent.target?.selector && markEvent.field?.name) {
             const fieldName = markEvent.field.name;
             const currentTableId = markEvent.field.tableId || '';
+            const recordAction = markEvent.field.recordAction === 'new' ? 'new' : 'append';
 
-            if ((tableId && currentTableId && currentTableId !== tableId) || seenFieldNames.has(fieldName)) {
-              pushExtractBlock(blocks, extractions, tableId);
+            if (recordAction === 'new' || !activeMergeKey || (activeTableId && currentTableId && currentTableId !== activeTableId)) {
+              const counterKey = currentTableId || activeTableId || '__default__';
+              const nextCount = (recordCounters.get(counterKey) || 0) + 1;
+              recordCounters.set(counterKey, nextCount);
+              activeTableId = currentTableId || activeTableId || '';
+              activeMergeKey = `record_${nextCount}`;
+            }
+
+            if (
+              (tableId && currentTableId && currentTableId !== tableId) ||
+              (mergeKey && activeMergeKey && mergeKey !== activeMergeKey) ||
+              seenFieldNames.has(fieldName)
+            ) {
+              pushExtractBlock(blocks, extractions, tableId, mergeKey);
               extractions = [];
               seenFieldNames.clear();
             }
 
             tableId = currentTableId || tableId;
+            mergeKey = activeMergeKey;
 
             extractions.push({
               selector: markEvent.target.selector,
@@ -166,7 +188,7 @@ export class RecordingWorkflowMapper {
           index += 1;
         }
 
-        pushExtractBlock(blocks, extractions, tableId);
+        pushExtractBlock(blocks, extractions, tableId, mergeKey);
         continue;
       }
 
