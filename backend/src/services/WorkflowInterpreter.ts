@@ -150,18 +150,29 @@ export class WorkflowInterpreter {
       const topLevelLoops = Array.from(loopInfos.values()).filter(info => !info.parentLoopId);
       const topLevelLoopIds = new Set(topLevelLoops.map(info => info.loop.id));
       const blocksInTopLevelLoops = new Set<string>();
+      const connectedBlockIds = new Set<string>();
+
+      workflow.connections.forEach(connection => {
+        connectedBlockIds.add(connection.source);
+        connectedBlockIds.add(connection.target);
+      });
 
       topLevelLoops.forEach(info => {
         info.bodyBlockIds.forEach(id => blocksInTopLevelLoops.add(id));
       });
 
       const rootBlocks = workflow.blocks.filter(block =>
-        block.type !== 'loop' && !blocksInTopLevelLoops.has(block.id)
+        block.type !== 'loop' &&
+        !blocksInTopLevelLoops.has(block.id) &&
+        (workflow.blocks.length === 1 || connectedBlockIds.has(block.id))
+      );
+      const connectedTopLevelLoops = topLevelLoops.filter(info =>
+        workflow.blocks.length === 1 || connectedBlockIds.has(info.loop.id)
       );
 
       const sequence = this.buildExecutionSequence(
         rootBlocks,
-        topLevelLoops,
+        connectedTopLevelLoops,
         workflow.connections
       );
 

@@ -366,6 +366,19 @@ export const useWorkflowStore = defineStore('workflow', {
       this.saveToHistory();
     },
 
+    updateConnection(id: string, connection: Omit<Connection, 'id'>) {
+      const index = this.connections.findIndex(c => c.id === id);
+      if (index === -1) {
+        return;
+      }
+
+      this.connections[index] = {
+        id,
+        ...connection
+      };
+      this.saveToHistory();
+    },
+
     selectBlock(id: string | null) {
       this.selectedBlockId = id;
     },

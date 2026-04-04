@@ -98,9 +98,11 @@
           :min-zoom="0.2"
           :max-zoom="4"
           :connect-on-click="false"
+          :edges-updatable="true"
           :node-types="nodeTypes"
           @node-click="onNodeClick"
           @connect="onConnect"
+          @edge-update="onEdgeUpdate"
           @nodes-change="onNodesChange"
           @edges-change="onEdgesChange"
         >
@@ -1921,17 +1923,25 @@ function onNodeClick(event: any) {
   workflowStore.selectBlock(event.node.id);
 }
 
-function onConnect(connection: any) {
+function validateConnection(connection: any, options: { skipDuplicateCheckForId?: string } = {}) {
+  if (!connection?.source || !connection?.target) {
+    return false;
+  }
+
   // 获取源节点和目标节点
   const sourceBlock = workflowStore.blocks.find(b => b.id === connection.source);
   const targetBlock = workflowStore.blocks.find(b => b.id === connection.target);
+
+  if (!sourceBlock || !targetBlock) {
+    return false;
+  }
   
   // 循环模块的特殊连接规则
   if (sourceBlock?.type === 'loop') {
     // 循环模块的左端点（loop-start）只能连接到其他模块的左端点（target-left）
     if (connection.sourceHandle === 'loop-start') {
       if (!connection.targetHandle || !connection.targetHandle.includes('left')) {
-        return; // 静默拒绝
+        return false; // 静默拒绝
       }
     }
   }
@@ -1940,7 +1950,7 @@ function onConnect(connection: any) {
     // 循环模块的右端点（loop-end）只能接收其他模块的右端点（source-right）
     if (connection.targetHandle === 'loop-end') {
       if (!connection.sourceHandle || !connection.sourceHandle.includes('right')) {
-        return; // 静默拒绝
+        return false; // 静默拒绝
       }
     }
   }
@@ -1948,21 +1958,33 @@ function onConnect(connection: any) {
   // 普通模块的连接规则：只允许连接到左侧端点（target-left）
   // 拒绝连接到右侧端点
   if (targetBlock?.type !== 'loop' && connection.targetHandle && connection.targetHandle.includes('right')) {
-    return; // 静默拒绝
+    return false; // 静默拒绝
   }
   
   // 验证：source 必须是右侧，target 必须是左侧（循环模块除外）
   if (sourceBlock?.type !== 'loop') {
     const sourceOutputs = sourceBlock?.outputs?.map(output => output.id) || [];
     if (connection.sourceHandle && !sourceOutputs.includes(connection.sourceHandle) && !connection.sourceHandle.includes('right')) {
-      return; // 静默拒绝
+      return false; // 静默拒绝
     }
   }
   
   if (targetBlock?.type !== 'loop') {
     if (connection.targetHandle && !connection.targetHandle.includes('left')) {
-      return; // 静默拒绝
+      return false; // 静默拒绝
     }
+  }
+
+  const exists = workflowStore.connections.some(c =>
+    c.id !== options.skipDuplicateCheckForId &&
+    c.source === connection.source &&
+    c.target === connection.target &&
+    c.sourceHandle === (connection.sourceHandle || 'source-right') &&
+    c.targetHandle === (connection.targetHandle || 'target-left')
+  );
+
+  if (exists) {
+    return false;
   }
   
   // 检测循环体交叉
@@ -1992,7 +2014,7 @@ function onConnect(connection: any) {
           message: '不允许循环体交叉！当前循环体包含了其他循环的循环体块，这会导致循环嵌套冲突。请调整连接，确保循环体之间不会交叉。', 
           type: 'warning' 
         });
-        return;
+        return false;
       }
     }
   }
@@ -2023,12 +2045,34 @@ function onConnect(connection: any) {
           message: '不允许循环体交叉！当前循环体包含了其他循环的循环体块，这会导致循环嵌套冲突。请调整连接，确保循环体之间不会交叉。', 
           type: 'warning' 
         });
-        return;
+        return false;
       }
     }
   }
+
+  return true;
+}
+
+function onConnect(connection: any) {
+  if (!validateConnection(connection)) {
+    return;
+  }
   
   workflowStore.addConnection({
+    source: connection.source,
+    sourceHandle: connection.sourceHandle || 'source-right',
+    target: connection.target,
+    targetHandle: connection.targetHandle || 'target-left'
+  });
+  updateHandleStyles();
+}
+
+function onEdgeUpdate({ edge, connection }: any) {
+  if (!edge?.id || !validateConnection(connection, { skipDuplicateCheckForId: edge.id })) {
+    return;
+  }
+
+  workflowStore.updateConnection(edge.id, {
     source: connection.source,
     sourceHandle: connection.sourceHandle || 'source-right',
     target: connection.target,
