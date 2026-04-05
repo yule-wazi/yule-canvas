@@ -348,10 +348,34 @@ export const useWorkflowStore = defineStore('workflow', {
       this.saveToHistory();
     },
 
-    updateBlockPosition(id: string, position: { x: number; y: number }) {
+    updateBlockPosition(id: string, position: { x: number; y: number }, saveHistory = false) {
       const block = this.blocks.find(b => b.id === id);
       if (block) {
         block.position = position;
+        if (saveHistory) {
+          this.saveToHistory();
+        }
+      }
+    },
+
+    updateBlockPositions(positions: Record<string, { x: number; y: number }>) {
+      let changed = false;
+
+      this.blocks = this.blocks.map(block => {
+        const nextPosition = positions[block.id];
+        if (!nextPosition) {
+          return block;
+        }
+
+        changed = true;
+        return {
+          ...block,
+          position: nextPosition
+        };
+      });
+
+      if (changed) {
+        this.saveToHistory();
       }
     },
 

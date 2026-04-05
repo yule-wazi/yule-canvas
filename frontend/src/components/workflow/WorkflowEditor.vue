@@ -101,6 +101,8 @@
           :edges-updatable="true"
           :node-types="nodeTypes"
           @node-click="onNodeClick"
+          @edge-click="onEdgeClick"
+          @pane-click="onPaneClick"
           @connect="onConnect"
           @edge-update="onEdgeUpdate"
           @nodes-change="onNodesChange"
@@ -118,6 +120,10 @@
             zoomable
           />
         </VueFlow>
+        <div class="canvas-layout-actions">
+          <button @click="autoArrangeWorkflow('horizontal')" class="btn-icon" title="横向整理">⇢</button>
+          <button @click="autoArrangeWorkflow('grid')" class="btn-icon" title="井字整理">▦</button>
+        </div>
       </div>
 
       <div class="property-panel" v-if="selectedBlock">
@@ -128,6 +134,31 @@
             :block="selectedBlock"
             @update="updateBlockData"
           />
+        </div>
+      </div>
+
+      <div class="property-panel" v-else-if="selectedConnection">
+        <h3>连接配置</h3>
+        <div class="property-content connection-panel">
+          <div class="connection-meta-row">
+            <span class="connection-meta-label">起点</span>
+            <span class="connection-meta-value">{{ selectedConnection.source }}</span>
+          </div>
+          <div class="connection-meta-row">
+            <span class="connection-meta-label">终点</span>
+            <span class="connection-meta-value">{{ selectedConnection.target }}</span>
+          </div>
+          <div class="connection-meta-row">
+            <span class="connection-meta-label">起点端口</span>
+            <span class="connection-meta-value">{{ selectedConnection.sourceHandle || 'source-right' }}</span>
+          </div>
+          <div class="connection-meta-row">
+            <span class="connection-meta-label">终点端口</span>
+            <span class="connection-meta-value">{{ selectedConnection.targetHandle || 'target-left' }}</span>
+          </div>
+          <button @click="deleteSelectedConnection" class="btn-danger connection-delete-btn">
+            删除这条连线
+          </button>
         </div>
       </div>
     </div>
@@ -492,6 +523,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw, nextTick } from 'vue';
 import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core';
+import type { Block } from '../../types/block';
 import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
 import { useWorkflowStore } from '../../stores/workflow';
@@ -574,7 +606,7 @@ const nodeTypes = {
   loop: markRaw(LoopNode) as any
 };
 
-const { project } = useVueFlow();
+const { project, fitView } = useVueFlow();
 
 const workflowStore = useWorkflowStore();
 const dataTableStore = useDataTableStore();
@@ -619,6 +651,7 @@ const executionLogsRef = ref<HTMLElement | null>(null);
 const executionPanelPosition = reactive({ x: 24, y: 96, width: 520, height: 420 });
 const executionPanelDragging = ref(false);
 const executionPanelDragOffset = reactive({ x: 0, y: 0 });
+const selectedConnectionId = ref<string | null>(null);
 let executionPanelResizeObserver: ResizeObserver | null = null;
 let aiPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let aiPreviewRequestId = 0;
@@ -1793,25 +1826,45 @@ const elements = computed({
       };
     }).filter(node => node !== null);
 
-    const edges = workflowStore.connections.map(conn => ({
-      id: conn.id,
-      source: conn.source,
-      target: conn.target,
-      sourceHandle: conn.sourceHandle || 'source-right',
-      targetHandle: conn.targetHandle || 'target-left',
-      type: 'default', // 使用默认的贝塞尔曲线
-      animated: false,
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: conn.type === 'data' ? '#f85149' : '#58a6ff',
-        width: 20,
-        height: 20
-      },
-      style: {
-        stroke: conn.type === 'data' ? '#f85149' : '#58a6ff',
-        strokeWidth: 2
-      }
-    }));
+    const blockPositionMap = new Map(workflowStore.blocks.map(block => [block.id, block.position]));
+
+    const edges = workflowStore.connections.map(conn => {
+      const sourcePosition = blockPositionMap.get(conn.source);
+      const targetPosition = blockPositionMap.get(conn.target);
+      const isVerticalLayout = sourcePosition && targetPosition
+        ? Math.abs(sourcePosition.y - targetPosition.y) > 80
+        : false;
+
+      return {
+        id: conn.id,
+        source: conn.source,
+        target: conn.target,
+        sourceHandle: conn.sourceHandle || 'source-right',
+        targetHandle: conn.targetHandle || 'target-left',
+        type: isVerticalLayout ? 'smoothstep' : 'default',
+        animated: false,
+        pathOptions: isVerticalLayout
+          ? {
+              borderRadius: 18,
+              offset: 24
+            }
+          : undefined,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: selectedConnectionId.value === conn.id
+            ? '#facc15'
+            : conn.type === 'data' ? '#f85149' : '#58a6ff',
+          width: 20,
+          height: 20
+        },
+        style: {
+          stroke: selectedConnectionId.value === conn.id
+            ? '#facc15'
+            : conn.type === 'data' ? '#f85149' : '#58a6ff',
+          strokeWidth: selectedConnectionId.value === conn.id ? 3 : 2
+        }
+      };
+    });
 
     return [...nodes, ...edges] as any;
   },
@@ -1821,6 +1874,13 @@ const elements = computed({
 });
 
 const selectedBlock = computed(() => workflowStore.selectedBlock);
+const selectedConnection = computed(() => {
+  if (!selectedConnectionId.value) {
+    return null;
+  }
+
+  return workflowStore.connections.find(conn => conn.id === selectedConnectionId.value) || null;
+});
 const canUndo = computed(() => workflowStore.canUndo);
 const canRedo = computed(() => workflowStore.canRedo);
 
@@ -1898,6 +1958,128 @@ function onCanvasDrop(event: DragEvent) {
   addBlock(type, position);
 }
 
+type AutoArrangeMode = 'horizontal' | 'grid';
+
+function getTopologicalBlocks(blocks: Block[]) {
+  const blockMap = new Map(blocks.map(block => [block.id, block]));
+  const outgoing = new Map<string, string[]>();
+  const indegree = new Map<string, number>();
+
+  blocks.forEach(block => {
+    outgoing.set(block.id, []);
+    indegree.set(block.id, 0);
+  });
+
+  workflowStore.connections.forEach(connection => {
+    if (connection.targetHandle === 'loop-end' || connection.sourceHandle === 'loop-start') {
+      return;
+    }
+
+    if (!blockMap.has(connection.source) || !blockMap.has(connection.target)) {
+      return;
+    }
+
+    outgoing.get(connection.source)?.push(connection.target);
+    indegree.set(connection.target, (indegree.get(connection.target) || 0) + 1);
+  });
+
+  const queue = blocks
+    .filter(block => (indegree.get(block.id) || 0) === 0)
+    .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+
+  const ordered: Block[] = [];
+
+  while (queue.length) {
+    const current = queue.shift()!;
+    ordered.push(current);
+
+    (outgoing.get(current.id) || []).forEach(targetId => {
+      const nextIndegree = (indegree.get(targetId) || 0) - 1;
+      indegree.set(targetId, nextIndegree);
+
+      if (nextIndegree === 0) {
+        const targetBlock = blockMap.get(targetId);
+        if (targetBlock) {
+          queue.push(targetBlock);
+          queue.sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+        }
+      }
+    });
+  }
+
+  const remaining = blocks
+    .filter(block => !ordered.some(item => item.id === block.id))
+    .sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+
+  return [...ordered, ...remaining];
+}
+
+function buildArrangedPositions(blocks: Block[], mode: AutoArrangeMode) {
+  const loopBlocks = blocks.filter(block => block.type === 'loop');
+  const normalBlocks = blocks.filter(block => block.type !== 'loop');
+  const orderedBlocks = getTopologicalBlocks(normalBlocks);
+  const positions: Record<string, { x: number; y: number }> = {};
+  const startX = 160;
+  const startY = 160;
+  const horizontalGap = 320;
+  const verticalGap = 180;
+
+  if (mode === 'horizontal') {
+    orderedBlocks.forEach((block, index) => {
+      positions[block.id] = {
+        x: startX + index * horizontalGap,
+        y: startY
+      };
+    });
+
+  } else {
+    const columns = Math.max(2, Math.min(4, Math.ceil(Math.sqrt(Math.max(orderedBlocks.length, 1)))));
+
+    orderedBlocks.forEach((block, index) => {
+      const row = Math.floor(index / columns);
+      const column = index % columns;
+
+      positions[block.id] = {
+        x: startX + column * horizontalGap,
+        y: startY + row * verticalGap
+      };
+    });
+  }
+
+  loopBlocks.forEach((loopBlock, loopIndex) => {
+    const loopStartConnection = workflowStore.connections.find(
+      connection => connection.source === loopBlock.id && connection.sourceHandle === 'loop-start'
+    );
+    const loopEndConnection = workflowStore.connections.find(
+      connection => connection.target === loopBlock.id && connection.targetHandle === 'loop-end'
+    );
+
+    const startPosition = loopStartConnection?.target ? positions[loopStartConnection.target] : null;
+    const endPosition = loopEndConnection?.source ? positions[loopEndConnection.source] : null;
+    const anchorPosition = startPosition || endPosition;
+
+    positions[loopBlock.id] = {
+      x: startPosition && endPosition
+        ? Math.round((startPosition.x + endPosition.x) / 2)
+        : anchorPosition?.x ?? startX + loopIndex * horizontalGap,
+      y: (anchorPosition?.y ?? startY) + verticalGap
+    };
+  });
+
+  return positions;
+}
+
+async function autoArrangeWorkflow(mode: AutoArrangeMode) {
+  if (!workflowStore.blocks.length) {
+    return;
+  }
+
+  const positions = buildArrangedPositions(workflowStore.blocks, mode);
+  workflowStore.updateBlockPositions(positions);
+  await nextTick();
+  fitView({ padding: 0.2, duration: 250 });
+}
+
 function addBlock(type: BlockType, dropPosition?: { x: number; y: number }) {
   // 计算新节点的位置 - 水平布局
   const existingBlocks = workflowStore.blocks;
@@ -1924,7 +2106,19 @@ function addBlock(type: BlockType, dropPosition?: { x: number; y: number }) {
 }
 
 function onNodeClick(event: any) {
+  selectedConnectionId.value = null;
   workflowStore.selectBlock(event.node.id);
+}
+
+function onEdgeClick(event: any) {
+  event?.event?.stopPropagation?.();
+  workflowStore.selectBlock(null);
+  selectedConnectionId.value = event.edge?.id || null;
+}
+
+function onPaneClick() {
+  workflowStore.selectBlock(null);
+  selectedConnectionId.value = null;
 }
 
 function validateConnection(connection: any, options: { skipDuplicateCheckForId?: string } = {}) {
@@ -2089,9 +2283,16 @@ function onEdgeUpdate({ edge, connection }: any) {
 function onNodesChange(changes: any[]) {
   changes.forEach(change => {
     if (change.type === 'position' && change.position) {
-      workflowStore.updateBlockPosition(change.id, change.position);
+      workflowStore.updateBlockPosition(
+        change.id,
+        change.position,
+        change.dragging === false || typeof change.dragging === 'undefined'
+      );
     } else if (change.type === 'remove') {
       workflowStore.removeBlock(change.id);
+      if (workflowStore.selectedBlockId === change.id) {
+        selectedConnectionId.value = null;
+      }
       updateHandleStyles();
     }
   });
@@ -2101,9 +2302,22 @@ function onEdgesChange(changes: any[]) {
   changes.forEach(change => {
     if (change.type === 'remove') {
       workflowStore.removeConnection(change.id);
+      if (selectedConnectionId.value === change.id) {
+        selectedConnectionId.value = null;
+      }
       updateHandleStyles();
     }
   });
+}
+
+function deleteSelectedConnection() {
+  if (!selectedConnection.value) {
+    return;
+  }
+
+  workflowStore.removeConnection(selectedConnection.value.id);
+  selectedConnectionId.value = null;
+  updateHandleStyles();
 }
 
 function updateBlockData(data: any) {
@@ -2673,6 +2887,20 @@ async function executeWorkflow() {
   position: relative;
 }
 
+.canvas-layout-actions {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(48, 54, 61, 0.92);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.88);
+  backdrop-filter: blur(8px);
+}
+
 .property-panel {
   width: 300px;
   background: #161b22;
@@ -2690,6 +2918,36 @@ async function executeWorkflow() {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.connection-panel {
+  gap: 0.75rem;
+}
+
+.connection-meta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.connection-meta-label {
+  font-size: 0.85rem;
+  color: #8b949e;
+}
+
+.connection-meta-value {
+  color: #c9d1d9;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.connection-delete-btn {
+  width: 100%;
 }
 
 .execution-panel-floating {
