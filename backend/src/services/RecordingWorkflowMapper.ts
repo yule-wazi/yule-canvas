@@ -27,6 +27,8 @@ interface RecordingV2Event {
     attribute?: string;
     recordAction?: 'new' | 'append' | string;
   };
+  navigationKind?: 'explicit' | 'derived' | string;
+  navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward' | string;
 }
 
 interface RecordingV2Payload {
@@ -194,6 +196,9 @@ export class RecordingWorkflowMapper {
 
       switch (action) {
         case 'navigate':
+          if (event.navigationKind === 'derived') {
+            break;
+          }
           if (event.page?.url) {
             blocks.push(createBlock('navigate', '访问页面', 'browser', blocks.length, {
               url: event.page.url,

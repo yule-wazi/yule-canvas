@@ -597,6 +597,8 @@ interface RecordingEventItem {
     src?: string;
     value?: string;
   };
+  navigationKind?: 'explicit' | 'derived';
+  navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward';
 }
 
 // 定义节点类型
@@ -1069,8 +1071,17 @@ function buildRecordingEventSummaryText(event: RecordingEventItem) {
   const selector = event.selector || '';
 
   if (event.action === 'navigate') {
+    if (event.navigationKind === 'derived' && event.navigationSource === 'click') {
+      return `点击后进入页面: ${event.url}`;
+    }
     if (event.openerSelector) {
       return `新页面导航，由${event.openerAction === 'contextmenu' ? '右键' : '中键'}元素触发: ${event.url}`;
+    }
+    if (event.navigationKind === 'derived' && event.navigationSource === 'contextmenu') {
+      return `右键后打开页面: ${event.url}`;
+    }
+    if (event.navigationKind === 'derived' && event.navigationSource === 'middle-click') {
+      return `中键后打开页面: ${event.url}`;
     }
     return `访问页面: ${event.url}`;
   }
@@ -1116,6 +1127,8 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
         action: event.action,
         timestamp: event.timestamp,
         pageId: event.pageId,
+        navigationKind: event.navigationKind,
+        navigationSource: event.navigationSource,
         page: {
           url: event.url,
           title: event.title || ''
@@ -1483,7 +1496,7 @@ function formatRecordingEventSummary(event: RecordingEventItem) {
     return event.fieldName || '标注字段';
   }
 
-  return getRecordingEventLabel(event.action);
+  return buildRecordingEventSummaryText(event);
 }
 
 function stopRecordingSocketListeners() {

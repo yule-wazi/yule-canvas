@@ -46,6 +46,8 @@ export interface RecordingEvent {
   openerSelector?: string;
   openerAction?: 'contextmenu' | 'middle-click';
   openerElementMeta?: RecordingElementMeta;
+  navigationKind?: 'explicit' | 'derived';
+  navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward';
 }
 
 export interface RecordingMarkRequest {
@@ -54,6 +56,16 @@ export interface RecordingMarkRequest {
   title?: string;
   selector: string;
   elementMeta?: RecordingElementMeta;
+  candidateTargets?: RecordingMarkCandidate[];
+  selectedCandidateIndex?: number;
+  selectedFieldName?: string;
+  selectedAttribute?: string;
+}
+
+export interface RecordingMarkCandidate {
+  selector: string;
+  elementMeta?: RecordingElementMeta;
+  label?: string;
 }
 
 export function createRecordingMarkRequest(
@@ -66,7 +78,22 @@ export function createRecordingMarkRequest(
     url: request?.url || fallback.url,
     title: request?.title || fallback.title || '',
     selector: request?.selector || '',
-    elementMeta: request?.elementMeta || {}
+    elementMeta: request?.elementMeta || {},
+    candidateTargets: Array.isArray(request?.candidateTargets)
+      ? request!.candidateTargets!
+          .map(candidate => ({
+            selector: candidate?.selector || '',
+            elementMeta: candidate?.elementMeta || {},
+            label: candidate?.label || ''
+          }))
+          .filter(candidate => candidate.selector)
+      : [],
+    selectedCandidateIndex:
+      typeof request?.selectedCandidateIndex === 'number' && request.selectedCandidateIndex >= 0
+        ? request.selectedCandidateIndex
+        : 0,
+    selectedFieldName: typeof request?.selectedFieldName === 'string' ? request.selectedFieldName : '',
+    selectedAttribute: typeof request?.selectedAttribute === 'string' ? request.selectedAttribute : ''
   };
 }
 
@@ -266,6 +293,13 @@ const RECORDER_INIT_SCRIPT = `
     return tables.find((table) => table.id === selectedTableId) || tables[0] || null;
   }
 
+  function getCurrentMarkFieldType(fieldName) {
+    const currentTable = getCurrentMarkTable();
+    const fields = Array.isArray(currentTable?.fields) ? currentTable.fields : [];
+    const resolvedFieldName = fieldName || state.pendingMarkRequest?.selectedFieldName || fields[0]?.name || '';
+    return fields.find((field) => field.name === resolvedFieldName)?.type || 'text';
+  }
+
   function getDefaultAttribute(tagName, fieldType) {
     const normalizedTag = String(tagName || '').toLowerCase();
     const normalizedFieldType = String(fieldType || '').toLowerCase();
@@ -289,6 +323,20 @@ const RECORDER_INIT_SCRIPT = `
     return 'innerText';
   }
 
+  function getAttributePreview(element) {
+    if (!(element instanceof Element)) {
+      return '';
+    }
+
+    const backgroundImage = window.getComputedStyle(element).backgroundImage || '';
+    return (
+      element.getAttribute('src') ||
+      element.getAttribute('href') ||
+      element.getAttribute('poster') ||
+      (backgroundImage && backgroundImage !== 'none' ? backgroundImage : '')
+    );
+  }
+
   function isUnique(selector) {
     if (!selector) return false;
     try {
@@ -310,6 +358,194 @@ const RECORDER_INIT_SCRIPT = `
   function getMarkTarget(element) {
     if (!(element instanceof Element) || isInsidePanel(element)) return null;
     return element;
+  }
+
+  function isUsefulMarkCandidate(element) {
+    if (!(element instanceof Element) || isInsidePanel(element)) {
+      return false;
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    if (['img', 'video', 'source', 'a', 'input', 'textarea', 'select'].includes(tagName)) {
+      return true;
+    }
+
+    if (element.hasAttribute('src') || element.hasAttribute('href') || element.hasAttribute('poster')) {
+      return true;
+    }
+
+    const backgroundImage = window.getComputedStyle(element).backgroundImage || '';
+    return backgroundImage && backgroundImage !== 'none';
+  }
+
+  function getCandidateLabel(element, selector) {
+    if (!(element instanceof Element)) {
+      return truncate(selector || '候选元素', 42);
+    }
+
+    const tagName = element.tagName.toLowerCase();
+    const preview = truncate(getAttributePreview(element) || element.textContent || '', 36);
+    if (preview) {
+      return tagName + ' | ' + preview;
+    }
+
+    const compactSelector = truncate(
+      String(selector || '')
+        .split(' > ')
+        .slice(-2)
+        .join(' > '),
+      36
+    );
+
+    return compactSelector ? tagName + ' | ' + compactSelector : tagName;
+  }
+
+  function buildDropdownTrigger(label, value, menuRole) {
+    return '<div class="__aibrowser-recorder-mark-candidate"><button type="button" class="__aibrowser-recorder-mark-candidate-trigger" data-action="toggle-dropdown" data-menu-role="' + menuRole + '" title="' + escapeHtml(value || '') + '"><span class="__aibrowser-recorder-mark-candidate-label">' + escapeHtml(value || '') + '</span></button>';
+  }
+
+  function getMarkCandidatePriority(candidate) {
+    const tagName = String(candidate?.elementMeta?.tagName || '').toLowerCase();
+
+    if (['video', 'source'].includes(tagName)) return 5;
+    if (tagName === 'img') return 4;
+    if (tagName === 'a') return 3;
+    if (candidate?.elementMeta?.src) return 2;
+    if (candidate?.elementMeta?.href) return 1;
+    return 0;
+  }
+
+  function collectVisualStackCandidates(clientX, clientY) {
+    const sampleOffsets = [
+      [0, 0],
+      [-8, -8],
+      [8, -8],
+      [-8, 8],
+      [8, 8]
+    ];
+    const stack = [];
+    const seen = new Set();
+
+    sampleOffsets.forEach(([offsetX, offsetY]) => {
+      const sampleX = Math.max(0, Math.min(window.innerWidth - 1, clientX + offsetX));
+      const sampleY = Math.max(0, Math.min(window.innerHeight - 1, clientY + offsetY));
+      const elements = document.elementsFromPoint(sampleX, sampleY);
+
+      elements.forEach((element) => {
+        if (!(element instanceof Element) || isInsidePanel(element)) {
+          return;
+        }
+
+        const selector = buildSelector(element);
+        if (!selector || seen.has(selector)) {
+          return;
+        }
+
+        seen.add(selector);
+        stack.push(element);
+      });
+    });
+
+    return stack;
+  }
+
+  function hasRectIntersection(leftRect, rightRect) {
+    if (!leftRect || !rightRect) {
+      return false;
+    }
+
+    return !(
+      leftRect.right < rightRect.left ||
+      leftRect.left > rightRect.right ||
+      leftRect.bottom < rightRect.top ||
+      leftRect.top > rightRect.bottom
+    );
+  }
+
+  function collectMarkCandidates(element, clientX, clientY) {
+    if (!(element instanceof Element)) {
+      return [];
+    }
+
+    const visited = new Set();
+    const candidates = [];
+    let directCandidate = null;
+
+    function pushCandidate(candidateElement) {
+      if (!(candidateElement instanceof Element) || isInsidePanel(candidateElement)) {
+        return;
+      }
+
+      const selector = buildSelector(candidateElement);
+      if (!selector || visited.has(selector)) {
+        return;
+      }
+
+      visited.add(selector);
+      const candidate = {
+        selector,
+        elementMeta: getElementMeta(candidateElement),
+        label: getCandidateLabel(candidateElement, selector)
+      };
+      candidates.push(candidate);
+
+      if (candidateElement === element) {
+        directCandidate = candidate;
+      }
+    }
+
+    if (typeof clientX === 'number' && typeof clientY === 'number') {
+      collectVisualStackCandidates(clientX, clientY).forEach(pushCandidate);
+    }
+
+    pushCandidate(element);
+
+    let parent = element.parentElement;
+    let depth = 0;
+    while (parent && depth < 4) {
+      pushCandidate(parent);
+      parent = parent.parentElement;
+      depth += 1;
+    }
+
+    const descendantCandidates = Array.from(
+      element.querySelectorAll('img, video, source, a, [src], [href], [poster], [style*="background-image"]')
+    ).slice(0, 12);
+    descendantCandidates.forEach(pushCandidate);
+
+    if (element.parentElement) {
+      const elementRect = element.getBoundingClientRect();
+      const siblingCandidates = Array.from(
+        element.parentElement.querySelectorAll('img, video, source, a, [src], [href], [poster], [style*="background-image"]')
+      )
+        .filter(candidate => {
+          if (!(candidate instanceof Element)) {
+            return false;
+          }
+
+          if (candidate === element || element.contains(candidate) || candidate.contains(element)) {
+            return true;
+          }
+
+          return hasRectIntersection(elementRect, candidate.getBoundingClientRect());
+        })
+        .slice(0, 16);
+      siblingCandidates.forEach(pushCandidate);
+    }
+
+    return candidates
+      .sort((left, right) => {
+        if (directCandidate && left.selector === directCandidate.selector) return -1;
+        if (directCandidate && right.selector === directCandidate.selector) return 1;
+
+        const priorityDiff = getMarkCandidatePriority(right) - getMarkCandidatePriority(left);
+        if (priorityDiff !== 0) {
+          return priorityDiff;
+        }
+
+        return 0;
+      })
+      .slice(0, 12);
   }
 
   function getHoverTarget(element) {
@@ -536,6 +772,10 @@ const RECORDER_INIT_SCRIPT = `
       '  flex-direction: column;',
       '  width: 100%;',
       '  height: 100%;',
+      '  min-height: 0;',
+      '}',
+      '#' + ROOT_ID + '.__aibrowser-recorder-is-marking .__aibrowser-recorder-events {',
+      '  display: none;',
       '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-header {',
       '  display: flex;',
@@ -589,14 +829,21 @@ const RECORDER_INIT_SCRIPT = `
       '#' + ROOT_ID + ' button.secondary { background: #30363d; }',
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark {',
       '  display: none;',
+      '  flex: 1;',
+      '  min-height: 0;',
       '  margin: 12px 14px 0;',
       '  padding: 12px;',
       '  border: 1px solid rgba(88, 166, 255, 0.22);',
       '  border-radius: 12px;',
       '  background: rgba(56, 139, 253, 0.08);',
+      '  overflow-y: auto;',
+      '  overscroll-behavior: contain;',
       '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark.is-visible {',
       '  display: block;',
+      '}',
+      '#' + ROOT_ID + '.__aibrowser-recorder-is-marking .__aibrowser-recorder-mark.is-visible {',
+      '  margin-bottom: 12px;',
       '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark-title {',
       '  margin-bottom: 8px;',
@@ -630,6 +877,79 @@ const RECORDER_INIT_SCRIPT = `
       '  background: #0d1117;',
       '  color: #e6edf3;',
       '  font-size: 13px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate {',
+      '  position: relative;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-trigger {',
+      '  width: 100%;',
+      '  display: flex;',
+      '  align-items: center;',
+      '  justify-content: flex-start;',
+      '  gap: 10px;',
+      '  padding: 9px 10px;',
+      '  border: 1px solid #30363d;',
+      '  border-radius: 8px;',
+      '  background: #0d1117;',
+      '  color: #e6edf3;',
+      '  font-size: 13px;',
+      '  text-align: left;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-trigger::after {',
+      '  content: "▾";',
+      '  margin-left: auto;',
+      '  flex-shrink: 0;',
+      '  color: #8b949e;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-label {',
+      '  flex: 1;',
+      '  min-width: 0;',
+      '  overflow: hidden;',
+      '  text-overflow: ellipsis;',
+      '  white-space: nowrap;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-menu {',
+      '  position: absolute;',
+      '  left: 0;',
+      '  right: 0;',
+      '  top: calc(100% + 6px);',
+      '  z-index: 3;',
+      '  display: none;',
+      '  max-height: 240px;',
+      '  overflow-y: auto;',
+      '  padding: 6px;',
+      '  border: 1px solid #30363d;',
+      '  border-radius: 10px;',
+      '  background: #0d1117;',
+      '  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-menu.is-open {',
+      '  display: block;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-menu.is-open-up {',
+      '  top: auto;',
+      '  bottom: calc(100% + 6px);',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-option {',
+      '  width: 100%;',
+      '  display: block;',
+      '  padding: 8px 10px;',
+      '  border: none;',
+      '  border-radius: 8px;',
+      '  background: transparent;',
+      '  color: #e6edf3;',
+      '  font-size: 13px;',
+      '  text-align: left;',
+      '  overflow: hidden;',
+      '  text-overflow: ellipsis;',
+      '  white-space: nowrap;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-option:hover {',
+      '  background: rgba(88, 166, 255, 0.14);',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-mark-candidate-option.is-selected {',
+      '  background: rgba(88, 166, 255, 0.18);',
+      '  color: #79c0ff;',
       '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark-table {',
       '  padding: 9px 10px;',
@@ -672,6 +992,11 @@ const RECORDER_INIT_SCRIPT = `
       '#' + ROOT_ID + ' .__aibrowser-recorder-mark-actions {',
       '  display: flex;',
       '  gap: 8px;',
+      '  position: sticky;',
+      '  bottom: -12px;',
+      '  margin: 0 -12px -12px;',
+      '  padding: 12px;',
+      '  background: linear-gradient(180deg, rgba(13, 17, 23, 0) 0%, rgba(13, 17, 23, 0.96) 28%);',
       '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-events {',
       '  flex: 1;',
@@ -802,7 +1127,39 @@ const RECORDER_INIT_SCRIPT = `
       sendControl({ action: 'stop' });
     });
 
+    function updateDropdownDirection(menu) {
+      if (!(menu instanceof HTMLElement)) {
+        return;
+      }
+
+      menu.classList.remove('is-open-up');
+      const trigger = menu.parentElement?.querySelector('.__aibrowser-recorder-mark-candidate-trigger');
+      if (!(trigger instanceof HTMLElement)) {
+        return;
+      }
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const estimatedMenuHeight = Math.min(menu.scrollHeight || 240, 240);
+      const spaceBelow = window.innerHeight - triggerRect.bottom;
+      const spaceAbove = triggerRect.top;
+
+      if (spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow) {
+        menu.classList.add('is-open-up');
+      }
+    }
+
     root.addEventListener('click', (event) => {
+      const dropdownContainer = event.target instanceof HTMLElement
+        ? event.target.closest('.__aibrowser-recorder-mark-candidate')
+        : null;
+      if (!dropdownContainer) {
+        root.querySelectorAll('[data-role$="-menu"]').forEach((menu) => {
+          if (menu instanceof HTMLElement) {
+            menu.classList.remove('is-open');
+          }
+        });
+      }
+
       const actionTarget = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null;
       if (!actionTarget) return;
 
@@ -823,6 +1180,88 @@ const RECORDER_INIT_SCRIPT = `
         return;
       }
 
+      if (action === 'toggle-dropdown') {
+        const menuRole = actionTarget.getAttribute('data-menu-role') || '';
+        root.querySelectorAll('[data-role$="-menu"]').forEach((menu) => {
+          if (!(menu instanceof HTMLElement)) {
+            return;
+          }
+          if (menu.getAttribute('data-role') !== menuRole) {
+            menu.classList.remove('is-open');
+          }
+        });
+        const menu = root.querySelector('[data-role="' + menuRole + '"]');
+        if (menu instanceof HTMLElement) {
+          const willOpen = !menu.classList.contains('is-open');
+          menu.classList.toggle('is-open');
+          if (willOpen) {
+            updateDropdownDirection(menu);
+          } else {
+            menu.classList.remove('is-open-up');
+          }
+        }
+        return;
+      }
+
+      if (action === 'select-dropdown-option') {
+        const dropdownType = actionTarget.getAttribute('data-dropdown-type') || '';
+        const nextValue = actionTarget.getAttribute('data-value') || '';
+
+        if (dropdownType === 'candidate') {
+          const nextCandidateIndex = Number(nextValue || '0');
+          const candidateTargets = Array.isArray(state.pendingMarkRequest?.candidateTargets)
+            ? state.pendingMarkRequest.candidateTargets
+            : [];
+          const selectedCandidate = candidateTargets[nextCandidateIndex] || candidateTargets[0] || null;
+
+          if (state.pendingMarkRequest) {
+            state.pendingMarkRequest = {
+              ...state.pendingMarkRequest,
+              selector: selectedCandidate?.selector || state.pendingMarkRequest.selector || '',
+              elementMeta: selectedCandidate?.elementMeta || state.pendingMarkRequest.elementMeta || {},
+              selectedCandidateIndex: nextCandidateIndex
+            };
+          }
+
+          const fieldType = getCurrentMarkFieldType();
+          const nextAttribute = getDefaultAttribute(selectedCandidate?.elementMeta?.tagName, fieldType);
+          if (state.pendingMarkRequest) {
+            state.pendingMarkRequest.selectedAttribute = nextAttribute;
+          }
+          renderPanel();
+          return;
+        }
+
+        if (dropdownType === 'table') {
+          state.markConfig.selectedTableId = nextValue || '';
+          if (state.pendingMarkRequest) {
+            state.pendingMarkRequest.selectedFieldName = '';
+          }
+          renderPanel();
+          return;
+        }
+
+        if (dropdownType === 'field') {
+          if (state.pendingMarkRequest) {
+            state.pendingMarkRequest.selectedFieldName = nextValue || '';
+            state.pendingMarkRequest.selectedAttribute = getDefaultAttribute(
+              state.pendingMarkRequest.elementMeta?.tagName,
+              getCurrentMarkFieldType(nextValue)
+            );
+          }
+          renderPanel();
+          return;
+        }
+
+        if (dropdownType === 'attribute') {
+          if (state.pendingMarkRequest) {
+            state.pendingMarkRequest.selectedAttribute = nextValue || 'innerText';
+          }
+          renderPanel();
+          return;
+        }
+      }
+
       if (action === 'start-new-record') {
         state.nextRecordAction = 'new';
         state.status = '当前标注将开始新记录';
@@ -835,16 +1274,17 @@ const RECORDER_INIT_SCRIPT = `
           return;
         }
 
-        const tableSelect = root.querySelector('[data-role="mark-table-id"]');
-        const fieldNameSelect = root.querySelector('[data-role="mark-field-name"]');
-        const attributeSelect = root.querySelector('[data-role="mark-attribute"]');
-        const tableId = tableSelect instanceof HTMLSelectElement ? tableSelect.value.trim() : '';
-        const selectedTableOption = tableSelect instanceof HTMLSelectElement ? tableSelect.selectedOptions?.[0] : null;
-        const tableName = selectedTableOption?.getAttribute('data-table-name') || '';
-        const fieldName = fieldNameSelect instanceof HTMLSelectElement ? fieldNameSelect.value.trim() : '';
-        const selectedFieldOption = fieldNameSelect instanceof HTMLSelectElement ? fieldNameSelect.selectedOptions?.[0] : null;
-        const fieldType = selectedFieldOption?.getAttribute('data-field-type') || 'text';
-        const attribute = attributeSelect instanceof HTMLSelectElement ? attributeSelect.value : 'innerText';
+        const tableId = state.markConfig.selectedTableId || '';
+        const selectedTable = getCurrentMarkTable();
+        const tableName = selectedTable?.name || '';
+        const selectedCandidateIndex = Number(state.pendingMarkRequest.selectedCandidateIndex || 0);
+        const candidateTargets = Array.isArray(state.pendingMarkRequest?.candidateTargets)
+          ? state.pendingMarkRequest.candidateTargets
+          : [];
+        const selectedCandidate = candidateTargets[selectedCandidateIndex] || candidateTargets[0] || null;
+        const fieldName = String(state.pendingMarkRequest.selectedFieldName || '').trim();
+        const fieldType = getCurrentMarkFieldType(fieldName);
+        const attribute = state.pendingMarkRequest.selectedAttribute || 'innerText';
         const recordAction = state.nextRecordAction === 'new' ? 'new' : 'append';
 
         if (!tableId) {
@@ -861,7 +1301,13 @@ const RECORDER_INIT_SCRIPT = `
 
         sendControl({
           action: 'confirm-mark',
-          request: state.pendingMarkRequest,
+          request: {
+            ...state.pendingMarkRequest,
+            selector: selectedCandidate?.selector || state.pendingMarkRequest.selector || '',
+            elementMeta: selectedCandidate?.elementMeta || state.pendingMarkRequest.elementMeta || {},
+            selectedCandidateIndex,
+            candidateTargets
+          },
           fieldName,
           fieldType,
           tableId,
@@ -873,29 +1319,6 @@ const RECORDER_INIT_SCRIPT = `
         state.pendingMarkRequest = null;
         state.status = '正在保存字段标注...';
         renderPanel();
-      }
-    });
-
-    root.addEventListener('change', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLSelectElement)) {
-        return;
-      }
-
-      if (target.getAttribute('data-role') === 'mark-table-id') {
-        state.markConfig.selectedTableId = target.value || '';
-        renderPanel();
-        return;
-      }
-
-      if (target.getAttribute('data-role') === 'mark-field-name') {
-        const attributeSelect = root.querySelector('[data-role="mark-attribute"]');
-        const selectedFieldOption = target.selectedOptions?.[0] || null;
-        const fieldType = selectedFieldOption?.getAttribute('data-field-type') || 'text';
-        const nextAttribute = getDefaultAttribute(state.pendingMarkRequest?.elementMeta?.tagName, fieldType);
-        if (attributeSelect instanceof HTMLSelectElement) {
-          attributeSelect.value = nextAttribute;
-        }
       }
     });
 
@@ -916,11 +1339,13 @@ const RECORDER_INIT_SCRIPT = `
     const toggleButton = root.querySelector('[data-action="toggle-mode"]');
     const markBox = root.querySelector('[data-role="mark-box"]');
     const eventsEl = root.querySelector('[data-role="events"]');
+    const headerEl = root.querySelector('.__aibrowser-recorder-header');
 
     statusEl.textContent = state.status || '';
     modeEl.textContent = state.mode === 'mark' ? '标注模式' : '动作模式';
     modeEl.classList.toggle('is-mark', state.mode === 'mark');
     toggleButton.textContent = state.mode === 'mark' ? '切换动作模式' : '切换标注模式';
+    root.classList.toggle('__aibrowser-recorder-is-marking', !!state.pendingMarkRequest);
 
     if (state.pendingMarkRequest) {
       const markTables = Array.isArray(state.markConfig?.tables) ? state.markConfig.tables : [];
@@ -929,50 +1354,88 @@ const RECORDER_INIT_SCRIPT = `
       const markFields = Array.isArray(selectedTable?.fields) ? selectedTable.fields : [];
       const hasMarkTables = markTables.length > 0;
       const hasMarkFields = markFields.length > 0;
-      const defaultAttribute = getDefaultAttribute(
-        state.pendingMarkRequest?.elementMeta?.tagName,
-        markFields[0]?.type || 'text'
+      const candidateTargets = Array.isArray(state.pendingMarkRequest?.candidateTargets) && state.pendingMarkRequest.candidateTargets.length
+        ? state.pendingMarkRequest.candidateTargets
+        : [{
+            selector: state.pendingMarkRequest.selector || '',
+            elementMeta: state.pendingMarkRequest.elementMeta || {},
+            label: state.pendingMarkRequest.elementMeta?.tagName || state.pendingMarkRequest.selector || '当前元素'
+          }];
+      const selectedCandidateIndex = Math.min(
+        Math.max(Number(state.pendingMarkRequest?.selectedCandidateIndex || 0), 0),
+        Math.max(candidateTargets.length - 1, 0)
+      );
+      const selectedCandidate = candidateTargets[selectedCandidateIndex] || candidateTargets[0] || null;
+      const selectedFieldName = state.pendingMarkRequest?.selectedFieldName || markFields[0]?.name || '';
+      const selectedFieldType = getCurrentMarkFieldType(selectedFieldName);
+      const selectedAttribute = state.pendingMarkRequest?.selectedAttribute || getDefaultAttribute(
+        selectedCandidate?.elementMeta?.tagName,
+        selectedFieldType
       );
       const nextRecordAction = state.nextRecordAction === 'new' ? 'new' : 'append';
       const tableOptions = hasMarkTables
         ? markTables
             .map((table) => {
-              const optionId = escapeAttributeValue(table.id || '');
-              const optionName = escapeAttributeValue(table.name || '');
               const label = escapeHtml(table.name || '');
-              const selected = table.id === selectedTableId ? ' selected' : '';
-              return '    <option value="' + optionId + '" data-table-name="' + optionName + '"' + selected + '>' + label + '</option>';
+              const selectedClass = table.id === selectedTableId ? ' is-selected' : '';
+              return '    <button type="button" class="__aibrowser-recorder-mark-candidate-option' + selectedClass + '" data-action="select-dropdown-option" data-dropdown-type="table" data-value="' + escapeAttributeValue(table.id || '') + '" title="' + label + '">' + label + '</button>';
             })
             .join('')
-        : '    <option value="">暂无数据表</option>';
+        : '';
       const markFieldOptions = hasMarkFields
         ? markFields
-            .map((field, index) => {
-              const fieldName = escapeAttributeValue(field.name || '');
-              const fieldType = escapeAttributeValue(field.type || 'text');
+            .map((field) => {
               const label = escapeHtml(field.name || '') + ' (' + escapeHtml(field.type || 'text') + ')';
-              const selected = index === 0 ? ' selected' : '';
-              return '    <option value="' + fieldName + '" data-field-type="' + fieldType + '"' + selected + '>' + label + '</option>';
+              const selectedClass = field.name === selectedFieldName ? ' is-selected' : '';
+              return '    <button type="button" class="__aibrowser-recorder-mark-candidate-option' + selectedClass + '" data-action="select-dropdown-option" data-dropdown-type="field" data-value="' + escapeAttributeValue(field.name || '') + '" title="' + label + '">' + label + '</button>';
             })
             .join('')
-        : '    <option value="">当前数据表没有可选字段</option>';
+        : '';
+      const candidateOptions = candidateTargets
+        .map((candidate, index) => {
+          const label = escapeHtml(candidate.label || candidate.selector || ('候选元素 ' + (index + 1)));
+          const selectedClass = index === selectedCandidateIndex ? ' is-selected' : '';
+          return '    <button type="button" class="__aibrowser-recorder-mark-candidate-option' + selectedClass + '" data-action="select-dropdown-option" data-dropdown-type="candidate" data-value="' + index + '" title="' + label + '">' + label + '</button>';
+        })
+        .join('');
+      const attributeOptions = [
+        ['innerText', '显示文本 (innerText)'],
+        ['text', '文本内容 (textContent)'],
+        ['innerHTML', 'HTML 内容'],
+        ['href', '链接地址 (href)'],
+        ['src', '图片/资源地址 (src)'],
+        ['backgroundImage', '背景图 (background-image)'],
+        ['poster', '视频封面 (poster)'],
+        ['value', '表单值 (value)'],
+        ['alt', '替代文本 (alt)'],
+        ['title', '标题 (title)']
+      ]
+        .map(([value, label]) => {
+          const selectedClass = value === selectedAttribute ? ' is-selected' : '';
+          const escapedLabel = escapeHtml(label);
+          return '    <button type="button" class="__aibrowser-recorder-mark-candidate-option' + selectedClass + '" data-action="select-dropdown-option" data-dropdown-type="attribute" data-value="' + value + '" title="' + escapedLabel + '">' + escapedLabel + '</button>';
+        })
+        .join('');
       markBox.classList.add('is-visible');
       markBox.innerHTML = [
         '<div class="__aibrowser-recorder-mark-title">确认字段标注</div>',
         '<div class="__aibrowser-recorder-mark-preview">',
-        '  <div><strong>selector:</strong> ' + (state.pendingMarkRequest.selector || '') + '</div>',
-        state.pendingMarkRequest.elementMeta?.text
-          ? '  <div><strong>文本:</strong> ' + state.pendingMarkRequest.elementMeta.text + '</div>'
+        '  <div><strong>selector:</strong> ' + (selectedCandidate?.selector || state.pendingMarkRequest.selector || '') + '</div>',
+        selectedCandidate?.elementMeta?.text
+          ? '  <div><strong>文本:</strong> ' + selectedCandidate.elementMeta.text + '</div>'
           : '',
-        state.pendingMarkRequest.elementMeta?.tagName
-          ? '  <div><strong>标签:</strong> ' + state.pendingMarkRequest.elementMeta.tagName + '</div>'
+        selectedCandidate?.elementMeta?.tagName
+          ? '  <div><strong>标签:</strong> ' + selectedCandidate.elementMeta.tagName + '</div>'
           : '',
         '</div>',
+        candidateTargets.length > 1
+          ? '<div class="__aibrowser-recorder-mark-field"><label>目标元素</label>' + buildDropdownTrigger('目标元素', selectedCandidate?.label || '', 'mark-candidate-menu') + '<div class="__aibrowser-recorder-mark-candidate-menu" data-role="mark-candidate-menu">' + candidateOptions + '</div></div></div>'
+          : '',
         '<div class="__aibrowser-recorder-mark-field">',
         '  <label>数据表</label>',
-        '  <select data-role="mark-table-id"' + (hasMarkTables ? '' : ' disabled') + '>',
-             tableOptions,
-        '  </select>',
+        hasMarkTables
+          ? buildDropdownTrigger('数据表', selectedTable?.name || '', 'mark-table-menu') + '<div class="__aibrowser-recorder-mark-candidate-menu" data-role="mark-table-menu">' + tableOptions + '</div></div>'
+          : '<div class="__aibrowser-recorder-mark-hint">当前还没有数据表，请先在工作台创建数据表。</div>',
         '</div>',
         '<div class="__aibrowser-recorder-mark-field">',
         '  <label>写入方式</label>',
@@ -983,36 +1446,43 @@ const RECORDER_INIT_SCRIPT = `
         '</div>',
         '<div class="__aibrowser-recorder-mark-field">',
         '  <label>字段名</label>',
-        '  <select data-role="mark-field-name"' + (hasMarkFields ? '' : ' disabled') + '>',
-             markFieldOptions,
-        '  </select>',
+        hasMarkFields
+          ? buildDropdownTrigger('字段名', (markFields.find((field) => field.name === selectedFieldName)?.name || selectedFieldName || '') + ' (' + selectedFieldType + ')', 'mark-field-menu') + '<div class="__aibrowser-recorder-mark-candidate-menu" data-role="mark-field-menu">' + markFieldOptions + '</div></div>'
+          : '<div class="__aibrowser-recorder-mark-hint">' + (hasMarkTables ? '当前数据表没有字段，请先在工作台的数据表中创建字段。' : '当前还没有数据表，请先在工作台创建数据表。') + '</div>',
         '</div>',
         '<div class="__aibrowser-recorder-mark-field">',
         '  <label>提取属性</label>',
-        '  <select data-role="mark-attribute">',
-        '    <option value="innerText"' + (defaultAttribute === 'innerText' ? ' selected' : '') + '>显示文本 (innerText)</option>',
-        '    <option value="text"' + (defaultAttribute === 'text' ? ' selected' : '') + '>文本内容 (textContent)</option>',
-        '    <option value="innerHTML"' + (defaultAttribute === 'innerHTML' ? ' selected' : '') + '>HTML 内容</option>',
-        '    <option value="href"' + (defaultAttribute === 'href' ? ' selected' : '') + '>链接地址 (href)</option>',
-        '    <option value="src"' + (defaultAttribute === 'src' ? ' selected' : '') + '>图片/资源地址 (src)</option>',
-        '    <option value="backgroundImage"' + (defaultAttribute === 'backgroundImage' ? ' selected' : '') + '>背景图 (background-image)</option>',
-        '    <option value="poster"' + (defaultAttribute === 'poster' ? ' selected' : '') + '>视频封面 (poster)</option>',
-        '    <option value="value"' + (defaultAttribute === 'value' ? ' selected' : '') + '>表单值 (value)</option>',
-        '    <option value="alt"' + (defaultAttribute === 'alt' ? ' selected' : '') + '>替代文本 (alt)</option>',
-        '    <option value="title"' + (defaultAttribute === 'title' ? ' selected' : '') + '>标题 (title)</option>',
-        '  </select>',
+        buildDropdownTrigger('提取属性', ({
+          innerText: '显示文本 (innerText)',
+          text: '文本内容 (textContent)',
+          innerHTML: 'HTML 内容',
+          href: '链接地址 (href)',
+          src: '图片/资源地址 (src)',
+          backgroundImage: '背景图 (background-image)',
+          poster: '视频封面 (poster)',
+          value: '表单值 (value)',
+          alt: '替代文本 (alt)',
+          title: '标题 (title)'
+        }[selectedAttribute] || selectedAttribute), 'mark-attribute-menu') + '<div class="__aibrowser-recorder-mark-candidate-menu" data-role="mark-attribute-menu">' + attributeOptions + '</div></div>',
         '</div>',
-        hasMarkFields
-          ? ''
-          : '<div class="__aibrowser-recorder-mark-hint">' + (hasMarkTables ? '当前数据表没有字段，请先在工作台的数据表中创建字段。' : '当前还没有数据表，请先在工作台创建数据表。') + '</div>',
         '<div class="__aibrowser-recorder-mark-actions">',
-        '  <button type="button" data-action="save-mark"' + (hasMarkFields ? '' : ' disabled') + '>保存标注</button>',
+        '  <button type="button" data-action="save-mark"' + (hasMarkFields && hasMarkTables ? '' : ' disabled') + '>保存标注</button>',
         '  <button type="button" data-action="cancel-mark" class="secondary">取消</button>',
         '</div>'
       ].join('');
+
+      if (markBox instanceof HTMLElement && headerEl instanceof HTMLElement) {
+        const availableHeight = Math.max(root.clientHeight - headerEl.offsetHeight - 36, 180);
+        markBox.style.height = availableHeight + 'px';
+        markBox.style.maxHeight = availableHeight + 'px';
+      }
     } else {
       markBox.classList.remove('is-visible');
       markBox.innerHTML = '';
+      if (markBox instanceof HTMLElement) {
+        markBox.style.height = '';
+        markBox.style.maxHeight = '';
+      }
     }
 
     if (!state.events.length) {
@@ -1189,7 +1659,9 @@ const RECORDER_INIT_SCRIPT = `
           url: window.location.href,
           title: document.title,
           selector: buildSelector(target),
-          elementMeta: getElementMeta(target)
+          elementMeta: getElementMeta(target),
+          candidateTargets: collectMarkCandidates(target, event.clientX, event.clientY),
+          selectedCandidateIndex: 0
         }
       });
       event.preventDefault();
@@ -1409,6 +1881,33 @@ export function classifyRecordedNavigation(
   return { action: 'navigate', nextState: historyState };
 }
 
+export function resolveRecordedNavigationMeta(params: {
+  action: RecordingEvent['action'];
+  previousEvent?: RecordingEvent;
+  openerAction?: RecordingEvent['openerAction'];
+}): Pick<RecordingEvent, 'navigationKind' | 'navigationSource'> {
+  if (params.action === 'back') {
+    return { navigationKind: 'derived', navigationSource: 'back' };
+  }
+
+  if (params.action === 'forward') {
+    return { navigationKind: 'derived', navigationSource: 'forward' };
+  }
+
+  if (params.openerAction === 'contextmenu' || params.openerAction === 'middle-click') {
+    return {
+      navigationKind: 'derived',
+      navigationSource: params.openerAction
+    };
+  }
+
+  if (params.previousEvent?.action === 'click') {
+    return { navigationKind: 'derived', navigationSource: 'click' };
+  }
+
+  return { navigationKind: 'explicit', navigationSource: 'direct' };
+}
+
 export class BrowserRecorder {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
@@ -1497,7 +1996,11 @@ export class BrowserRecorder {
       recordAction?: RecordingEvent['recordAction'];
     }
   ): Promise<void> {
-    const event = createRecordedMarkEvent(request, payload);
+    const normalizedRequest = createRecordingMarkRequest(request.pageId, request, {
+      url: request.url,
+      title: request.title || ''
+    });
+    const event = createRecordedMarkEvent(normalizedRequest, payload);
     this.addRecordedEvent(event);
     this.currentStatusMessage = `已标注字段：${payload.fieldName}`;
     this.callbacks.onStatus?.({ state: 'mark-saved', message: this.currentStatusMessage, mode: this.mode });
@@ -1595,6 +2098,11 @@ export class BrowserRecorder {
 
       const action = this.resolveNavigationAction(page, url);
       const opener = action === 'navigate' ? this.consumePendingOpenIntent(url) : undefined;
+      const navigationMeta = resolveRecordedNavigationMeta({
+        action,
+        previousEvent: this.recordedEvents[0],
+        openerAction: opener?.action
+      });
       const event: RecordingEvent = {
         id: this.nextEventId(),
         kind: 'action',
@@ -1607,7 +2115,9 @@ export class BrowserRecorder {
         openerUrl: opener?.url,
         openerSelector: opener?.selector,
         openerAction: opener?.action,
-        openerElementMeta: opener?.elementMeta
+        openerElementMeta: opener?.elementMeta,
+        navigationKind: navigationMeta.navigationKind,
+        navigationSource: navigationMeta.navigationSource
       };
 
       this.addRecordedEvent(event);
