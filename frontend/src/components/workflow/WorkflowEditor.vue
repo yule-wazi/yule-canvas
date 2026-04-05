@@ -610,6 +610,40 @@ const nodeTypes = {
 
 const { project, fitView } = useVueFlow();
 
+function getApproximateNodeWidth(blockType: string) {
+  if (blockType === 'condition') return 220;
+  if (blockType === 'loop') return 180;
+  return 150;
+}
+
+function getHandleSide(handleId: string | undefined, role: 'source' | 'target') {
+  const handle = handleId || '';
+
+  if (handle.includes('left') || handle === 'loop-start') return 'left';
+  if (handle.includes('right') || handle === 'loop-end') return 'right';
+  if (handle.includes('bottom')) return 'bottom';
+  if (handle.includes('top')) return 'top';
+
+  return role === 'source' ? 'right' : 'left';
+}
+
+function getEndpointX(
+  blockMap: Map<string, Block>,
+  blockId: string,
+  handleId: string | undefined,
+  role: 'source' | 'target'
+) {
+  const block = blockMap.get(blockId);
+  if (!block) return 0;
+
+  const side = getHandleSide(handleId, role);
+  const width = getApproximateNodeWidth(block.type);
+
+  if (side === 'right') return block.position.x + width;
+  if (side === 'bottom' || side === 'top') return block.position.x + width / 2;
+  return block.position.x;
+}
+
 const workflowStore = useWorkflowStore();
 const dataTableStore = useDataTableStore();
 const canvasAreaRef = ref<HTMLElement | null>(null);
@@ -1840,13 +1874,23 @@ const elements = computed({
     }).filter(node => node !== null);
 
     const blockPositionMap = new Map(workflowStore.blocks.map(block => [block.id, block.position]));
+    const blockMap = new Map(workflowStore.blocks.map(block => [block.id, block]));
 
     const edges = workflowStore.connections.map(conn => {
       const sourcePosition = blockPositionMap.get(conn.source);
       const targetPosition = blockPositionMap.get(conn.target);
-      const isVerticalLayout = sourcePosition && targetPosition
-        ? Math.abs(sourcePosition.y - targetPosition.y) > 80
-        : false;
+      const sourceEndpointX = getEndpointX(blockMap, conn.source, conn.sourceHandle, 'source');
+      const targetEndpointX = getEndpointX(blockMap, conn.target, conn.targetHandle, 'target');
+      const isBezierLayout = targetEndpointX > sourceEndpointX;
+      const positionDelta = sourcePosition && targetPosition
+        ? {
+            dx: Math.abs(sourcePosition.x - targetPosition.x),
+            dy: Math.abs(sourcePosition.y - targetPosition.y)
+          }
+        : null;
+      const smoothOffset = positionDelta
+        ? positionDelta.dy > 120 ? 24 : 32
+        : 24;
 
       return {
         id: conn.id,
@@ -1854,12 +1898,12 @@ const elements = computed({
         target: conn.target,
         sourceHandle: conn.sourceHandle || 'source-right',
         targetHandle: conn.targetHandle || 'target-left',
-        type: isVerticalLayout ? 'smoothstep' : 'default',
+        type: isBezierLayout ? 'default' : 'smoothstep',
         animated: false,
-        pathOptions: isVerticalLayout
+        pathOptions: !isBezierLayout
           ? {
               borderRadius: 18,
-              offset: 24
+              offset: smoothOffset
             }
           : undefined,
         markerEnd: {
