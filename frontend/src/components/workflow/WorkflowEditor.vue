@@ -869,6 +869,15 @@ const currentLoopSampleEvents = computed(() => {
   return [] as RecordingEventItem[];
 });
 
+const loopCaptureFeedbackHint = computed(() => {
+  if (!loopCaptureDiffVisible.value) {
+    return '';
+  }
+
+  const parts = [loopCaptureDiffTitle.value, ...loopCaptureDiffDetails.value.slice(0, 2)].filter(Boolean);
+  return parts.join(' | ');
+});
+
 const loopCaptureViewState = computed(() => {
   if (!loopCaptureState.active) {
     return {
@@ -903,8 +912,8 @@ const loopCaptureViewState = computed(() => {
   return {
     active: true,
     phase: 'recording-last' as const,
-    title: '尾部循环子任务',
-    hint: '当前只显示尾部子任务记录。',
+    title: loopCaptureDiffVisible.value ? '循环录制校验未通过' : '尾部循环子任务',
+    hint: loopCaptureDiffVisible.value ? loopCaptureFeedbackHint.value : '当前只显示尾部子任务记录。',
     visibleEventIds: currentLoopSampleEvents.value.map(event => event.id)
   };
 });
@@ -1685,7 +1694,7 @@ function buildLoopCaptureDraft(firstSample: RecordingEventItem[], lastSample: Re
     }
 
     if (differingIndices.length === 0) {
-      return;
+      continue;
     }
 
     const localNthIndex = differingIndices[0];
@@ -1819,6 +1828,10 @@ async function cancelLoopCapture() {
 async function finishLoopCapture() {
   const sampleEvents = getNewRecordingEventsSince(loopCaptureState.lastBaselineIds);
   if (!sampleEvents.length) {
+    showLoopCaptureDiff('尾部循环子任务还没有录到有效事件', [
+      '当前尾部子任务记录区没有新增事件。',
+      '请先在尾部样本上完成一次有效操作或标注，再结束循环录制。'
+    ]);
     toast.value?.show({ message: '尾部循环子任务还没有录到有效事件', type: 'warning' });
     return;
   }
@@ -1832,6 +1845,15 @@ async function finishLoopCapture() {
     const details = Array.isArray(error?.details) ? error.details : [];
     showLoopCaptureDiff(error?.message || '两个循环任务差异过大', details);
     toast.value?.show({ message: error?.message || '两个循环任务差异过大', type: 'error' });
+    socketService.setRecordingCaptureEnabled(true);
+    return;
+  }
+
+  if (!loopDraft || !Array.isArray(loopDraft.fieldNames)) {
+    showLoopCaptureDiff('循环模板生成失败', [
+      '系统未能生成有效的循环模板，请检查首尾样本是否包含足够且一致的关键事件。'
+    ]);
+    toast.value?.show({ message: '循环模板生成失败', type: 'error' });
     socketService.setRecordingCaptureEnabled(true);
     return;
   }
