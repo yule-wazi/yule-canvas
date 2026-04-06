@@ -144,6 +144,14 @@ export interface RecordingMarkConfig {
   disableRecordAction?: boolean;
 }
 
+interface RecordingLoopUiState {
+  active: boolean;
+  phase: 'idle' | 'recording-first' | 'transition' | 'recording-last';
+  title?: string;
+  hint?: string;
+  visibleEventIds?: string[];
+}
+
 export interface RecordingPageHistoryState {
   entries: string[];
   index: number;
@@ -216,7 +224,10 @@ const RECORDER_INIT_SCRIPT = `
     },
     loopControl: {
       active: false,
-      phase: 'idle'
+      phase: 'idle',
+      title: '',
+      hint: '',
+      visibleEventIds: []
     },
     nextRecordAction: 'append',
     pendingMarkRequest: null,
@@ -1430,7 +1441,7 @@ const RECORDER_INIT_SCRIPT = `
     root.classList.toggle('__aibrowser-recorder-is-marking', !!state.pendingMarkRequest);
 
     if (loopControlsEl instanceof HTMLElement) {
-      const loopControl = state.loopControl || { active: false, phase: 'idle' };
+      const loopControl = state.loopControl || { active: false, phase: 'idle', title: '', hint: '', visibleEventIds: [] };
       if (!loopControl.active) {
         loopControlsEl.innerHTML = '<div class="__aibrowser-recorder-loop-panel"><div class="__aibrowser-recorder-loop-panel-title">循环录制</div><div class="__aibrowser-recorder-loop-panel-hint">开始录制首个循环子任务，后续可在这里继续控制尾部子任务录制。</div><div class="__aibrowser-recorder-loop-panel-actions"><button type="button" data-action="start-loop-capture">循环录制</button></div></div>';
       } else if (loopControl.phase === 'recording-first') {
@@ -1441,6 +1452,11 @@ const RECORDER_INIT_SCRIPT = `
         loopControlsEl.innerHTML = '<div class="__aibrowser-recorder-loop-panel"><div class="__aibrowser-recorder-loop-panel-title">尾部循环子任务</div><div class="__aibrowser-recorder-loop-panel-hint">当前正在录制尾部循环子任务，完成后系统会生成循环录制结果。</div><div class="__aibrowser-recorder-loop-panel-actions"><button type="button" data-action="finish-loop-capture">完成循环录制</button><button type="button" data-action="cancel-loop-capture">取消循环录制</button></div></div>';
       }
     }
+
+    const loopControl = state.loopControl || { active: false, phase: 'idle', title: '', hint: '', visibleEventIds: [] };
+    const visibleEvents = loopControl.active
+      ? state.events.filter((event) => Array.isArray(loopControl.visibleEventIds) && loopControl.visibleEventIds.includes(event.id))
+      : state.events;
 
     if (state.pendingMarkRequest) {
       const markTables = Array.isArray(state.markConfig?.tables) ? state.markConfig.tables : [];
@@ -1588,12 +1604,31 @@ const RECORDER_INIT_SCRIPT = `
       }
     }
 
-    if (!state.events.length) {
+    if (!visibleEvents.length) {
+      if (loopControl.active) {
+        eventsEl.innerHTML = [
+          '<div class="__aibrowser-recorder-item">',
+          '  <div class="__aibrowser-recorder-meta"><strong>' + escapeHtml(loopControl.title || '循环子任务录制') + '</strong></div>',
+          '  <div class="__aibrowser-recorder-meta">' + escapeHtml(loopControl.hint || '') + '</div>',
+          '</div>',
+          '<div class="__aibrowser-recorder-empty">' + (loopControl.phase === 'transition' ? '当前处于过渡阶段，这段操作不会被记录。' : '当前子任务还没有记录到事件。') + '</div>'
+        ].join('');
+        return;
+      }
       eventsEl.innerHTML = '<div class="__aibrowser-recorder-empty">录制开始后，这里显示关键操作。</div>';
       return;
     }
 
-    eventsEl.innerHTML = state.events
+    eventsEl.innerHTML =
+      (loopControl.active
+        ? [
+            '<div class="__aibrowser-recorder-item">',
+            '  <div class="__aibrowser-recorder-meta"><strong>' + escapeHtml(loopControl.title || '循环子任务录制') + '</strong></div>',
+            '  <div class="__aibrowser-recorder-meta">' + escapeHtml(loopControl.hint || '') + '</div>',
+            '</div>'
+          ].join('')
+        : '') +
+      visibleEvents
       .map((event) => {
         const meta = [];
         if (event.title) meta.push('<div><strong>页面:</strong> ' + event.title + '</div>');
@@ -1902,11 +1937,17 @@ const RECORDER_INIT_SCRIPT = `
       state.loopControl = control && typeof control === 'object'
         ? {
             active: !!control.active,
-            phase: control.phase || 'idle'
+            phase: control.phase || 'idle',
+            title: control.title || '',
+            hint: control.hint || '',
+            visibleEventIds: Array.isArray(control.visibleEventIds) ? control.visibleEventIds : []
           }
         : {
             active: false,
-            phase: 'idle'
+            phase: 'idle',
+            title: '',
+            hint: '',
+            visibleEventIds: []
           };
       renderPanel();
     },
@@ -2035,9 +2076,12 @@ export class BrowserRecorder {
   private lastUrls = new WeakMap<Page, string>();
   private pageHistory = new WeakMap<Page, RecordingPageHistoryState>();
   private currentStatusMessage = '录制已启动，请开始操作';
-  private loopControlState: { active: boolean; phase: 'idle' | 'recording-first' | 'transition' | 'recording-last' } = {
+  private loopControlState: RecordingLoopUiState = {
     active: false,
-    phase: 'idle'
+    phase: 'idle',
+    title: '',
+    hint: '',
+    visibleEventIds: []
   };
   private eventSequence = 0;
   private recordedEvents: RecordingEvent[] = [];
@@ -2111,10 +2155,16 @@ export class BrowserRecorder {
   async setLoopControl(control: {
     active: boolean;
     phase: 'idle' | 'recording-first' | 'transition' | 'recording-last';
+    title?: string;
+    hint?: string;
+    visibleEventIds?: string[];
   }): Promise<void> {
     this.loopControlState = {
       active: Boolean(control.active),
-      phase: control.phase
+      phase: control.phase,
+      title: control.title || '',
+      hint: control.hint || '',
+      visibleEventIds: Array.isArray(control.visibleEventIds) ? control.visibleEventIds.filter(id => typeof id === 'string') : []
     };
     await this.broadcastLoopControl();
   }

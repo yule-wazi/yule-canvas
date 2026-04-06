@@ -155,7 +155,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('set-recording-loop-control', async ({ active, phase }) => {
+  socket.on('set-recording-loop-control', async ({ active, phase, title, hint, visibleEventIds }) => {
     const recorder = browserRecorders.get(socket.id);
     if (!recorder) {
       return;
@@ -164,7 +164,10 @@ io.on('connection', (socket) => {
     try {
       await recorder.setLoopControl({
         active: Boolean(active),
-        phase: phase === 'recording-first' || phase === 'transition' || phase === 'recording-last' ? phase : 'idle'
+        phase: phase === 'recording-first' || phase === 'transition' || phase === 'recording-last' ? phase : 'idle',
+        title: typeof title === 'string' ? title : '',
+        hint: typeof hint === 'string' ? hint : '',
+        visibleEventIds: Array.isArray(visibleEventIds) ? visibleEventIds.filter((id) => typeof id === 'string') : []
       });
     } catch (error: any) {
       socket.emit('error', { message: error.message || '同步循环录制状态失败' });

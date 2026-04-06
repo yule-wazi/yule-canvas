@@ -294,10 +294,19 @@
         </div>
       </div>
       <div class="recording-events">
-        <div v-if="recordingEvents.length === 0" class="empty-recording-state">
-          录制开始后，这里只显示关键操作和字段标注。
+        <div v-if="loopCaptureState.active" class="loop-capture-record-space">
+          <div class="loop-capture-record-space-title">{{ loopCaptureViewState.title }}</div>
+          <div class="loop-capture-record-space-hint">{{ loopCaptureViewState.hint }}</div>
         </div>
-        <div v-for="event in recordingEvents" :key="event.id" class="recording-event-item">
+        <div v-if="!displayedRecordingEvents.length" class="empty-recording-state">
+          <template v-if="loopCaptureState.active">
+            {{ loopCaptureState.phase === 'transition' ? '当前处于过渡阶段，这段操作不会被记录。' : '当前子任务还没有记录到事件。' }}
+          </template>
+          <template v-else>
+          录制开始后，这里只显示关键操作和字段标注。
+          </template>
+        </div>
+        <div v-for="event in displayedRecordingEvents" :key="event.id" class="recording-event-item">
           <div class="recording-event-line">
             <span class="recording-event-summary">{{ formatRecordingEventSummary(event) }}</span>
             <button class="recording-event-delete" @click="deleteRecordingEvent(event.id)">删除</button>
@@ -828,6 +837,66 @@ const recordingMarkTableOptions = computed(() => {
       type: mapDataTableColumnTypeToRecordingFieldType(column.type) || 'text'
     }))
   }));
+});
+
+const currentLoopSampleEvents = computed(() => {
+  if (!loopCaptureState.active) {
+    return [] as RecordingEventItem[];
+  }
+
+  if (loopCaptureState.phase === 'recording-first') {
+    return getNewRecordingEventsSince(loopCaptureState.firstBaselineIds);
+  }
+
+  if (loopCaptureState.phase === 'recording-last') {
+    return getNewRecordingEventsSince(loopCaptureState.lastBaselineIds);
+  }
+
+  return [] as RecordingEventItem[];
+});
+
+const loopCaptureViewState = computed(() => {
+  if (!loopCaptureState.active) {
+    return {
+      active: false,
+      phase: 'idle' as const,
+      title: '',
+      hint: '',
+      visibleEventIds: [] as string[]
+    };
+  }
+
+  if (loopCaptureState.phase === 'recording-first') {
+    return {
+      active: true,
+      phase: 'recording-first' as const,
+      title: '首个循环子任务',
+      hint: '当前只显示首个子任务记录。',
+      visibleEventIds: currentLoopSampleEvents.value.map(event => event.id)
+    };
+  }
+
+  if (loopCaptureState.phase === 'transition') {
+    return {
+      active: true,
+      phase: 'transition' as const,
+      title: '定位尾部样本',
+      hint: '当前处于过渡阶段，这段操作不会被记录。',
+      visibleEventIds: [] as string[]
+    };
+  }
+
+  return {
+    active: true,
+    phase: 'recording-last' as const,
+    title: '尾部循环子任务',
+    hint: '当前只显示尾部子任务记录。',
+    visibleEventIds: currentLoopSampleEvents.value.map(event => event.id)
+  };
+});
+
+const displayedRecordingEvents = computed(() => {
+  return loopCaptureState.active ? currentLoopSampleEvents.value : recordingEvents.value;
 });
 
 // 工作流变量
@@ -2050,11 +2119,21 @@ watch(
 );
 
 watch(
-  () => [isRecording.value, loopCaptureState.active, loopCaptureState.phase],
-  ([recording, active, phase]) => {
+  () => ({
+    recording: isRecording.value,
+    active: loopCaptureViewState.value.active,
+    phase: loopCaptureViewState.value.phase,
+    title: loopCaptureViewState.value.title,
+    hint: loopCaptureViewState.value.hint,
+    visibleEventIds: loopCaptureViewState.value.visibleEventIds.join('|')
+  }),
+  ({ recording, active, phase, title, hint, visibleEventIds }) => {
     socketService.setRecordingLoopControl({
       active: Boolean(recording && active),
-      phase: recording && active ? (phase as 'idle' | 'recording-first' | 'transition' | 'recording-last') : 'idle'
+      phase: recording && active ? (phase as 'idle' | 'recording-first' | 'transition' | 'recording-last') : 'idle',
+      title: recording && active ? title : '',
+      hint: recording && active ? hint : '',
+      visibleEventIds: recording && active && visibleEventIds ? loopCaptureViewState.value.visibleEventIds : []
     });
   },
   { immediate: true }
@@ -4016,6 +4095,25 @@ async function executeWorkflow() {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.loop-capture-record-space {
+  padding: 0.9rem 0 0.45rem;
+  border-bottom: 1px solid #30363d;
+  margin-bottom: 0.25rem;
+}
+
+.loop-capture-record-space-title {
+  color: #79c0ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.loop-capture-record-space-hint {
+  color: #8b949e;
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 .recording-events {

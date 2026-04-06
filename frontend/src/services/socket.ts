@@ -88,6 +88,9 @@ class SocketClient {
   setRecordingLoopControl(control: {
     active: boolean;
     phase: 'idle' | 'recording-first' | 'transition' | 'recording-last';
+    title?: string;
+    hint?: string;
+    visibleEventIds?: string[];
   }) {
     this.socket?.emit('set-recording-loop-control', control);
   }
