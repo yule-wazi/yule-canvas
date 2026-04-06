@@ -2410,6 +2410,75 @@ export class BrowserRecorder {
     });
 
     await this.installRecorderRuntime(page);
+    await this.captureSpawnedPageNavigationFallback(page, pageId);
+  }
+
+  private async captureSpawnedPageNavigationFallback(page: Page, pageId: string): Promise<void> {
+    if (this.stopRequested || !this.captureEnabled) {
+      return;
+    }
+
+    if (this.lastUrls.has(page) || this.pendingOpenIntents.length === 0) {
+      return;
+    }
+
+    const pendingIntent = this.pendingOpenIntents[this.pendingOpenIntents.length - 1];
+    if (!pendingIntent || (pendingIntent.action !== 'contextmenu' && pendingIntent.action !== 'middle-click')) {
+      return;
+    }
+
+    await page.waitForLoadState('domcontentloaded', { timeout: 2000 }).catch(() => null);
+
+    const url = page.url();
+    if (!url || url === 'about:blank' || this.lastUrls.get(page) === url) {
+      return;
+    }
+
+    const opener = this.consumePendingOpenIntent(url);
+    if (!opener || (opener.action !== 'contextmenu' && opener.action !== 'middle-click')) {
+      return;
+    }
+
+    this.lastUrls.set(page, url);
+
+    let title = '';
+    try {
+      title = await page.title();
+    } catch {
+      title = '';
+    }
+
+    const action = this.resolveNavigationAction(page, url);
+    const navigationMeta = resolveRecordedNavigationMeta({
+      action,
+      previousEvent: this.recordedEvents[0],
+      openerAction: opener.action
+    });
+
+    const event: RecordingEvent = {
+      id: this.nextEventId(),
+      kind: 'action',
+      action,
+      timestamp: Date.now(),
+      pageId,
+      url,
+      title,
+      openerPageId: opener.pageId,
+      openerUrl: opener.url,
+      openerSelector: opener.selector,
+      openerAction: opener.action,
+      openerElementMeta: opener.elementMeta,
+      navigationKind: navigationMeta.navigationKind,
+      navigationSource: navigationMeta.navigationSource
+    };
+
+    this.spawnedPageOpeners.set(page, opener);
+    this.addRecordedEvent(event);
+    this.currentStatusMessage = `已记录：${this.describeAction(action)}`;
+    this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
+    await this.suppressNextZeroScroll(page);
+    await this.broadcastEvents();
+    await this.pushStatusToPage(page, this.currentStatusMessage);
   }
 
   private async installRecorderRuntime(page: Page): Promise<void> {
