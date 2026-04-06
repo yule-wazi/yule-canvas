@@ -16,7 +16,7 @@ export interface RecordingElementMeta {
 
 export interface RecordingEvent {
   id: string;
-  kind: 'action' | 'mark';
+  kind: 'action' | 'mark' | 'meta';
   action:
     | 'navigate'
     | 'click'
@@ -27,7 +27,8 @@ export interface RecordingEvent {
     | 'scroll'
     | 'back'
     | 'forward'
-    | 'field-mark';
+    | 'field-mark'
+    | 'loop-capture';
   timestamp: number;
   pageId: string;
   url: string;
@@ -48,6 +49,17 @@ export interface RecordingEvent {
   openerElementMeta?: RecordingElementMeta;
   navigationKind?: 'explicit' | 'derived';
   navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward';
+  summary?: string;
+  loopCapture?: {
+    variableName: string;
+    startValue: number;
+    endValue: number;
+    count: number;
+    templateEvents: any[];
+    firstSample: any[];
+    lastSample: any[];
+    fieldNames: string[];
+  };
 }
 
 export interface RecordingMarkRequest {
@@ -128,6 +140,7 @@ export interface RecordingMarkTableOption {
 export interface RecordingMarkConfig {
   selectedTableId: string;
   tables: RecordingMarkTableOption[];
+  disableRecordAction?: boolean;
 }
 
 export interface RecordingPageHistoryState {
@@ -197,7 +210,8 @@ const RECORDER_INIT_SCRIPT = `
     events: [],
     markConfig: {
       selectedTableId: '',
-      tables: []
+      tables: [],
+      disableRecordAction: false
     },
     nextRecordAction: 'append',
     pendingMarkRequest: null,
@@ -1372,7 +1386,7 @@ const RECORDER_INIT_SCRIPT = `
         selectedCandidate?.elementMeta?.tagName,
         selectedFieldType
       );
-      const nextRecordAction = state.nextRecordAction === 'new' ? 'new' : 'append';
+      const nextRecordAction = state.markConfig?.disableRecordAction ? 'append' : (state.nextRecordAction === 'new' ? 'new' : 'append');
       const tableOptions = hasMarkTables
         ? markTables
             .map((table) => {
@@ -1437,13 +1451,17 @@ const RECORDER_INIT_SCRIPT = `
           ? buildDropdownTrigger('数据表', selectedTable?.name || '', 'mark-table-menu') + '<div class="__aibrowser-recorder-mark-candidate-menu" data-role="mark-table-menu">' + tableOptions + '</div></div>'
           : '<div class="__aibrowser-recorder-mark-hint">当前还没有数据表，请先在工作台创建数据表。</div>',
         '</div>',
-        '<div class="__aibrowser-recorder-mark-field">',
-        '  <label>写入方式</label>',
-        '  <div class="__aibrowser-recorder-mark-write-mode">',
-        '    <button type="button" data-action="start-new-record"' + (nextRecordAction === 'new' ? ' class="is-active"' : '') + '>开始新记录</button>',
-        '    <div class="__aibrowser-recorder-mark-write-hint">' + (nextRecordAction === 'new' ? '本次保存将开始新记录' : '默认继续当前记录') + '</div>',
-        '  </div>',
-        '</div>',
+        (state.markConfig?.disableRecordAction
+          ? ''
+          : [
+              '<div class="__aibrowser-recorder-mark-field">',
+              '  <label>写入方式</label>',
+              '  <div class="__aibrowser-recorder-mark-write-mode">',
+              '    <button type="button" data-action="start-new-record"' + (nextRecordAction === 'new' ? ' class="is-active"' : '') + '>开始新记录</button>',
+              '    <div class="__aibrowser-recorder-mark-write-hint">' + (nextRecordAction === 'new' ? '本次保存将开始新记录' : '默认继续当前记录') + '</div>',
+              '  </div>',
+              '</div>'
+            ].join('')),
         '<div class="__aibrowser-recorder-mark-field">',
         '  <label>字段名</label>',
         hasMarkFields
@@ -1789,9 +1807,10 @@ const RECORDER_INIT_SCRIPT = `
       state.markConfig = config && typeof config === 'object'
         ? {
             selectedTableId: config.selectedTableId || '',
-            tables: Array.isArray(config.tables) ? config.tables : []
+            tables: Array.isArray(config.tables) ? config.tables : [],
+            disableRecordAction: !!config.disableRecordAction
           }
-        : { selectedTableId: '', tables: [] };
+        : { selectedTableId: '', tables: [], disableRecordAction: false };
       renderPanel();
     },
     setPendingMark(request) {
@@ -1914,6 +1933,7 @@ export class BrowserRecorder {
   private callbacks: BrowserRecorderCallbacks;
   private mode: RecordingMode = 'action';
   private stopRequested = false;
+  private captureEnabled = true;
   private pageIds = new WeakMap<Page, string>();
   private lastUrls = new WeakMap<Page, string>();
   private pageHistory = new WeakMap<Page, RecordingPageHistoryState>();
@@ -1924,7 +1944,8 @@ export class BrowserRecorder {
   private pendingOpenIntents: PendingOpenIntent[] = [];
   private markConfig: RecordingMarkConfig = {
     selectedTableId: '',
-    tables: []
+    tables: [],
+    disableRecordAction: false
   };
 
   constructor(callbacks: BrowserRecorderCallbacks = {}) {
@@ -1980,9 +2001,48 @@ export class BrowserRecorder {
   async setMarkConfig(config: RecordingMarkConfig): Promise<void> {
     this.markConfig = {
       selectedTableId: config.selectedTableId || '',
-      tables: Array.isArray(config.tables) ? config.tables : []
+      tables: Array.isArray(config.tables) ? config.tables : [],
+      disableRecordAction: Boolean(config.disableRecordAction)
     };
     await this.broadcastMarkConfig();
+  }
+
+  async setCaptureEnabled(enabled: boolean): Promise<void> {
+    this.captureEnabled = enabled;
+    this.currentStatusMessage = enabled ? '已恢复录制采集' : '录制采集已暂停';
+    this.callbacks.onStatus?.({
+      state: enabled ? 'capture-resumed' : 'capture-paused',
+      message: this.currentStatusMessage,
+      mode: this.mode
+    });
+    await this.broadcastStatus(this.currentStatusMessage);
+  }
+
+  async appendLoopCaptureEvent(payload: {
+    summary: string;
+    firstSampleIds: string[];
+    lastSampleIds: string[];
+    loopCapture: RecordingEvent['loopCapture'];
+  }): Promise<void> {
+    const removableIds = new Set([...(payload.firstSampleIds || []), ...(payload.lastSampleIds || [])]);
+    this.recordedEvents = this.recordedEvents.filter(event => !removableIds.has(event.id));
+
+    this.addRecordedEvent({
+      id: this.nextEventId(),
+      kind: 'meta',
+      action: 'loop-capture',
+      timestamp: Date.now(),
+      pageId: 'loop-capture',
+      url: '',
+      title: '',
+      summary: payload.summary || '循环录制',
+      loopCapture: payload.loopCapture || undefined
+    });
+
+    this.currentStatusMessage = '已写入循环录制结果';
+    this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
+    await this.broadcastEvents();
+    await this.broadcastStatus(this.currentStatusMessage);
   }
 
   async confirmMark(
@@ -2000,6 +2060,10 @@ export class BrowserRecorder {
       url: request.url,
       title: request.title || ''
     });
+
+    if (!this.captureEnabled) {
+      return;
+    }
     const event = createRecordedMarkEvent(normalizedRequest, payload);
     this.addRecordedEvent(event);
     this.currentStatusMessage = `已标注字段：${payload.fieldName}`;
@@ -2038,6 +2102,9 @@ export class BrowserRecorder {
     const pageId = this.ensurePageId(page);
 
     if (payload.kind === 'mark-request' && payload.request) {
+      if (!this.captureEnabled) {
+        return;
+      }
       const request = createRecordingMarkRequest(pageId, payload.request, {
         url: page.url(),
         title: payload.request?.title || ''
@@ -2051,6 +2118,10 @@ export class BrowserRecorder {
     }
 
     if (payload.kind !== 'action') {
+      return;
+    }
+
+    if (!this.captureEnabled) {
       return;
     }
 
@@ -2094,6 +2165,10 @@ export class BrowserRecorder {
         title = await page.title();
       } catch {
         title = '';
+      }
+
+      if (!this.captureEnabled) {
+        return;
       }
 
       const action = this.resolveNavigationAction(page, url);
@@ -2285,7 +2360,8 @@ export class BrowserRecorder {
       scroll: '滚动页面',
       back: '返回',
       forward: '前进',
-      'field-mark': '标注字段'
+      'field-mark': '标注字段',
+      'loop-capture': '循环录制'
     };
     return labels[action] || action;
   }

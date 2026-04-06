@@ -81,8 +81,13 @@ class SocketClient {
     this.socket?.emit('set-recording-mode', { mode });
   }
 
+  setRecordingCaptureEnabled(enabled: boolean) {
+    this.socket?.emit('set-recording-capture-enabled', { enabled });
+  }
+
   setRecordingMarkConfig(config: {
     selectedTableId: string;
+    disableRecordAction?: boolean;
     tables: Array<{
       id: string;
       name: string;
@@ -108,6 +113,15 @@ class SocketClient {
 
   clearRecordingEvents() {
     this.socket?.emit('clear-recording-events');
+  }
+
+  appendLoopCaptureEvent(payload: {
+    summary: string;
+    firstSampleIds: string[];
+    lastSampleIds: string[];
+    loopCapture: any;
+  }) {
+    this.socket?.emit('append-loop-capture-event', payload);
   }
 
   onRecordingStatus(callback: (status: { state: string; message: string; mode?: 'action' | 'mark' }) => void) {

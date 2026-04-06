@@ -139,6 +139,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('set-recording-capture-enabled', async ({ enabled }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      return;
+    }
+
+    try {
+      await recorder.setCaptureEnabled(Boolean(enabled));
+    } catch (error: any) {
+      socket.emit('error', { message: error.message || '切换录制采集状态失败' });
+    }
+  });
+
   socket.on('confirm-record-mark', async ({ request, fieldName, fieldType, tableId, tableName, attribute, recordAction }) => {
     const recorder = browserRecorders.get(socket.id);
     if (!recorder) {
@@ -156,7 +169,7 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('set-recording-mark-config', async ({ selectedTableId, tables }) => {
+  socket.on('set-recording-mark-config', async ({ selectedTableId, tables, disableRecordAction }) => {
     const recorder = browserRecorders.get(socket.id);
     if (!recorder) {
       return;
@@ -165,6 +178,7 @@ io.on('connection', (socket) => {
     try {
       await recorder.setMarkConfig({
         selectedTableId: typeof selectedTableId === 'string' ? selectedTableId : '',
+        disableRecordAction: Boolean(disableRecordAction),
         tables: Array.isArray(tables)
           ? tables
               .map((table: any) => ({
@@ -203,6 +217,24 @@ io.on('connection', (socket) => {
     }
 
     await recorder.clearEvents();
+  });
+
+  socket.on('append-loop-capture-event', async ({ summary, firstSampleIds, lastSampleIds, loopCapture }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      return;
+    }
+
+    try {
+      await recorder.appendLoopCaptureEvent({
+        summary: typeof summary === 'string' ? summary : '',
+        firstSampleIds: Array.isArray(firstSampleIds) ? firstSampleIds : [],
+        lastSampleIds: Array.isArray(lastSampleIds) ? lastSampleIds : [],
+        loopCapture: loopCapture && typeof loopCapture === 'object' ? loopCapture : null
+      });
+    } catch (error: any) {
+      socket.emit('error', { message: error.message || '写入循环录制结果失败' });
+    }
   });
 
   socket.on('disconnect', () => {

@@ -239,6 +239,13 @@
         <span>{{ recordingEvents.length }} 条关键事件</span>
         <div class="recording-panel-toolbar-actions">
           <button
+            v-if="isRecording && !loopCaptureState.active"
+            @click="startLoopCapture"
+            class="btn-secondary"
+          >
+            循环录制
+          </button>
+          <button
             v-if="!isRecording && recordingEvents.length"
             @click="mapRecordingToWorkflow"
             class="btn-success"
@@ -262,6 +269,30 @@
           <button v-if="recordingEvents.length" @click="clearRecordingEvents" class="btn-icon">清空</button>
         </div>
       </div>
+      <div v-if="isRecording && loopCaptureState.active" class="loop-capture-panel">
+        <div class="loop-capture-title">循环子任务录制</div>
+        <div v-if="loopCaptureState.phase === 'recording-first'" class="loop-capture-body">
+          <p>当前正在录制首个循环子任务。动作模式和标注模式都可正常使用。</p>
+          <div class="loop-capture-actions">
+            <button @click="finishFirstLoopCaptureTask" class="btn-success" :disabled="loopCaptureState.busy">完成首个子任务</button>
+            <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
+          </div>
+        </div>
+        <div v-else-if="loopCaptureState.phase === 'transition'" class="loop-capture-body">
+          <p>已完成首个子任务。现在可以自由滚动、翻页或定位尾部样本，这段操作不会被记录。</p>
+          <div class="loop-capture-actions">
+            <button @click="startLastLoopCaptureTask" class="btn-primary" :disabled="loopCaptureState.busy">开始录制尾部子任务</button>
+            <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
+          </div>
+        </div>
+        <div v-else-if="loopCaptureState.phase === 'recording-last'" class="loop-capture-body">
+          <p>当前正在录制尾部循环子任务，完成后系统会比较两条样本并尝试生成循环模板。</p>
+          <div class="loop-capture-actions">
+            <button @click="finishLoopCapture" class="btn-success" :disabled="loopCaptureState.busy">完成循环录制</button>
+            <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
+          </div>
+        </div>
+      </div>
       <div class="recording-events">
         <div v-if="recordingEvents.length === 0" class="empty-recording-state">
           录制开始后，这里只显示关键操作和字段标注。
@@ -273,7 +304,7 @@
           </div>
           <div
             class="recording-event-meta"
-            v-if="event.selector || event.fieldName || event.tableName || event.attribute || event.recordAction || event.value || event.openerSelector || event.openerElementMeta?.href"
+            v-if="event.selector || event.fieldName || event.tableName || event.attribute || event.recordAction || event.value || event.openerSelector || event.openerElementMeta?.href || event.loopCapture"
           >
             <div v-if="event.title"><strong>页面:</strong> {{ event.title }}</div>
             <div v-if="event.selector"><strong>selector:</strong> {{ event.selector }}</div>
@@ -285,6 +316,9 @@
             <div v-if="event.openerSelector"><strong>来源元素:</strong> {{ event.openerSelector }}</div>
             <div v-if="event.openerAction"><strong>来源动作:</strong> {{ event.openerAction === 'contextmenu' ? '右键元素' : '中键打开' }}</div>
             <div v-if="event.openerElementMeta?.href"><strong>来源链接:</strong> {{ event.openerElementMeta.href }}</div>
+            <div v-if="event.loopCapture"><strong>循环变量:</strong> {{ event.loopCapture.variableName }} ({{ event.loopCapture.startValue }} → {{ event.loopCapture.endValue }})</div>
+            <div v-if="event.loopCapture"><strong>循环次数:</strong> {{ event.loopCapture.count }}</div>
+            <div v-if="event.loopCapture?.fieldNames?.length"><strong>字段集合:</strong> {{ event.loopCapture.fieldNames.join('、') }}</div>
           </div>
         </div>
       </div>
@@ -561,7 +595,7 @@ const WorkflowManager = defineAsyncComponent(() => import('./WorkflowManager.vue
 
 interface RecordingEventItem {
   id: string;
-  kind: 'action' | 'mark';
+  kind: 'action' | 'mark' | 'meta';
   action: string;
   timestamp: number;
   pageId: string;
@@ -599,6 +633,72 @@ interface RecordingEventItem {
   };
   navigationKind?: 'explicit' | 'derived';
   navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward';
+  summary?: string;
+  loopCapture?: {
+    variableName: string;
+    startValue: number;
+    endValue: number;
+    count: number;
+    templateEvents: RecordingEventExportItem[];
+    firstSample: RecordingEventExportItem[];
+    lastSample: RecordingEventExportItem[];
+    fieldNames: string[];
+  };
+}
+
+interface RecordingEventExportItem {
+  step?: number;
+  stepId?: string;
+  summary?: string;
+  kind?: 'action' | 'mark' | 'meta' | string;
+  action?: string;
+  timestamp?: number;
+  pageId?: string;
+  navigationKind?: 'explicit' | 'derived';
+  navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward';
+  page?: {
+    url?: string;
+    title?: string;
+  };
+  target?: {
+    selector?: string;
+    tagName?: string;
+    text?: string;
+    id?: string;
+    className?: string;
+    href?: string;
+    src?: string;
+    value?: string;
+  };
+  input?: {
+    value?: string;
+  };
+  scroll?: {
+    target?: string;
+    x?: number;
+    y?: number;
+  };
+  field?: {
+    name?: string;
+    type?: string;
+    tableId?: string;
+    tableName?: string;
+    attribute?: string;
+    recordAction?: 'new' | 'append' | string;
+  };
+  opener?: {
+    pageId?: string;
+    url?: string;
+    selector?: string;
+    action?: string;
+    href?: string;
+    text?: string;
+    tagName?: string;
+  };
+  loopCapture?: RecordingEventItem['loopCapture'];
+  raw?: {
+    value?: string;
+  };
 }
 
 // 定义节点类型
@@ -668,6 +768,15 @@ const recordingStatusText = ref('尚未开始录制');
 const recordingStartUrl = ref('');
 const recordingEvents = ref<RecordingEventItem[]>([]);
 const recordingMarkTableId = ref('');
+const loopCaptureState = reactive({
+  active: false,
+  phase: 'idle' as 'idle' | 'recording-first' | 'transition' | 'recording-last',
+  firstBaselineIds: [] as string[],
+  lastBaselineIds: [] as string[],
+  firstSample: [] as RecordingEventItem[],
+  lastSample: [] as RecordingEventItem[],
+  busy: false
+});
 const aiProvider = ref<'openrouter' | 'siliconflow' | 'qwen'>('openrouter');
 const aiModelName = ref('openai/gpt-4.1-mini');
 const aiApiKey = ref('');
@@ -767,7 +876,8 @@ function syncRecordingMarkConfig() {
 
   socketService.setRecordingMarkConfig({
     selectedTableId: recordingMarkTableId.value || '',
-    tables: recordingMarkTableOptions.value
+    tables: recordingMarkTableOptions.value,
+    disableRecordAction: loopCaptureState.active
   });
 }
 
@@ -1089,13 +1199,18 @@ function getRecordingEventLabel(action: string) {
     scroll: '滚动页面',
     back: '后退',
     forward: '前进',
-    'field-mark': '字段标注'
+    'field-mark': '字段标注',
+    'loop-capture': '循环录制'
   };
 
   return labels[action] || '未命名事件';
 }
 
 function buildRecordingEventSummaryText(event: RecordingEventItem) {
+  if (event.kind === 'meta' && event.action === 'loop-capture') {
+    return event.summary || '循环录制';
+  }
+
   if (event.kind === 'mark') {
     const fieldType = event.fieldType ? ` (${event.fieldType})` : '';
     return `标注字段 ${event.fieldName || '未命名字段'}${fieldType}`;
@@ -1147,68 +1262,71 @@ function buildRecordingEventSummaryText(event: RecordingEventItem) {
   return `${getRecordingEventLabel(event.action)}${selector ? `: ${selector}` : targetText ? `: ${targetText}` : ''}`;
 }
 
+function buildRecordingExportEvent(event: RecordingEventItem, step?: number): RecordingEventExportItem {
+  const scroll = event.action === 'scroll' ? parseRecordingScrollValue(event.value) : null;
+
+  return {
+    step,
+    stepId: event.id,
+    summary: buildRecordingEventSummaryText(event),
+    kind: event.kind,
+    action: event.action,
+    timestamp: event.timestamp,
+    pageId: event.pageId,
+    navigationKind: event.navigationKind,
+    navigationSource: event.navigationSource,
+    page: {
+      url: event.url,
+      title: event.title || ''
+    },
+    target: {
+      selector: event.selector || '',
+      tagName: event.elementMeta?.tagName || '',
+      text: normalizeRecordingText(event.elementMeta?.text),
+      id: event.elementMeta?.id || '',
+      className: event.elementMeta?.className || '',
+      href: event.elementMeta?.href || '',
+      src: event.elementMeta?.src || '',
+      value: event.elementMeta?.value || ''
+    },
+    input: event.action === 'type' || event.action === 'select'
+      ? {
+          value: event.value || ''
+        }
+      : undefined,
+    scroll: scroll || undefined,
+    field: event.kind === 'mark'
+      ? {
+          name: event.fieldName || '',
+          type: event.fieldType || 'text',
+          tableId: event.tableId || '',
+          tableName: event.tableName || '',
+          attribute: event.attribute || 'innerText',
+          recordAction: event.recordAction || 'new'
+        }
+      : undefined,
+    opener: event.openerSelector || event.openerPageId || event.openerElementMeta?.href
+      ? {
+          pageId: event.openerPageId || '',
+          url: event.openerUrl || '',
+          selector: event.openerSelector || '',
+          action: event.openerAction || '',
+          href: event.openerElementMeta?.href || '',
+          text: normalizeRecordingText(event.openerElementMeta?.text),
+          tagName: event.openerElementMeta?.tagName || ''
+        }
+      : undefined,
+    loopCapture: event.loopCapture,
+    raw: {
+      value: event.value || ''
+    }
+  };
+}
+
 function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'mark', status: string) {
   const orderedEvents = [...events]
     .reverse()
-    .map((event, index) => {
-      const scroll = event.action === 'scroll' ? parseRecordingScrollValue(event.value) : null;
-
-      return {
-        step: index + 1,
-        stepId: event.id,
-        summary: buildRecordingEventSummaryText(event),
-        kind: event.kind,
-        action: event.action,
-        timestamp: event.timestamp,
-        pageId: event.pageId,
-        navigationKind: event.navigationKind,
-        navigationSource: event.navigationSource,
-        page: {
-          url: event.url,
-          title: event.title || ''
-        },
-        target: {
-          selector: event.selector || '',
-          tagName: event.elementMeta?.tagName || '',
-          text: normalizeRecordingText(event.elementMeta?.text),
-          id: event.elementMeta?.id || '',
-          className: event.elementMeta?.className || '',
-          href: event.elementMeta?.href || '',
-          src: event.elementMeta?.src || '',
-          value: event.elementMeta?.value || ''
-        },
-        input: event.action === 'type' || event.action === 'select'
-          ? {
-              value: event.value || ''
-            }
-          : undefined,
-        scroll: scroll || undefined,
-        field: event.kind === 'mark'
-          ? {
-              name: event.fieldName || '',
-              type: event.fieldType || 'text',
-              tableId: event.tableId || '',
-              tableName: event.tableName || '',
-              attribute: event.attribute || 'innerText',
-              recordAction: event.recordAction || 'new'
-            }
-          : undefined,
-        opener: event.openerSelector || event.openerPageId || event.openerElementMeta?.href
-          ? {
-              pageId: event.openerPageId || '',
-              url: event.openerUrl || '',
-              selector: event.openerSelector || '',
-              action: event.openerAction || '',
-              href: event.openerElementMeta?.href || '',
-              text: normalizeRecordingText(event.openerElementMeta?.text),
-              tagName: event.openerElementMeta?.tagName || ''
-            }
-          : undefined,
-        raw: {
-          value: event.value || ''
-        }
-      };
-    });
+    .map((event, index) => buildRecordingExportEvent(event, index + 1));
 
   const pageOrder: string[] = [];
   const pages = new Map<string, {
@@ -1231,6 +1349,10 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
 
   orderedEvents.forEach(event => {
     actionCounts[event.action] = (actionCounts[event.action] || 0) + 1;
+
+    if (event.kind === 'meta') {
+      return;
+    }
 
     if (!pages.has(event.pageId)) {
       pages.set(event.pageId, {
@@ -1314,6 +1436,229 @@ function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'ma
     }),
     events: orderedEvents
   };
+}
+
+function getNewRecordingEventsSince(baselineIds: string[]) {
+  const baseline = new Set(baselineIds);
+  return recordingEvents.value.filter(event => !baseline.has(event.id));
+}
+
+function getChronologicalEvents(events: RecordingEventItem[]) {
+  return [...events].reverse();
+}
+
+function getLoopComparableEvents(events: RecordingEventItem[]) {
+  return getChronologicalEvents(events).filter(event => {
+    if (event.kind === 'meta') return false;
+    if (event.action === 'scroll') return false;
+    if (event.action === 'navigate' && event.navigationKind === 'derived') return false;
+    return true;
+  });
+}
+
+function buildLoopComparableSignature(events: RecordingEventItem[]) {
+  return getLoopComparableEvents(events).map(event => {
+    if (event.action === 'field-mark') {
+      return `field-mark:${event.fieldName || ''}:${event.fieldType || ''}`;
+    }
+    return event.action;
+  });
+}
+
+function replaceNthOfTypeAt(selector: string, nthIndex: number, replacement: string) {
+  let currentIndex = 0;
+  return selector.replace(/nth-of-type\((\d+)\)/g, (match) => {
+    if (currentIndex === nthIndex) {
+      currentIndex += 1;
+      return `nth-of-type(${replacement})`;
+    }
+    currentIndex += 1;
+    return match;
+  });
+}
+
+function extractNthValues(selector: string) {
+  return Array.from(selector.matchAll(/nth-of-type\((\d+)\)/g)).map(match => Number.parseInt(match[1], 10));
+}
+
+function buildLoopCaptureDraft(firstSample: RecordingEventItem[], lastSample: RecordingEventItem[]) {
+  const firstComparable = getLoopComparableEvents(firstSample);
+  const lastComparable = getLoopComparableEvents(lastSample);
+
+  if (firstComparable.length === 0 || lastComparable.length === 0) {
+    throw new Error('循环子任务不能为空');
+  }
+
+  const firstSignature = buildLoopComparableSignature(firstSample);
+  const lastSignature = buildLoopComparableSignature(lastSample);
+  if (firstSignature.length !== lastSignature.length || firstSignature.some((item, index) => item !== lastSignature[index])) {
+    throw new Error('两个循环任务差异过大：关键动作骨架不一致');
+  }
+
+  const pairedSelectors = firstComparable.map((event, index) => ({
+    action: event.action,
+    fieldName: event.fieldName || '',
+    firstSelector: event.selector || '',
+    lastSelector: lastComparable[index]?.selector || ''
+  })).filter(item => item.firstSelector && item.lastSelector);
+
+  let varyingNthIndex = -1;
+  let startValue = 0;
+  let endValue = 0;
+
+  for (const pair of pairedSelectors) {
+    const firstNthValues = extractNthValues(pair.firstSelector);
+    const lastNthValues = extractNthValues(pair.lastSelector);
+
+    if (firstNthValues.length !== lastNthValues.length) {
+      throw new Error('两个循环任务差异过大：选择器结构不一致');
+    }
+
+    firstNthValues.forEach((firstValue, nthIndex) => {
+      const lastValue = lastNthValues[nthIndex];
+      if (firstValue === lastValue) {
+        return;
+      }
+
+      if (varyingNthIndex === -1) {
+        varyingNthIndex = nthIndex;
+        startValue = firstValue;
+        endValue = lastValue;
+        return;
+      }
+
+      if (varyingNthIndex !== nthIndex || startValue !== firstValue || endValue !== lastValue) {
+        throw new Error('两个循环任务差异过大：无法定位统一的循环索引');
+      }
+    });
+  }
+
+  if (varyingNthIndex === -1) {
+    throw new Error('两个循环任务差异过小：没有找到可参数化的循环索引');
+  }
+
+  if (endValue < startValue) {
+    throw new Error('当前仅支持从前到后的循环样本，请重新录制尾部样本');
+  }
+
+  const variableName = 'loopIndex';
+  const templateEvents = getChronologicalEvents(firstSample).map(event => {
+    const cloned: RecordingEventItem = JSON.parse(JSON.stringify(event));
+    if (cloned.selector) {
+      cloned.selector = replaceNthOfTypeAt(cloned.selector, varyingNthIndex, `{{${variableName}}}`);
+    }
+    if (cloned.action === 'field-mark') {
+      cloned.recordAction = 'append';
+    }
+    return cloned;
+  });
+
+  const fieldNames = Array.from(new Set(
+    templateEvents
+      .filter(event => event.action === 'field-mark')
+      .map(event => event.fieldName || '')
+      .filter(Boolean)
+  ));
+
+  return {
+    variableName,
+    startValue,
+    endValue,
+    count: endValue - startValue + 1,
+    fieldNames,
+    templateEvents: templateEvents.map(event => buildRecordingExportEvent(event)),
+    firstSample: getChronologicalEvents(firstSample).map(event => buildRecordingExportEvent(event)),
+    lastSample: getChronologicalEvents(lastSample).map(event => buildRecordingExportEvent(event))
+  };
+}
+
+function resetLoopCaptureState() {
+  loopCaptureState.active = false;
+  loopCaptureState.phase = 'idle';
+  loopCaptureState.firstBaselineIds = [];
+  loopCaptureState.lastBaselineIds = [];
+  loopCaptureState.firstSample = [];
+  loopCaptureState.lastSample = [];
+  loopCaptureState.busy = false;
+}
+
+async function startLoopCapture() {
+  if (!isRecording.value || loopCaptureState.active) {
+    return;
+  }
+
+  loopCaptureState.active = true;
+  loopCaptureState.phase = 'recording-first';
+  loopCaptureState.firstBaselineIds = recordingEvents.value.map(event => event.id);
+  loopCaptureState.firstSample = [];
+  loopCaptureState.lastSample = [];
+  syncRecordingMarkConfig();
+  toast.value?.show({ message: '已开始录制首个循环子任务', type: 'success' });
+}
+
+async function finishFirstLoopCaptureTask() {
+  const sampleEvents = getNewRecordingEventsSince(loopCaptureState.firstBaselineIds);
+  if (!sampleEvents.length) {
+    toast.value?.show({ message: '首个循环子任务还没有录到有效事件', type: 'warning' });
+    return;
+  }
+
+  loopCaptureState.firstSample = sampleEvents;
+  loopCaptureState.phase = 'transition';
+  socketService.setRecordingCaptureEnabled(false);
+  toast.value?.show({ message: '已完成首个子任务，现在可自由定位尾部样本，这段操作不会被记录', type: 'success' });
+}
+
+async function startLastLoopCaptureTask() {
+  loopCaptureState.lastBaselineIds = recordingEvents.value.map(event => event.id);
+  loopCaptureState.phase = 'recording-last';
+  socketService.setRecordingCaptureEnabled(true);
+  toast.value?.show({ message: '已开始录制尾部循环子任务', type: 'success' });
+}
+
+async function cancelLoopCapture() {
+  if (!loopCaptureState.active) {
+    return;
+  }
+
+  loopCaptureState.busy = true;
+  [...loopCaptureState.firstSample, ...loopCaptureState.lastSample].forEach(event => {
+    socketService.deleteRecordingEvent(event.id);
+  });
+  socketService.setRecordingCaptureEnabled(true);
+  resetLoopCaptureState();
+  syncRecordingMarkConfig();
+}
+
+async function finishLoopCapture() {
+  const sampleEvents = getNewRecordingEventsSince(loopCaptureState.lastBaselineIds);
+  if (!sampleEvents.length) {
+    toast.value?.show({ message: '尾部循环子任务还没有录到有效事件', type: 'warning' });
+    return;
+  }
+
+  loopCaptureState.lastSample = sampleEvents;
+
+  let loopDraft: RecordingEventItem['loopCapture'];
+  try {
+    loopDraft = buildLoopCaptureDraft(loopCaptureState.firstSample, loopCaptureState.lastSample);
+  } catch (error: any) {
+    toast.value?.show({ message: error?.message || '两个循环任务差异过大', type: 'error' });
+    socketService.setRecordingCaptureEnabled(true);
+    return;
+  }
+
+  loopCaptureState.busy = true;
+  socketService.appendLoopCaptureEvent({
+    summary: `循环录制：${loopDraft.fieldNames.join(' / ') || '未命名循环'}`,
+    firstSampleIds: loopCaptureState.firstSample.map(event => event.id),
+    lastSampleIds: loopCaptureState.lastSample.map(event => event.id),
+    loopCapture: loopDraft
+  });
+  socketService.setRecordingCaptureEnabled(true);
+  resetLoopCaptureState();
+  syncRecordingMarkConfig();
+  toast.value?.show({ message: '已生成循环录制结果', type: 'success' });
 }
 
 async function copyRecordingJson() {
@@ -1557,6 +1902,7 @@ function setupRecordingListeners() {
     if (status.state === 'stopped') {
       isRecording.value = false;
       recordingMode.value = 'action';
+      resetLoopCaptureState();
       stopRecordingSocketListeners();
     }
   });
@@ -1601,6 +1947,7 @@ function stopRecording() {
   socketService.stopRecording();
   recordingStatusText.value = '正在停止录制...';
   recordingMode.value = 'action';
+  resetLoopCaptureState();
 }
 
 function toggleRecordingMode() {
@@ -3603,6 +3950,34 @@ async function executeWorkflow() {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.loop-capture-panel {
+  margin: 0 1.25rem 1rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid #2f81f7;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(31, 111, 235, 0.12) 0%, rgba(13, 17, 23, 0.78) 100%);
+}
+
+.loop-capture-title {
+  margin-bottom: 0.5rem;
+  color: #79c0ff;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.loop-capture-body p {
+  margin: 0 0 0.75rem;
+  color: #c9d1d9;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.loop-capture-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .recording-events {
