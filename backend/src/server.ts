@@ -100,6 +100,9 @@ io.on('connection', (socket) => {
       onEventsUpdated: (events) => {
         socket.emit('recording-events', events);
       },
+      onLoopControl: (payload) => {
+        socket.emit('recording-loop-control', payload);
+      },
       onStop: () => {
         browserRecorders.delete(socket.id);
       }
@@ -149,6 +152,22 @@ io.on('connection', (socket) => {
       await recorder.setCaptureEnabled(Boolean(enabled));
     } catch (error: any) {
       socket.emit('error', { message: error.message || '切换录制采集状态失败' });
+    }
+  });
+
+  socket.on('set-recording-loop-control', async ({ active, phase }) => {
+    const recorder = browserRecorders.get(socket.id);
+    if (!recorder) {
+      return;
+    }
+
+    try {
+      await recorder.setLoopControl({
+        active: Boolean(active),
+        phase: phase === 'recording-first' || phase === 'transition' || phase === 'recording-last' ? phase : 'idle'
+      });
+    } catch (error: any) {
+      socket.emit('error', { message: error.message || '同步循环录制状态失败' });
     }
   });
 

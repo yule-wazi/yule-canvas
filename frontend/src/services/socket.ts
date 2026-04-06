@@ -85,6 +85,13 @@ class SocketClient {
     this.socket?.emit('set-recording-capture-enabled', { enabled });
   }
 
+  setRecordingLoopControl(control: {
+    active: boolean;
+    phase: 'idle' | 'recording-first' | 'transition' | 'recording-last';
+  }) {
+    this.socket?.emit('set-recording-loop-control', control);
+  }
+
   setRecordingMarkConfig(config: {
     selectedTableId: string;
     disableRecordAction?: boolean;
@@ -136,6 +143,10 @@ class SocketClient {
     this.socket?.on('recording-events', callback);
   }
 
+  onRecordingLoopControl(callback: (payload: { action: string }) => void) {
+    this.socket?.on('recording-loop-control', callback);
+  }
+
   offAll() {
     this.socket?.off('log');
     this.socket?.off('progress');
@@ -145,6 +156,7 @@ class SocketClient {
     this.socket?.off('recording-status');
     this.socket?.off('recording-event');
     this.socket?.off('recording-events');
+    this.socket?.off('recording-loop-control');
   }
 }
 

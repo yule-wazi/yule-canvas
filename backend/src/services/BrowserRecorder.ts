@@ -113,6 +113,7 @@ interface BrowserRecorderCallbacks {
   onStatus?: (status: { state: string; message: string; mode?: RecordingMode }) => void;
   onEventsUpdated?: (events: RecordingEvent[]) => void;
   onMarkRequest?: (request: RecordingMarkRequest) => void;
+  onLoopControl?: (payload: { action: 'start' | 'finish-first' | 'start-last' | 'finish' | 'cancel' }) => void;
   onStop?: () => void;
 }
 
@@ -212,6 +213,10 @@ const RECORDER_INIT_SCRIPT = `
       selectedTableId: '',
       tables: [],
       disableRecordAction: false
+    },
+    loopControl: {
+      active: false,
+      phase: 'idle'
     },
     nextRecordAction: 'append',
     pendingMarkRequest: null,
@@ -729,7 +734,8 @@ const RECORDER_INIT_SCRIPT = `
       scroll: '滚动页面',
       back: '后退',
       forward: '前进',
-      'field-mark': '字段标注'
+      'field-mark': '字段标注',
+      'loop-capture': '循环录制'
     };
 
     return labels[event.action] || '未命名事件';
@@ -754,6 +760,7 @@ const RECORDER_INIT_SCRIPT = `
       '      <button type="button" data-action="stop" class="danger">停止录制</button>',
       '    </div>',
       '  </div>',
+      '  <div class="__aibrowser-recorder-loop-controls" data-role="loop-controls"></div>',
       '  <div class="__aibrowser-recorder-mark" data-role="mark-box"></div>',
       '  <div class="__aibrowser-recorder-events" data-role="events"></div>',
       '</div>'
@@ -1012,6 +1019,40 @@ const RECORDER_INIT_SCRIPT = `
       '  padding: 12px;',
       '  background: linear-gradient(180deg, rgba(13, 17, 23, 0) 0%, rgba(13, 17, 23, 0.96) 28%);',
       '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-loop-controls {',
+      '  padding: 12px 14px 0;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-loop-panel {',
+      '  border: 1px solid rgba(47, 129, 247, 0.55);',
+      '  border-radius: 12px;',
+      '  background: linear-gradient(180deg, rgba(31, 111, 235, 0.12) 0%, rgba(13, 17, 23, 0.72) 100%);',
+      '  padding: 12px 14px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-loop-panel-title {',
+      '  color: #79c0ff;',
+      '  font-size: 12px;',
+      '  font-weight: 700;',
+      '  margin-bottom: 6px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-loop-panel-hint {',
+      '  color: #c9d1d9;',
+      '  font-size: 12px;',
+      '  line-height: 1.55;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-loop-panel-actions {',
+      '  display: flex;',
+      '  gap: 8px;',
+      '  flex-wrap: wrap;',
+      '  margin-top: 10px;',
+      '}',
+      '#' + ROOT_ID + ' .__aibrowser-recorder-loop-panel-actions button {',
+      '  padding: 7px 10px;',
+      '  border: 1px solid #30363d;',
+      '  border-radius: 8px;',
+      '  background: #21262d;',
+      '  color: #f0f6fc;',
+      '  cursor: pointer;',
+      '}',
       '#' + ROOT_ID + ' .__aibrowser-recorder-events {',
       '  flex: 1;',
       '  overflow: auto;',
@@ -1194,6 +1235,31 @@ const RECORDER_INIT_SCRIPT = `
         return;
       }
 
+      if (action === 'start-loop-capture') {
+        sendControl({ action: 'loop-control', loopAction: 'start' });
+        return;
+      }
+
+      if (action === 'finish-first-loop-capture') {
+        sendControl({ action: 'loop-control', loopAction: 'finish-first' });
+        return;
+      }
+
+      if (action === 'start-last-loop-capture') {
+        sendControl({ action: 'loop-control', loopAction: 'start-last' });
+        return;
+      }
+
+      if (action === 'finish-loop-capture') {
+        sendControl({ action: 'loop-control', loopAction: 'finish' });
+        return;
+      }
+
+      if (action === 'cancel-loop-capture') {
+        sendControl({ action: 'loop-control', loopAction: 'cancel' });
+        return;
+      }
+
       if (action === 'toggle-dropdown') {
         const menuRole = actionTarget.getAttribute('data-menu-role') || '';
         root.querySelectorAll('[data-role$="-menu"]').forEach((menu) => {
@@ -1291,14 +1357,15 @@ const RECORDER_INIT_SCRIPT = `
         const tableId = state.markConfig.selectedTableId || '';
         const selectedTable = getCurrentMarkTable();
         const tableName = selectedTable?.name || '';
+        const markFields = Array.isArray(selectedTable?.fields) ? selectedTable.fields : [];
         const selectedCandidateIndex = Number(state.pendingMarkRequest.selectedCandidateIndex || 0);
         const candidateTargets = Array.isArray(state.pendingMarkRequest?.candidateTargets)
           ? state.pendingMarkRequest.candidateTargets
           : [];
         const selectedCandidate = candidateTargets[selectedCandidateIndex] || candidateTargets[0] || null;
-        const fieldName = String(state.pendingMarkRequest.selectedFieldName || '').trim();
+        const fieldName = String(state.pendingMarkRequest.selectedFieldName || markFields[0]?.name || '').trim();
         const fieldType = getCurrentMarkFieldType(fieldName);
-        const attribute = state.pendingMarkRequest.selectedAttribute || 'innerText';
+        const attribute = state.pendingMarkRequest.selectedAttribute || getDefaultAttribute(selectedCandidate?.elementMeta?.tagName, fieldType);
         const recordAction = state.nextRecordAction === 'new' ? 'new' : 'append';
 
         if (!tableId) {
@@ -1354,12 +1421,26 @@ const RECORDER_INIT_SCRIPT = `
     const markBox = root.querySelector('[data-role="mark-box"]');
     const eventsEl = root.querySelector('[data-role="events"]');
     const headerEl = root.querySelector('.__aibrowser-recorder-header');
+    const loopControlsEl = root.querySelector('[data-role="loop-controls"]');
 
     statusEl.textContent = state.status || '';
     modeEl.textContent = state.mode === 'mark' ? '标注模式' : '动作模式';
     modeEl.classList.toggle('is-mark', state.mode === 'mark');
     toggleButton.textContent = state.mode === 'mark' ? '切换动作模式' : '切换标注模式';
     root.classList.toggle('__aibrowser-recorder-is-marking', !!state.pendingMarkRequest);
+
+    if (loopControlsEl instanceof HTMLElement) {
+      const loopControl = state.loopControl || { active: false, phase: 'idle' };
+      if (!loopControl.active) {
+        loopControlsEl.innerHTML = '<div class="__aibrowser-recorder-loop-panel"><div class="__aibrowser-recorder-loop-panel-title">循环录制</div><div class="__aibrowser-recorder-loop-panel-hint">开始录制首个循环子任务，后续可在这里继续控制尾部子任务录制。</div><div class="__aibrowser-recorder-loop-panel-actions"><button type="button" data-action="start-loop-capture">循环录制</button></div></div>';
+      } else if (loopControl.phase === 'recording-first') {
+        loopControlsEl.innerHTML = '<div class="__aibrowser-recorder-loop-panel"><div class="__aibrowser-recorder-loop-panel-title">首个循环子任务</div><div class="__aibrowser-recorder-loop-panel-hint">当前正在录制首个循环子任务，完成后会进入过渡期。</div><div class="__aibrowser-recorder-loop-panel-actions"><button type="button" data-action="finish-first-loop-capture">完成首个子任务</button><button type="button" data-action="cancel-loop-capture">取消循环录制</button></div></div>';
+      } else if (loopControl.phase === 'transition') {
+        loopControlsEl.innerHTML = '<div class="__aibrowser-recorder-loop-panel"><div class="__aibrowser-recorder-loop-panel-title">定位尾部样本</div><div class="__aibrowser-recorder-loop-panel-hint">当前处于过渡阶段，这段操作不会被记录。定位完成后再开始录制尾部子任务。</div><div class="__aibrowser-recorder-loop-panel-actions"><button type="button" data-action="start-last-loop-capture">开始录制尾部子任务</button><button type="button" data-action="cancel-loop-capture">取消循环录制</button></div></div>';
+      } else {
+        loopControlsEl.innerHTML = '<div class="__aibrowser-recorder-loop-panel"><div class="__aibrowser-recorder-loop-panel-title">尾部循环子任务</div><div class="__aibrowser-recorder-loop-panel-hint">当前正在录制尾部循环子任务，完成后系统会生成循环录制结果。</div><div class="__aibrowser-recorder-loop-panel-actions"><button type="button" data-action="finish-loop-capture">完成循环录制</button><button type="button" data-action="cancel-loop-capture">取消循环录制</button></div></div>';
+      }
+    }
 
     if (state.pendingMarkRequest) {
       const markTables = Array.isArray(state.markConfig?.tables) ? state.markConfig.tables : [];
@@ -1490,7 +1571,11 @@ const RECORDER_INIT_SCRIPT = `
       ].join('');
 
       if (markBox instanceof HTMLElement && headerEl instanceof HTMLElement) {
-        const availableHeight = Math.max(root.clientHeight - headerEl.offsetHeight - 36, 180);
+        const loopControlsHeight =
+          loopControlsEl instanceof HTMLElement && loopControlsEl.childElementCount > 0
+            ? loopControlsEl.offsetHeight
+            : 0;
+        const availableHeight = Math.max(root.clientHeight - headerEl.offsetHeight - loopControlsHeight - 36, 180);
         markBox.style.height = availableHeight + 'px';
         markBox.style.maxHeight = availableHeight + 'px';
       }
@@ -1813,6 +1898,18 @@ const RECORDER_INIT_SCRIPT = `
         : { selectedTableId: '', tables: [], disableRecordAction: false };
       renderPanel();
     },
+    setLoopControl(control) {
+      state.loopControl = control && typeof control === 'object'
+        ? {
+            active: !!control.active,
+            phase: control.phase || 'idle'
+          }
+        : {
+            active: false,
+            phase: 'idle'
+          };
+      renderPanel();
+    },
     setPendingMark(request) {
       state.pendingMarkRequest = request || null;
       renderPanel();
@@ -1938,6 +2035,10 @@ export class BrowserRecorder {
   private lastUrls = new WeakMap<Page, string>();
   private pageHistory = new WeakMap<Page, RecordingPageHistoryState>();
   private currentStatusMessage = '录制已启动，请开始操作';
+  private loopControlState: { active: boolean; phase: 'idle' | 'recording-first' | 'transition' | 'recording-last' } = {
+    active: false,
+    phase: 'idle'
+  };
   private eventSequence = 0;
   private recordedEvents: RecordingEvent[] = [];
   private pendingMarkRequests = new Map<string, RecordingMarkRequest>();
@@ -2005,6 +2106,17 @@ export class BrowserRecorder {
       disableRecordAction: Boolean(config.disableRecordAction)
     };
     await this.broadcastMarkConfig();
+  }
+
+  async setLoopControl(control: {
+    active: boolean;
+    phase: 'idle' | 'recording-first' | 'transition' | 'recording-last';
+  }): Promise<void> {
+    this.loopControlState = {
+      active: Boolean(control.active),
+      phase: control.phase
+    };
+    await this.broadcastLoopControl();
   }
 
   async setCaptureEnabled(enabled: boolean): Promise<void> {
@@ -2220,6 +2332,15 @@ export class BrowserRecorder {
 
     await this.syncPageMode(page);
     await this.pushMarkConfigToPage(page);
+    await this.pushEventsToPage(page);
+    await this.pushLoopControlToPage(page);
+    const pageId = this.pageIds.get(page);
+    if (pageId) {
+      const pendingMark = this.pendingMarkRequests.get(pageId);
+      if (pendingMark) {
+        await this.pushPendingMarkToPage(page, pendingMark);
+      }
+    }
     await this.pushStatusToPage(page, this.currentStatusMessage);
   }
 
@@ -2253,7 +2374,7 @@ export class BrowserRecorder {
     }
   }
 
-  private async pushEventToPage(page: Page, _event: RecordingEvent): Promise<void> {
+  private async pushEventsToPage(page: Page): Promise<void> {
     try {
       await page.evaluate((payload: RecordingEvent[]) => {
         (globalThis as any).__aibrowserRecorder?.setEvents?.(payload);
@@ -2277,7 +2398,17 @@ export class BrowserRecorder {
     if (!this.context) return;
     const page = this.context.pages().find(candidate => this.pageIds.get(candidate) === pageId);
     if (!page) return;
-    await this.pushEventToPage(page, event);
+    await this.pushEventsToPage(page);
+  }
+
+  private async pushLoopControlToPage(page: Page): Promise<void> {
+    try {
+      await page.evaluate((payload) => {
+        (globalThis as any).__aibrowserRecorder?.setLoopControl?.(payload);
+      }, this.loopControlState);
+    } catch {
+      // ignore
+    }
   }
 
   private async clearPendingMarkById(pageId: string): Promise<void> {
@@ -2322,7 +2453,12 @@ export class BrowserRecorder {
   private async broadcastEvents(): Promise<void> {
     this.callbacks.onEventsUpdated?.([...this.recordedEvents]);
     if (!this.context) return;
-    await Promise.all(this.context.pages().map(page => this.pushEventToPage(page, this.recordedEvents[0] as RecordingEvent)));
+    await Promise.all(this.context.pages().map(page => this.pushEventsToPage(page)));
+  }
+
+  private async broadcastLoopControl(): Promise<void> {
+    if (!this.context) return;
+    await Promise.all(this.context.pages().map(page => this.pushLoopControlToPage(page)));
   }
 
   private addRecordedEvent(event: RecordingEvent): void {
@@ -2450,6 +2586,14 @@ export class BrowserRecorder {
 
       if (payload.action === 'delete-event' && payload.eventId) {
         await this.deleteEvent(payload.eventId);
+        return;
+      }
+
+      if (payload.action === 'loop-control' && payload.loopAction) {
+        const loopAction = payload.loopAction;
+        if (loopAction === 'start' || loopAction === 'finish-first' || loopAction === 'start-last' || loopAction === 'finish' || loopAction === 'cancel') {
+          this.callbacks.onLoopControl?.({ action: loopAction });
+        }
       }
     });
   }

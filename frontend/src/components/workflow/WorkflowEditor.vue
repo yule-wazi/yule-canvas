@@ -1882,6 +1882,7 @@ function stopRecordingSocketListeners() {
   socketService.off('recording-status');
   socketService.off('recording-event');
   socketService.off('recording-events');
+  socketService.off('recording-loop-control');
 }
 
 function setupRecordingListeners() {
@@ -1910,6 +1911,32 @@ function setupRecordingListeners() {
   socketService.onRecordingEvents((events: RecordingEventItem[]) => {
     recordingEvents.value = Array.isArray(events) ? events : [];
     showRecordingPanel.value = true;
+  });
+
+  socketService.onRecordingLoopControl(async ({ action }) => {
+    if (action === 'start') {
+      await startLoopCapture();
+      return;
+    }
+
+    if (action === 'finish-first') {
+      await finishFirstLoopCaptureTask();
+      return;
+    }
+
+    if (action === 'start-last') {
+      await startLastLoopCaptureTask();
+      return;
+    }
+
+    if (action === 'finish') {
+      await finishLoopCapture();
+      return;
+    }
+
+    if (action === 'cancel') {
+      await cancelLoopCapture();
+    }
   });
 }
 
@@ -2020,6 +2047,17 @@ watch(
       syncRecordingMarkConfig();
     }
   }
+);
+
+watch(
+  () => [isRecording.value, loopCaptureState.active, loopCaptureState.phase],
+  ([recording, active, phase]) => {
+    socketService.setRecordingLoopControl({
+      active: Boolean(recording && active),
+      phase: recording && active ? (phase as 'idle' | 'recording-first' | 'transition' | 'recording-last') : 'idle'
+    });
+  },
+  { immediate: true }
 );
 
 watch(
