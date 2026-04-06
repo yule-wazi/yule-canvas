@@ -2075,6 +2075,7 @@ export class BrowserRecorder {
   private pageIds = new WeakMap<Page, string>();
   private lastUrls = new WeakMap<Page, string>();
   private pageHistory = new WeakMap<Page, RecordingPageHistoryState>();
+  private spawnedPageOpeners = new WeakMap<Page, PendingOpenIntent>();
   private currentStatusMessage = '录制已启动，请开始操作';
   private loopControlState: RecordingLoopUiState = {
     active: false,
@@ -2357,6 +2358,10 @@ export class BrowserRecorder {
         navigationSource: navigationMeta.navigationSource
       };
 
+      if (opener && (opener.action === 'contextmenu' || opener.action === 'middle-click')) {
+        this.spawnedPageOpeners.set(page, opener);
+      }
+
       this.addRecordedEvent(event);
       this.currentStatusMessage = `已记录：${this.describeAction(action)}`;
       this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
@@ -2367,6 +2372,41 @@ export class BrowserRecorder {
 
     page.on('domcontentloaded', () => {
       this.installRecorderRuntime(page).catch(() => null);
+    });
+
+    page.on('close', async () => {
+      if (this.stopRequested) {
+        return;
+      }
+
+      const opener = this.spawnedPageOpeners.get(page);
+      this.spawnedPageOpeners.delete(page);
+      if (!opener || !this.captureEnabled) {
+        return;
+      }
+
+      const backEvent: RecordingEvent = {
+        id: this.nextEventId(),
+        kind: 'action',
+        action: 'back',
+        timestamp: Date.now(),
+        pageId: opener.pageId,
+        url: opener.url,
+        title: opener.title || '',
+        openerPageId: opener.pageId,
+        openerUrl: opener.url,
+        openerSelector: opener.selector,
+        openerAction: opener.action,
+        openerElementMeta: opener.elementMeta,
+        navigationKind: 'derived',
+        navigationSource: 'back'
+      };
+
+      this.addRecordedEvent(backEvent);
+      this.currentStatusMessage = '已记录：返回';
+      this.callbacks.onStatus?.({ state: 'event-recorded', message: this.currentStatusMessage, mode: this.mode });
+      await this.broadcastEvents();
+      await this.broadcastStatus(this.currentStatusMessage);
     });
 
     await this.installRecorderRuntime(page);

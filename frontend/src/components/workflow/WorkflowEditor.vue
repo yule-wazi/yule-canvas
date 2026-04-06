@@ -292,6 +292,16 @@
             <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
           </div>
         </div>
+        <div v-if="loopCaptureDiffVisible" class="loop-capture-diff-panel">
+          <div class="loop-capture-diff-title">{{ loopCaptureDiffTitle }}</div>
+          <div
+            v-for="(detail, index) in loopCaptureDiffDetails"
+            :key="`${index}-${detail}`"
+            class="loop-capture-diff-line"
+          >
+            {{ detail }}
+          </div>
+        </div>
       </div>
       <div class="recording-events">
         <div v-if="loopCaptureState.active" class="loop-capture-record-space">
@@ -786,6 +796,9 @@ const loopCaptureState = reactive({
   lastSample: [] as RecordingEventItem[],
   busy: false
 });
+const loopCaptureDiffVisible = ref(false);
+const loopCaptureDiffTitle = ref('');
+const loopCaptureDiffDetails = ref<string[]>([]);
 const aiProvider = ref<'openrouter' | 'siliconflow' | 'qwen'>('openrouter');
 const aiModelName = ref('openai/gpt-4.1-mini');
 const aiApiKey = ref('');
@@ -809,6 +822,7 @@ const selectedConnectionId = ref<string | null>(null);
 let executionPanelResizeObserver: ResizeObserver | null = null;
 let aiPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let aiPreviewRequestId = 0;
+let loopCaptureDiffTimer: ReturnType<typeof setTimeout> | null = null;
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 const AI_GENERATE_SETTINGS_KEY = 'ai_generate_settings_v1';
@@ -1525,13 +1539,72 @@ function getLoopComparableEvents(events: RecordingEventItem[]) {
   });
 }
 
+function normalizeLoopComparableAction(event: RecordingEventItem) {
+  if (event.action === 'click' || event.action === 'contextmenu' || event.action === 'middle-click') {
+    return 'open-detail';
+  }
+  return event.action;
+}
+
 function buildLoopComparableSignature(events: RecordingEventItem[]) {
   return getLoopComparableEvents(events).map(event => {
     if (event.action === 'field-mark') {
       return `field-mark:${event.fieldName || ''}:${event.fieldType || ''}`;
     }
-    return event.action;
+    return normalizeLoopComparableAction(event);
   });
+}
+
+type LoopDiffError = Error & { details?: string[] };
+
+function createLoopDiffError(message: string, details: string[] = []) {
+  const error = new Error(message) as LoopDiffError;
+  error.details = details;
+  return error;
+}
+
+function formatLoopDiffEventLabel(event: RecordingEventItem) {
+  if (event.action === 'field-mark') {
+    return `标注字段 ${event.fieldName || '未命名字段'}`;
+  }
+
+  const labels: Record<string, string> = {
+    navigate: '访问页面',
+    click: '点击元素',
+    contextmenu: '右键打开',
+    'middle-click': '中键打开',
+    back: '返回',
+    forward: '前进',
+    type: '输入文本',
+    select: '选择下拉项',
+    scroll: '滚动页面'
+  };
+
+  return labels[event.action] || event.action;
+}
+
+function showLoopCaptureDiff(message: string, details: string[]) {
+  loopCaptureDiffTitle.value = message;
+  loopCaptureDiffDetails.value = details;
+  loopCaptureDiffVisible.value = true;
+  if (loopCaptureDiffTimer) {
+    clearTimeout(loopCaptureDiffTimer);
+  }
+  loopCaptureDiffTimer = setTimeout(() => {
+    loopCaptureDiffVisible.value = false;
+    loopCaptureDiffTitle.value = '';
+    loopCaptureDiffDetails.value = [];
+  }, 8000);
+}
+
+function hideLoopCaptureDiff() {
+  loopCaptureDiffVisible.value = false;
+  loopCaptureDiffTitle.value = '';
+  loopCaptureDiffDetails.value = [];
+  if (loopCaptureDiffTimer) {
+    clearTimeout(loopCaptureDiffTimer);
+    loopCaptureDiffTimer = null;
+  }
 }
 
 function replaceNthOfTypeAt(selector: string, nthIndex: number, replacement: string) {
@@ -1555,66 +1628,108 @@ function buildLoopCaptureDraft(firstSample: RecordingEventItem[], lastSample: Re
   const lastComparable = getLoopComparableEvents(lastSample);
 
   if (firstComparable.length === 0 || lastComparable.length === 0) {
-    throw new Error('循环子任务不能为空');
+    throw createLoopDiffError('循环子任务不能为空', [
+      `首个子任务关键事件数：${firstComparable.length}`,
+      `尾部子任务关键事件数：${lastComparable.length}`
+    ]);
   }
 
   const firstSignature = buildLoopComparableSignature(firstSample);
   const lastSignature = buildLoopComparableSignature(lastSample);
   if (firstSignature.length !== lastSignature.length || firstSignature.some((item, index) => item !== lastSignature[index])) {
-    throw new Error('两个循环任务差异过大：关键动作骨架不一致');
+    throw createLoopDiffError('两个循环任务差异过大：关键动作骨架不一致', [
+      `首个子任务：${firstSignature.join(' -> ') || '无'}`,
+      `尾部子任务：${lastSignature.join(' -> ') || '无'}`
+    ]);
   }
 
   const pairedSelectors = firstComparable.map((event, index) => ({
+    index,
     action: event.action,
     fieldName: event.fieldName || '',
     firstSelector: event.selector || '',
     lastSelector: lastComparable[index]?.selector || ''
   })).filter(item => item.firstSelector && item.lastSelector);
 
-  let varyingNthIndex = -1;
-  let startValue = 0;
-  let endValue = 0;
+  let startValue: number | null = null;
+  let endValue: number | null = null;
+  const selectorNthIndexMap = new Map<number, number>();
 
   for (const pair of pairedSelectors) {
     const firstNthValues = extractNthValues(pair.firstSelector);
     const lastNthValues = extractNthValues(pair.lastSelector);
 
     if (firstNthValues.length !== lastNthValues.length) {
-      throw new Error('两个循环任务差异过大：选择器结构不一致');
+      throw createLoopDiffError('两个循环任务差异过大：选择器结构不一致', [
+        `${formatLoopDiffEventLabel(firstComparable[pair.index])}`,
+        `首个选择器：${pair.firstSelector}`,
+        `尾部选择器：${pair.lastSelector}`
+      ]);
     }
 
+    const differingIndices: number[] = [];
     firstNthValues.forEach((firstValue, nthIndex) => {
       const lastValue = lastNthValues[nthIndex];
       if (firstValue === lastValue) {
         return;
       }
-
-      if (varyingNthIndex === -1) {
-        varyingNthIndex = nthIndex;
-        startValue = firstValue;
-        endValue = lastValue;
-        return;
-      }
-
-      if (varyingNthIndex !== nthIndex || startValue !== firstValue || endValue !== lastValue) {
-        throw new Error('两个循环任务差异过大：无法定位统一的循环索引');
-      }
+      differingIndices.push(nthIndex);
     });
+
+    if (differingIndices.length > 1) {
+      throw createLoopDiffError('两个循环任务差异过大：单个选择器存在多个变化位点', [
+        `${formatLoopDiffEventLabel(firstComparable[pair.index])}`,
+        `首个选择器：${pair.firstSelector}`,
+        `尾部选择器：${pair.lastSelector}`
+      ]);
+    }
+
+    if (differingIndices.length === 0) {
+      return;
+    }
+
+    const localNthIndex = differingIndices[0];
+    const localStartValue = firstNthValues[localNthIndex];
+    const localEndValue = lastNthValues[localNthIndex];
+
+    if (startValue === null || endValue === null) {
+      startValue = localStartValue;
+      endValue = localEndValue;
+    } else if (startValue !== localStartValue || endValue !== localEndValue) {
+      throw createLoopDiffError('两个循环任务差异过大：无法定位统一的循环范围', [
+        `${formatLoopDiffEventLabel(firstComparable[pair.index])}`,
+        `首个样本范围：${startValue} -> ${endValue}`,
+        `当前选择器范围：${localStartValue} -> ${localEndValue}`
+      ]);
+    }
+
+    selectorNthIndexMap.set(pair.index, localNthIndex);
   }
 
-  if (varyingNthIndex === -1) {
-    throw new Error('两个循环任务差异过小：没有找到可参数化的循环索引');
+  if (startValue === null || endValue === null || selectorNthIndexMap.size === 0) {
+    throw createLoopDiffError('两个循环任务差异过小：没有找到可参数化的循环索引', [
+      '首尾样本中的关键选择器没有出现可归纳的索引差异。'
+    ]);
   }
 
   if (endValue < startValue) {
-    throw new Error('当前仅支持从前到后的循环样本，请重新录制尾部样本');
+    throw createLoopDiffError('当前仅支持从前到后的循环样本，请重新录制尾部样本', [
+      `首个样本索引：${startValue}`,
+      `尾部样本索引：${endValue}`
+    ]);
   }
 
   const variableName = 'loopIndex';
+  let comparableIndex = -1;
   const templateEvents = getChronologicalEvents(firstSample).map(event => {
     const cloned: RecordingEventItem = JSON.parse(JSON.stringify(event));
-    if (cloned.selector) {
-      cloned.selector = replaceNthOfTypeAt(cloned.selector, varyingNthIndex, `{{${variableName}}}`);
+    const isComparable = !(cloned.kind === 'meta' || cloned.action === 'scroll' || (cloned.action === 'navigate' && cloned.navigationKind === 'derived'));
+    if (isComparable) {
+      comparableIndex += 1;
+    }
+    const localNthIndex = selectorNthIndexMap.get(comparableIndex);
+    if (cloned.selector && typeof localNthIndex === 'number') {
+      cloned.selector = replaceNthOfTypeAt(cloned.selector, localNthIndex, `{{${variableName}}}`);
     }
     if (cloned.action === 'field-mark') {
       cloned.recordAction = 'append';
@@ -1656,6 +1771,7 @@ async function startLoopCapture() {
     return;
   }
 
+  hideLoopCaptureDiff();
   loopCaptureState.active = true;
   loopCaptureState.phase = 'recording-first';
   loopCaptureState.firstBaselineIds = recordingEvents.value.map(event => event.id);
@@ -1679,6 +1795,7 @@ async function finishFirstLoopCaptureTask() {
 }
 
 async function startLastLoopCaptureTask() {
+  hideLoopCaptureDiff();
   loopCaptureState.lastBaselineIds = recordingEvents.value.map(event => event.id);
   loopCaptureState.phase = 'recording-last';
   socketService.setRecordingCaptureEnabled(true);
@@ -1712,11 +1829,14 @@ async function finishLoopCapture() {
   try {
     loopDraft = buildLoopCaptureDraft(loopCaptureState.firstSample, loopCaptureState.lastSample);
   } catch (error: any) {
+    const details = Array.isArray(error?.details) ? error.details : [];
+    showLoopCaptureDiff(error?.message || '两个循环任务差异过大', details);
     toast.value?.show({ message: error?.message || '两个循环任务差异过大', type: 'error' });
     socketService.setRecordingCaptureEnabled(true);
     return;
   }
 
+  hideLoopCaptureDiff();
   loopCaptureState.busy = true;
   socketService.appendLoopCaptureEvent({
     summary: `循环录制：${loopDraft.fieldNames.join(' / ') || '未命名循环'}`,
@@ -4095,6 +4215,32 @@ async function executeWorkflow() {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.loop-capture-diff-panel {
+  margin-top: 0.85rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(248, 81, 73, 0.42);
+  border-radius: 10px;
+  background: rgba(248, 81, 73, 0.08);
+}
+
+.loop-capture-diff-title {
+  color: #ff7b72;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+
+.loop-capture-diff-line {
+  color: #f0f6fc;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  word-break: break-all;
+}
+
+.loop-capture-diff-line + .loop-capture-diff-line {
+  margin-top: 0.3rem;
 }
 
 .loop-capture-record-space {

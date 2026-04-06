@@ -49,6 +49,8 @@ interface RecordingV2Payload {
 type SupportedAction =
   | 'navigate'
   | 'click'
+  | 'contextmenu'
+  | 'middle-click'
   | 'type'
   | 'select'
   | 'scroll'
@@ -119,7 +121,7 @@ function normalizeEvents(payload: RecordingV2Payload): RecordingV2Event[] {
 }
 
 function isSupportedAction(action: string): action is SupportedAction {
-  return ['navigate', 'click', 'type', 'select', 'scroll', 'back', 'forward', 'field-mark', 'loop-capture'].includes(action);
+  return ['navigate', 'click', 'contextmenu', 'middle-click', 'type', 'select', 'scroll', 'back', 'forward', 'field-mark', 'loop-capture'].includes(action);
 }
 
 function connectUnits(connections: any[], sourceId: string, sourceHandle: string, targetId: string, targetHandle: string) {
@@ -365,6 +367,8 @@ function appendEventUnit(state: MappingState, event: RecordingV2Event): Recordin
         timeout: 60000
       });
     case 'click':
+    case 'contextmenu':
+    case 'middle-click':
       if (!event.target?.selector) {
         return null;
       }
@@ -372,8 +376,8 @@ function appendEventUnit(state: MappingState, event: RecordingV2Event): Recordin
         selector: event.target.selector,
         waitForElement: true,
         timeout: 5000,
-        openInNewTab: false,
-        runInBackground: false,
+        openInNewTab: action === 'contextmenu' || action === 'middle-click',
+        runInBackground: action === 'contextmenu' || action === 'middle-click',
         waitUntil: 'domcontentloaded'
       });
     case 'type':
