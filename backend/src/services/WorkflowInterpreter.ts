@@ -117,6 +117,7 @@ interface ScopedOwnerGraph {
  * 直接解释执行 Workflow JSON，而不是先编译为代码。
  */
 export class WorkflowInterpreter {
+  private static readonly MAX_BACKGROUND_TASKS = 5;
   private page: Page;
   private options: InterpreterOptions;
   private sortCache: Map<string, ExecutionUnit[]> = new Map();
@@ -600,11 +601,14 @@ export class WorkflowInterpreter {
       return { handled: false, nextIndex: currentIndex + 1 };
     }
 
-    const popup = await this.openPageFromClick(clickData, context.page);
-    if (!popup) {
+    await this.waitForBackgroundCapacity(context);
+
+    const nextUrl = await this.resolveClickTargetUrl(clickData, context.page);
+    if (!nextUrl) {
       this.log(context, '未检测到 href，回退为当前页普通点击');
       return { handled: false, nextIndex: currentIndex + 1 };
     }
+    const popup = await context.page.context().newPage();
 
     this.trace({
       type: 'block-start',
@@ -633,7 +637,11 @@ export class WorkflowInterpreter {
 
     this.log(context, `后台标签页任务已启动: ${popup.url()}`);
 
-    const task = this.executeSequence(childSequence, blocksById, connections, loopInfos, childContext)
+    const task = popup.goto(nextUrl, {
+      waitUntil: clickData.waitUntil || 'domcontentloaded',
+      timeout: clickData.timeout || 5000
+    })
+      .then(() => this.executeSequence(childSequence, blocksById, connections, loopInfos, childContext))
       .catch((error) => {
         if (!this.isCancellationError(error)) {
           throw error;
@@ -645,7 +653,7 @@ export class WorkflowInterpreter {
         }
       });
 
-    context.backgroundTasks.push(task);
+    this.trackBackgroundTask(task, context);
     return { handled: true, nextIndex: backgroundEndIndex + 1 };
   }
 
@@ -880,12 +888,9 @@ export class WorkflowInterpreter {
   }
 
   private async waitForBackgroundTasks(context: ExecutionContext): Promise<void> {
-    let awaitedCount = 0;
-
-    while (awaitedCount < context.backgroundTasks.length) {
+    while (context.backgroundTasks.length > 0) {
       this.assertNotCancelled();
-      const pendingTasks = context.backgroundTasks.slice(awaitedCount);
-      awaitedCount = context.backgroundTasks.length;
+      const pendingTasks = [...context.backgroundTasks];
       const results = await Promise.allSettled(pendingTasks);
       const failure = results.find(
         (result): result is PromiseRejectedResult => result.status === 'rejected' && !this.isCancellationError(result.reason)
@@ -895,6 +900,30 @@ export class WorkflowInterpreter {
         throw failure.reason;
       }
     }
+  }
+
+  private async waitForBackgroundCapacity(context: ExecutionContext): Promise<void> {
+    while (context.backgroundTasks.length >= WorkflowInterpreter.MAX_BACKGROUND_TASKS) {
+      this.assertNotCancelled();
+      const results = await Promise.allSettled([Promise.race([...context.backgroundTasks])]);
+      const failure = results.find(
+        (result): result is PromiseRejectedResult => result.status === 'rejected' && !this.isCancellationError(result.reason)
+      );
+
+      if (failure) {
+        throw failure.reason;
+      }
+    }
+  }
+
+  private trackBackgroundTask(task: Promise<void>, context: ExecutionContext): void {
+    const trackedTask = task.finally(() => {
+      const index = context.backgroundTasks.indexOf(trackedTask);
+      if (index >= 0) {
+        context.backgroundTasks.splice(index, 1);
+      }
+    });
+    context.backgroundTasks.push(trackedTask);
   }
 
   private async executeConditionBlock(block: Block, context: ExecutionContext): Promise<string[]> {
@@ -1567,18 +1596,9 @@ export class WorkflowInterpreter {
   }
 
   private async openPageFromClick(data: any, page: Page): Promise<Page | null> {
-    const selector = data.selector;
     const timeout = data.timeout || 5000;
     const waitUntil = data.waitUntil || 'domcontentloaded';
-    const nextUrl = await page.evaluate((sel: string) => {
-      const target = (globalThis as any).document.querySelector(sel) as any;
-      if (!target) {
-        return '';
-      }
-
-      const anchor = target.closest?.('a[href]') || target;
-      return anchor?.href || anchor?.getAttribute?.('href') || '';
-    }, selector);
+    const nextUrl = await this.resolveClickTargetUrl(data, page);
 
     if (!nextUrl) {
       return null;
@@ -1589,7 +1609,19 @@ export class WorkflowInterpreter {
       waitUntil,
       timeout
     });
-    await popup.waitForLoadState?.(waitUntil).catch(() => null);
     return popup;
+  }
+
+  private async resolveClickTargetUrl(data: any, page: Page): Promise<string> {
+    const selector = data.selector;
+    return await page.evaluate((sel: string) => {
+      const target = (globalThis as any).document.querySelector(sel) as any;
+      if (!target) {
+        return '';
+      }
+
+      const anchor = target.closest?.('a[href]') || target;
+      return anchor?.href || anchor?.getAttribute?.('href') || '';
+    }, selector);
   }
 }
