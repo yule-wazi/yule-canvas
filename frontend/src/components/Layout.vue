@@ -1,69 +1,131 @@
 <template>
   <div class="layout">
     <header class="header">
-      <h1>数据爬取Agent</h1>
+      <div class="brand">
+        <span class="brand-kicker">YULECANVAS</span>
+        <h1>数据爬取 Agent</h1>
+      </div>
       <nav>
         <router-link to="/">首页</router-link>
         <router-link to="/workflow">可视化编辑器</router-link>
         <router-link to="/data">数据管理</router-link>
       </nav>
     </header>
-    <main class="main">
+    <main :class="['main', { 'main--workflow': route.name === 'workflow' }]">
       <router-view />
     </main>
   </div>
 </template>
+
+<script setup lang="ts">
+import { useRoute } from 'vue-router';
+
+const route = useRoute();
+</script>
 
 <style scoped>
 .layout {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #0d1117;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
 }
 
 .header {
-  background: #161b22;
-  color: #c9d1d9;
-  padding: 1rem 2rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #30363d;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 32px;
+  background: var(--color-bg-page);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand-kicker {
+  font-size: var(--text-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-brand-accent);
 }
 
 .header h1 {
   margin: 0;
-  font-size: 1.5rem;
-  color: #58a6ff;
+  font-size: var(--text-heading);
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+  color: var(--color-text-primary);
 }
 
 nav {
   display: flex;
-  gap: 1.5rem;
+  align-items: center;
+  gap: 10px;
 }
 
 nav a {
-  color: #c9d1d9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 11px 13px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   text-decoration: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  transition: all 0.3s;
+  font-size: var(--text-link);
+  font-weight: 700;
+  text-transform: uppercase;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
 
 nav a:hover {
-  background: #21262d;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
+  border-bottom-color: var(--color-brand-accent);
 }
 
 nav a.router-link-active {
-  background: #1f6feb;
-  color: white;
+  background: transparent;
+  border: 2px solid var(--color-brand-accent);
+  color: var(--color-text-primary);
 }
 
 .main {
   flex: 1;
-  padding: 2rem;
-  background: #0d1117;
+  min-height: 0;
+  padding: 32px;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 1) 100%);
+}
+
+.main--workflow {
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  nav {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .main {
+    padding: 20px 16px;
+  }
+
+  .main--workflow {
+    padding: 0;
+  }
 }
 </style>

@@ -203,10 +203,10 @@ const saveExecutionResult = (res: any) => {
 
 <style scoped>
 .execution-panel {
-  background: #161b22;
+  background: var(--color-bg-surface);
   padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
 }
 
 .controls {
@@ -220,7 +220,7 @@ const saveExecutionResult = (res: any) => {
 .clear-btn {
   padding: 0.5rem 1.5rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.3s;
@@ -236,9 +236,9 @@ const saveExecutionResult = (res: any) => {
 }
 
 .execute-btn:disabled {
-  background: #21262d;
+  background: var(--color-bg-panel);
   cursor: not-allowed;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .stop-btn {
@@ -251,15 +251,15 @@ const saveExecutionResult = (res: any) => {
 }
 
 .stop-btn:disabled {
-  background: #21262d;
+  background: var(--color-bg-panel);
   cursor: not-allowed;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .clear-btn {
-  background: #21262d;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
 }
 
 .clear-btn:hover {
@@ -288,7 +288,7 @@ const saveExecutionResult = (res: any) => {
 }
 
 .toggle-text {
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 0.9rem;
 }
 
@@ -296,10 +296,10 @@ const saveExecutionResult = (res: any) => {
   position: relative;
   height: 30px;
   background: #21262d;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   margin-bottom: 1rem;
   overflow: hidden;
-  border: 1px solid #30363d;
+  border: 1px solid var(--color-border-default);
 }
 
 .progress-fill {
@@ -315,7 +315,7 @@ const saveExecutionResult = (res: any) => {
   transform: translate(-50%, -50%);
   font-size: 0.85rem;
   font-weight: 500;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .logs-container {
@@ -324,19 +324,19 @@ const saveExecutionResult = (res: any) => {
 
 h4 {
   margin-bottom: 0.5rem;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .logs {
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   max-height: 300px;
   overflow-y: auto;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
-  border: 1px solid #30363d;
+  border: 1px solid var(--color-border-default);
 }
 
 .log-entry {
@@ -345,16 +345,16 @@ h4 {
 }
 
 .log-time {
-  color: #8b949e;
+  color: var(--color-text-secondary);
   margin-right: 0.5rem;
 }
 
 .log-message {
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .no-logs {
-  color: #8b949e;
+  color: var(--color-text-secondary);
   text-align: center;
   padding: 2rem;
 }
@@ -364,18 +364,18 @@ h4 {
 }
 
 .result-content {
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   max-height: 300px;
   overflow: auto;
-  border: 1px solid #30363d;
+  border: 1px solid var(--color-border-default);
 }
 
 .result-content pre {
   margin: 0;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 </style>

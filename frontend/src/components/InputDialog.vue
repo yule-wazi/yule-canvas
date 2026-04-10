@@ -93,8 +93,8 @@ defineExpose({ show });
 }
 
 .input-dialog {
-  background: #1c1c1c;
-  border-radius: 12px;
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
   padding: 24px;
   width: 90%;
   max-width: 400px;
@@ -104,16 +104,16 @@ defineExpose({ show });
 .input-dialog h3 {
   margin: 0 0 16px 0;
   font-size: 18px;
-  color: #fff;
+  color: var(--color-text-primary);
 }
 
 .input-field {
   width: 100%;
   padding: 10px 12px;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  color: #fff;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 14px;
   margin-bottom: 20px;
   font-family: inherit;
@@ -121,7 +121,7 @@ defineExpose({ show });
 
 .input-field:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .dialog-actions {
@@ -134,15 +134,15 @@ defineExpose({ show });
 .btn-secondary {
   padding: 8px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-primary {
-  background: #58a6ff;
-  color: #fff;
+  background: var(--color-brand-link-hover);
+  color: var(--color-text-primary);
 }
 
 .btn-primary:hover {
@@ -150,8 +150,8 @@ defineExpose({ show });
 }
 
 .btn-secondary {
-  background: #444;
-  color: #fff;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
 }
 
 .btn-secondary:hover {

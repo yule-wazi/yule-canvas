@@ -1,0 +1,50 @@
+:root {
+  --font-family-sans: Arial, Helvetica, sans-serif;
+  --font-family-mono: Consolas, Monaco, "Courier New", monospace;
+
+  --color-brand-accent: #76b900;
+  --color-brand-accent-bright: #bff230;
+  --color-brand-accent-hover: #1eaedb;
+  --color-brand-link-hover: #3860be;
+
+  --color-bg-page: #000000;
+  --color-bg-page-elevated: #0a0a0a;
+  --color-bg-surface: #111111;
+  --color-bg-panel: #1a1a1a;
+  --color-bg-light-surface: #ffffff;
+
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a7a7a7;
+  --color-text-muted: #757575;
+  --color-text-dark: #000000;
+  --color-text-dark-soft: #1a1a1a;
+
+  --color-border-strong: #76b900;
+  --color-border-default: #5e5e5e;
+  --color-border-danger: #e52020;
+  --color-bg-danger: #650b0b;
+
+  --shadow-card: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
+
+  --radius-micro: 1px;
+  --radius-sm: 2px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --text-display: 36px;
+  --text-heading: 24px;
+  --text-card-title: 20px;
+  --text-body: 16px;
+  --text-body-sm: 15px;
+  --text-link: 14px;
+  --text-caption: 12px;
+
+  --line-height-tight: 1.25;
+  --line-height-body: 1.5;
+  --line-height-relaxed: 1.67;
+}

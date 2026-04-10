@@ -96,9 +96,9 @@ defineExpose({
 }
 
 .confirm-dialog {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 12px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   width: 90%;
   max-width: 450px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -118,12 +118,12 @@ defineExpose({
 
 .confirm-header {
   padding: 1.5rem 1.5rem 1rem 1.5rem;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .confirm-header h3 {
   margin: 0;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -134,7 +134,7 @@ defineExpose({
 
 .confirm-body p {
   margin: 0;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 0.95rem;
   line-height: 1.6;
 }
@@ -150,7 +150,7 @@ defineExpose({
 .btn-confirm {
   padding: 0.6rem 1.5rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
@@ -158,14 +158,14 @@ defineExpose({
 }
 
 .btn-cancel {
-  background: #21262d;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
 }
 
 .btn-cancel:hover {
-  background: #30363d;
-  border-color: #58a6ff;
+  background: var(--color-bg-surface);
+  border-color: var(--color-brand-link-hover);
 }
 
 .btn-confirm {

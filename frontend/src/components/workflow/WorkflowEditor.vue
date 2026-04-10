@@ -1,20 +1,20 @@
 ﻿<template>
   <div class="workflow-editor">
     <div class="editor-toolbar">
-      <div class="toolbar-left">
+      <div class="toolbar-left toolbar-group toolbar-group--primary">
         <button @click="showWorkflowManager = true" class="btn-workflow">
           📁 {{ currentWorkflowName }}
         </button>
-        <button @click="save" class="btn-primary">💾 保存</button>
-        <button @click="executeWorkflow" class="btn-success">▶️ 执行</button>
-        <button @click="showRecordingSetupModal = true" class="btn-secondary" :disabled="isRecording">🎥 开始录制</button>
-        <button @click="exportJson" class="btn-secondary">📤 导出JSON</button>
-        <button @click="showImportModal = true" class="btn-secondary">📥 导入JSON</button>
+        <button @click="save" class="btn-primary btn-toolbar-main">💾 保存</button>
+        <button @click="executeWorkflow" class="btn-success btn-toolbar-main">▶️ 执行</button>
+        <button @click="showRecordingSetupModal = true" class="btn-secondary btn-toolbar-main" :disabled="isRecording">🎥 开始录制</button>
+        <button @click="exportJson" class="btn-secondary btn-toolbar-sub">📤 导出JSON</button>
+        <button @click="showImportModal = true" class="btn-secondary btn-toolbar-sub">📥 导入JSON</button>
       </div>
-      <div class="toolbar-right">
-        <button @click="loadExample" class="btn-secondary">📋 加载示例</button>
-        <button @click="showDataTableModal = true" class="btn-secondary">📊 数据表</button>
-        <button @click="showVariablesModal = true" class="btn-secondary">🔢 变量</button>
+      <div class="toolbar-right toolbar-group toolbar-group--secondary">
+        <button @click="loadExample" class="btn-secondary btn-toolbar-sub">📋 加载示例</button>
+        <button @click="showDataTableModal = true" class="btn-secondary btn-toolbar-sub">📊 数据表</button>
+        <button @click="showVariablesModal = true" class="btn-secondary btn-toolbar-sub">🔢 变量</button>
         <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
         <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
         <button @click="clear" class="btn-danger">🗑️ 清空</button>
@@ -108,13 +108,14 @@
           @nodes-change="onNodesChange"
           @edges-change="onEdgesChange"
         >
-          <Background pattern-color="#30363d" :gap="16" />
+          <Background pattern-color="#2a2a2a" :gap="16" />
+          
           <MiniMap 
             :nodeColor="getMinimapNodeColor"
-            nodeStrokeColor="#484f58"
+            nodeStrokeColor="#5e5e5e"
             :nodeStrokeWidth="1"
-            maskColor="rgba(13, 17, 23, 0.85)"
-            maskStrokeColor="#58a6ff"
+            maskColor="rgba(0, 0, 0, 0.88)"
+            maskStrokeColor="#76b900"
             :maskStrokeWidth="2"
             pannable
             zoomable
@@ -2470,9 +2471,9 @@ const elements = computed({
         },
         style: {
           background: getBlockColor(block.category),
-          color: '#fff',
-          border: '1px solid #30363d',
-          borderRadius: '8px',
+          color: getBlockTextColor(block.category),
+          border: `1px solid ${getBlockBorderColor(block.category)}`,
+          borderRadius: '2px',
           minWidth: '150px',
           textAlign: 'center' as const
         }
@@ -2516,14 +2517,14 @@ const elements = computed({
           type: MarkerType.ArrowClosed,
           color: selectedConnectionId.value === conn.id
             ? '#facc15'
-            : conn.type === 'data' ? '#f85149' : '#58a6ff',
+            : conn.type === 'data' ? '#df6500' : '#76b900',
           width: 20,
           height: 20
         },
         style: {
           stroke: selectedConnectionId.value === conn.id
             ? '#facc15'
-            : conn.type === 'data' ? '#f85149' : '#58a6ff',
+            : conn.type === 'data' ? '#df6500' : '#76b900',
           strokeWidth: selectedConnectionId.value === conn.id ? 3 : 2
         }
       };
@@ -2549,13 +2550,35 @@ const canRedo = computed(() => workflowStore.canRedo);
 
 function getBlockColor(category: string) {
   const colors: Record<string, string> = {
-    browser: '#1f6feb',
-    interaction: '#238636',
-    extraction: '#f85149',
-    logic: '#8957e5',
-    data: '#6e7681'
+    browser: '#0d1524',
+    interaction: '#132313',
+    extraction: '#feeeb2',
+    logic: '#2a1438',
+    data: '#2f2412'
   };
   return colors[category] || '#6e7681';
+}
+
+function getBlockTextColor(category: string) {
+  const colors: Record<string, string> = {
+    browser: '#ffffff',
+    interaction: '#ffffff',
+    extraction: '#000000',
+    logic: '#ffffff',
+    data: '#fff4cf'
+  };
+  return colors[category] || '#ffffff';
+}
+
+function getBlockBorderColor(category: string) {
+  const colors: Record<string, string> = {
+    browser: '#4f7fd1',
+    interaction: '#5aa469',
+    extraction: '#df6500',
+    logic: '#b780ff',
+    data: '#ef9100'
+  };
+  return colors[category] || '#5e5e5e';
 }
 
 function getMinimapNodeColor(node: any) {
@@ -2568,16 +2591,17 @@ function getMinimapNodeColor(node: any) {
   const blockType = node.data?.blockType;
   if (blockType) {
     const colorMap: Record<string, string> = {
-      navigate: '#1f6feb',
-      back: '#1f6feb',
-      forward: '#1f6feb',
-      scroll: '#1f6feb',
-      wait: '#1f6feb',
-      click: '#238636',
-      type: '#238636',
-      extract: '#f85149',
-      loop: '#8957e5',
-      log: '#8957e5'
+      navigate: '#0d1524',
+      back: '#0d1524',
+      forward: '#0d1524',
+      scroll: '#0d1524',
+      wait: '#0d1524',
+      click: '#132313',
+      type: '#132313',
+      extract: '#feeeb2',
+      loop: '#2a1438',
+      condition: '#26310f',
+      log: '#2f2412'
     };
     return colorMap[blockType] || '#6e7681';
   }
@@ -3386,9 +3410,11 @@ async function executeWorkflow() {
 .workflow-editor {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  background: #0d1117;
-  color: #c9d1d9;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-sans);
 }
 
 .editor-toolbar {
@@ -3397,8 +3423,8 @@ async function executeWorkflow() {
   align-items: center;
   gap: 0.5rem;
   padding: 1rem;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  background: var(--color-bg-page);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .toolbar-left,
@@ -3406,17 +3432,23 @@ async function executeWorkflow() {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar-group--secondary {
+  justify-content: flex-end;
 }
 
 .btn-workflow {
   padding: 0.5rem 1rem;
-  border: 2px solid #58a6ff;
-  border-radius: 6px;
-  background: #0d1117;
-  color: #58a6ff;
+  border: 2px solid var(--color-brand-accent);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
   cursor: pointer;
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: 700;
+  text-transform: uppercase;
   transition: all 0.3s;
   max-width: 250px;
   overflow: hidden;
@@ -3425,64 +3457,91 @@ async function executeWorkflow() {
 }
 
 .btn-workflow:hover {
-  background: #1c2d3f;
-  border-color: #79c0ff;
-  color: #79c0ff;
+  background: var(--color-brand-accent-hover);
+  border-color: var(--color-brand-accent);
+  color: var(--color-text-primary);
 }
 
 .btn-primary, .btn-secondary, .btn-danger, .btn-icon, .btn-success {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
+  padding: 11px 13px;
+  border: 2px solid var(--color-brand-accent);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
-  transition: background 0.3s;
+  font-weight: 700;
+  line-height: var(--line-height-tight);
+  transition: all 0.2s ease;
+  background: transparent;
+  color: var(--color-text-primary);
+}
+
+.btn-toolbar-main {
+  border-width: 2px;
+  background: rgba(118, 185, 0, 0.04);
+}
+
+.btn-toolbar-sub {
+  border-width: 1px;
+  border-color: var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.btn-toolbar-sub:hover {
+  border-color: var(--color-brand-accent);
+  color: var(--color-text-primary);
 }
 
 .btn-primary {
-  background: #238636;
-  color: white;
+  background: transparent;
+  color: var(--color-text-primary);
 }
 
 .btn-primary:hover {
-  background: #2ea043;
+  background: var(--color-brand-accent-hover);
+  color: var(--color-text-primary);
 }
 
 .btn-success {
-  background: #1f6feb;
-  color: white;
+  background: transparent;
+  color: var(--color-text-primary);
 }
 
 .btn-success:hover {
-  background: #388bfd;
+  background: var(--color-brand-accent-hover);
+  color: var(--color-text-primary);
 }
 
 .btn-secondary {
-  background: #1f6feb;
-  color: white;
+  background: transparent;
+  color: var(--color-text-primary);
 }
 
 .btn-secondary:hover {
-  background: #388bfd;
+  background: var(--color-brand-accent-hover);
+  color: var(--color-text-primary);
 }
 
 .btn-danger {
-  background: #da3633;
-  color: white;
+  border-color: var(--color-border-danger);
+  color: var(--color-text-primary);
 }
 
 .btn-danger:hover {
-  background: #f85149;
+  background: var(--color-border-danger);
+  border-color: var(--color-border-danger);
+  color: var(--color-text-primary);
 }
 
 .btn-icon {
-  background: #21262d;
-  color: #c9d1d9;
+  background: transparent;
+  color: var(--color-text-primary);
   padding: 0.5rem 0.75rem;
+  border-color: var(--color-border-default);
 }
 
 .btn-icon:hover:not(:disabled) {
-  background: #30363d;
+  background: var(--color-bg-panel);
+  border-color: var(--color-brand-accent);
 }
 
 .btn-icon:disabled {
@@ -3494,19 +3553,23 @@ async function executeWorkflow() {
   display: flex;
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 .block-palette {
   width: 250px;
-  background: #161b22;
-  border-right: 1px solid #30363d;
+  background: var(--color-bg-page);
+  border-right: 1px solid var(--color-border-default);
   overflow-y: auto;
   padding: 1rem;
 }
 
 .block-palette h3 {
   margin: 0 0 1rem 0;
-  color: #58a6ff;
+  color: var(--color-text-primary);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: var(--line-height-tight);
 }
 
 .palette-category {
@@ -3515,8 +3578,10 @@ async function executeWorkflow() {
 
 .palette-category h4 {
   margin: 0 0 0.5rem 0;
-  font-size: 0.9rem;
-  color: #8b949e;
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .palette-block {
@@ -3525,16 +3590,17 @@ async function executeWorkflow() {
   gap: 0.5rem;
   padding: 0.75rem;
   margin-bottom: 0.5rem;
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   cursor: move;
   transition: all 0.2s;
+  color: var(--color-text-primary);
 }
 
 .palette-block:hover {
-  background: #30363d;
-  border-color: #58a6ff;
+  background: var(--color-bg-surface);
+  border-color: var(--color-brand-accent);
 }
 
 .palette-block:active {
@@ -3548,6 +3614,9 @@ async function executeWorkflow() {
 .canvas-area {
   flex: 1;
   position: relative;
+  background:
+    radial-gradient(circle at top left, rgba(118, 185, 0, 0.06) 0%, rgba(118, 185, 0, 0) 22%),
+    var(--color-bg-page-elevated);
 }
 
 .canvas-layout-actions {
@@ -3558,29 +3627,188 @@ async function executeWorkflow() {
   display: flex;
   gap: 8px;
   padding: 8px;
-  border: 1px solid rgba(48, 54, 61, 0.92);
-  border-radius: 10px;
-  background: rgba(13, 17, 23, 0.88);
-  backdrop-filter: blur(8px);
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.92);
 }
 
 .property-panel {
   width: 300px;
-  background: #161b22;
-  border-left: 1px solid #30363d;
+  background: var(--color-bg-page);
+  border-left: 1px solid var(--color-border-default);
   padding: 1rem;
   overflow-y: auto;
 }
 
 .property-panel h3 {
   margin: 0 0 1rem 0;
-  color: #58a6ff;
+  color: var(--color-text-primary);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: var(--line-height-tight);
 }
 
 .property-content {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.property-panel :deep(.property-form) {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.property-panel :deep(.form-group) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.property-panel :deep(.form-group label),
+.property-panel :deep(.section-header h4),
+.property-panel :deep(.form-section-title) {
+  color: var(--color-text-secondary) !important;
+  font-size: 0.84rem !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.property-panel :deep(.form-group small),
+.property-panel :deep(.field-help),
+.property-panel :deep(.help-text),
+.property-panel :deep(.loop-help-text) {
+  color: var(--color-text-muted) !important;
+  font-size: 0.8rem !important;
+  line-height: 1.55;
+}
+
+.property-panel :deep(input[type='text']),
+.property-panel :deep(input[type='number']),
+.property-panel :deep(input[type='url']),
+.property-panel :deep(textarea),
+.property-panel :deep(select) {
+  width: 100%;
+  background: var(--color-bg-panel) !important;
+  color: var(--color-text-primary) !important;
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.7rem 0.8rem !important;
+  font-size: 0.95rem !important;
+  line-height: 1.5;
+  box-shadow: none !important;
+}
+
+.property-panel :deep(input[type='text']::placeholder),
+.property-panel :deep(input[type='number']::placeholder),
+.property-panel :deep(input[type='url']::placeholder),
+.property-panel :deep(textarea::placeholder) {
+  color: var(--color-text-muted);
+}
+
+.property-panel :deep(input[type='text']:focus),
+.property-panel :deep(input[type='number']:focus),
+.property-panel :deep(input[type='url']:focus),
+.property-panel :deep(textarea:focus),
+.property-panel :deep(select:focus) {
+  outline: none !important;
+  border-color: var(--color-brand-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-brand-accent) !important;
+}
+
+.property-panel :deep(textarea) {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.property-panel :deep(input[type='checkbox']) {
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0;
+  accent-color: var(--color-brand-accent);
+}
+
+.property-panel :deep(.extractions-section),
+.property-panel :deep(.rules-section),
+.property-panel :deep(.paths-section) {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border-default) !important;
+}
+
+.property-panel :deep(.extraction-item),
+.property-panel :deep(.condition-group),
+.property-panel :deep(.rule-item),
+.property-panel :deep(.path-item) {
+  background: var(--color-bg-surface) !important;
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-card);
+}
+
+.property-panel :deep(.extraction-header),
+.property-panel :deep(.rule-header),
+.property-panel :deep(.path-header),
+.property-panel :deep(.section-header) {
+  border-bottom-color: var(--color-border-default) !important;
+}
+
+.property-panel :deep(.extraction-number),
+.property-panel :deep(.rule-number),
+.property-panel :deep(.path-number),
+.property-panel :deep(.condition-name) {
+  color: var(--color-brand-accent) !important;
+  font-weight: 700;
+}
+
+.property-panel :deep(.btn-icon-small),
+.property-panel :deep(.btn-add-extraction),
+.property-panel :deep(.btn-add-rule),
+.property-panel :deep(.btn-add-path) {
+  border-radius: 2px !important;
+  transition: all 0.2s ease;
+}
+
+.property-panel :deep(.btn-icon-small) {
+  background: transparent !important;
+  border: 1px solid var(--color-border-default) !important;
+  color: var(--color-text-secondary) !important;
+}
+
+.property-panel :deep(.btn-icon-small:hover) {
+  background: var(--color-border-danger) !important;
+  border-color: var(--color-border-danger) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.property-panel :deep(.btn-add-extraction),
+.property-panel :deep(.btn-add-rule),
+.property-panel :deep(.btn-add-path) {
+  width: 100%;
+  padding: 0.8rem !important;
+  background: transparent !important;
+  border: 1px dashed var(--color-brand-accent) !important;
+  color: var(--color-text-primary) !important;
+  font-weight: 700 !important;
+}
+
+.property-panel :deep(.btn-add-extraction:hover),
+.property-panel :deep(.btn-add-rule:hover),
+.property-panel :deep(.btn-add-path:hover) {
+  background: var(--color-brand-accent-hover) !important;
+  border-color: var(--color-brand-accent-hover) !important;
+  color: var(--color-text-primary) !important;
+}
+
+.property-panel :deep(.empty-extractions),
+.property-panel :deep(.empty-rules),
+.property-panel :deep(.empty-paths) {
+  background: var(--color-bg-surface) !important;
+  border: 1px dashed var(--color-border-default) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--color-text-muted) !important;
 }
 
 .connection-panel {
@@ -3592,19 +3820,21 @@ async function executeWorkflow() {
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.75rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 8px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
 }
 
 .connection-meta-label {
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .connection-meta-value {
-  color: #c9d1d9;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
   word-break: break-all;
 }
@@ -3622,10 +3852,10 @@ async function executeWorkflow() {
   min-height: 240px;
   max-width: min(720px, calc(100vw - 16px));
   max-height: calc(100vh - 16px);
-  background: rgba(22, 27, 34, 0.96);
-  border: 1px solid #30363d;
-  border-radius: 10px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.98);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
   resize: both;
 }
@@ -3636,15 +3866,15 @@ async function executeWorkflow() {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem 1rem;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  background: var(--color-bg-page);
+  border-bottom: 1px solid var(--color-border-default);
   cursor: move;
   user-select: none;
 }
 
 .execution-panel-header h3 {
   margin: 0;
-  color: #58a6ff;
+  color: var(--color-text-primary);
 }
 
 .execution-panel-actions {
@@ -3655,10 +3885,10 @@ async function executeWorkflow() {
 
 .execution-status {
   padding: 0.3rem 0.55rem;
-  border-radius: 999px;
-  background: rgba(31, 111, 235, 0.18);
-  border: 1px solid rgba(88, 166, 255, 0.4);
-  color: #79c0ff;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--color-brand-accent);
+  color: var(--color-brand-accent);
   font-size: 0.8rem;
   white-space: nowrap;
 }
@@ -3677,9 +3907,9 @@ async function executeWorkflow() {
 }
 
 .modal-content {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 2rem;
   width: 80%;
   max-width: 800px;
@@ -3698,12 +3928,12 @@ async function executeWorkflow() {
 
 .json-textarea {
   flex: 1;
-  background: #0d1117;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.9rem;
   resize: vertical;
   min-height: 400px;
@@ -3711,37 +3941,38 @@ async function executeWorkflow() {
 
 .json-textarea:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-accent);
 }
 
 .json-error {
   padding: 0.75rem;
-  background: #da3633;
-  color: white;
-  border-radius: 6px;
+  background: var(--color-bg-danger);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-danger);
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   margin-top: 1rem;
 }
 
 .modal-content h3 {
   margin: 0 0 1rem 0;
-  color: #58a6ff;
+  color: var(--color-text-primary);
 }
 
 .modal-content h4 {
   margin: 0 0 0.5rem 0;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 
 .code-preview {
   flex: 1;
-  background: #0d1117;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.9rem;
   resize: none;
   min-height: 400px;
@@ -3756,12 +3987,12 @@ async function executeWorkflow() {
 
 .execution-logs {
   flex: 1;
-  background: #0d1117;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
   border-radius: 0;
   padding: 1rem;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.9rem;
   overflow-y: auto;
   min-height: 0;
@@ -3778,9 +4009,9 @@ async function executeWorkflow() {
 .data-preview {
   margin-top: 1rem;
   padding: 1rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: #1a1a1a;
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
 }
 
 .data-summary {
@@ -3791,10 +4022,11 @@ async function executeWorkflow() {
 
 .data-summary span {
   padding: 0.5rem 1rem;
-  background: #21262d;
-  border-radius: 6px;
+  background: #1a1a1a;
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
   font-size: 0.9rem;
-  color: #c9d1d9;
+  color: #ffffff;
 }
 
 .data-table-modal {
@@ -3824,7 +4056,7 @@ async function executeWorkflow() {
 .empty-state {
   text-align: center;
   padding: 2rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 
@@ -3833,9 +4065,9 @@ async function executeWorkflow() {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   margin-bottom: 0.75rem;
 }
 
@@ -3849,19 +4081,19 @@ async function executeWorkflow() {
 .variable-name {
   font-size: 1rem;
   font-weight: 600;
-  color: #58a6ff;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--color-brand-link-hover);
+  font-family: var(--font-family-mono);
 }
 
 .variable-value {
   font-size: 0.9rem;
-  color: #c9d1d9;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
 }
 
 .variable-desc {
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-style: italic;
 }
 
@@ -3873,29 +4105,29 @@ async function executeWorkflow() {
 .btn-icon-small {
   padding: 0.4rem 0.6rem;
   background: transparent;
-  border: 1px solid #30363d;
-  border-radius: 4px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.2s;
 }
 
 .btn-icon-small:hover {
-  background: #21262d;
-  border-color: #58a6ff;
+  background: var(--color-bg-panel);
+  border-color: var(--color-brand-link-hover);
 }
 
 .variable-form {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1.5rem;
   margin-bottom: 1rem;
 }
 
 .variable-form h4 {
   margin: 0 0 1rem 0;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 1rem;
 }
 
@@ -3910,7 +4142,7 @@ async function executeWorkflow() {
 .variable-form label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
   font-weight: 500;
 }
@@ -3918,24 +4150,24 @@ async function executeWorkflow() {
 .variable-form input {
   width: 100%;
   padding: 0.6rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 4px;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 0.9rem;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
 }
 
 .variable-form input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .variable-form small {
   display: block;
   margin-top: 0.25rem;
   font-size: 0.8rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .variable-form small.error {
@@ -3951,16 +4183,16 @@ async function executeWorkflow() {
 .variables-help {
   margin-top: 1.5rem;
   padding: 1rem;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  border-left: 3px solid #58a6ff;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-brand-link-hover);
 }
 
 .variables-help p {
   margin: 0.5rem 0;
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   line-height: 1.5;
 }
 
@@ -3974,55 +4206,57 @@ async function executeWorkflow() {
 
 .variables-help code {
   padding: 0.2rem 0.4rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
   border-radius: 3px;
-  color: #58a6ff;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--color-brand-link-hover);
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
 }
 
 /* 自定义 MiniMap 样式 */
 :deep(.vue-flow__minimap) {
-  background: #161b22 !important;
-  border: 1px solid #30363d !important;
-  border-radius: 8px !important;
+  background: var(--color-bg-surface) !important;
+  border: 1px solid var(--color-border-default) !important;
+  border-radius: var(--radius-sm) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
 }
 
 :deep(.vue-flow__minimap-mask) {
-  fill: rgba(13, 17, 23, 0.85) !important;
-  stroke: #58a6ff !important;
+  fill: rgba(0, 0, 0, 0.88) !important;
+  stroke: #76b900 !important;
   stroke-width: 2 !important;
-  rx: 8 !important;
+  rx: 2 !important;
 }
 
 :deep(.vue-flow__minimap svg) {
-  background: #161b22 !important;
-  border-radius: 8px !important;
+  background: #000000 !important;
+  border-radius: 2px !important;
 }
 
 /* MiniMap 节点颜色 - 让它继承节点的实际颜色 */
 :deep(.vue-flow__minimap-node) {
-  stroke: #484f58;
+  stroke: #5e5e5e;
   stroke-width: 1;
   /* 不设置 fill，让它自动继承节点背景色 */
 }
 
 /* 全局覆盖 MiniMap 背景 */
 .vue-flow__minimap {
-  background: #161b22 !important;
+  background: #000000 !important;
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
 }
 
 /* 自定义连接点样式 - 默认空心 */
 :deep(.vue-flow__handle) {
   width: 12px !important;
   height: 12px !important;
-  background: #0d1117 !important;
-  border: 2px solid #58a6ff !important;
+  background: #000000 !important;
+  border: 2px solid #76b900 !important;
   border-radius: 50% !important;
   transition: all 0.2s ease !important;
-  --vf-handle: #0d1117 !important;
+  --vf-handle: #000000 !important;
   opacity: 1 !important;
   visibility: visible !important;
   pointer-events: all !important;
@@ -4049,16 +4283,16 @@ async function executeWorkflow() {
 :deep(.vue-flow__handle.connected),
 :deep(.vue-flow__handle-left.connected),
 :deep(.vue-flow__handle-right.connected) {
-  background: #58a6ff !important;
-  --vf-handle: #58a6ff !important;
+  background: #76b900 !important;
+  --vf-handle: #76b900 !important;
 }
 
 /* hover 时变为实心 - 居中放大 */
 :deep(.vue-flow__handle:hover) {
-  background: #58a6ff !important;
-  border-color: #388bfd !important;
-  box-shadow: 0 0 8px rgba(88, 166, 255, 0.6) !important;
-  --vf-handle: #58a6ff !important;
+  background: #76b900 !important;
+  border-color: #bff230 !important;
+  box-shadow: 0 0 8px rgba(118, 185, 0, 0.45) !important;
+  --vf-handle: #76b900 !important;
   width: 16px !important;
   height: 16px !important;
 }
@@ -4095,7 +4329,7 @@ async function executeWorkflow() {
 }
 
 :deep(.vue-flow__arrowhead) {
-  fill: #58a6ff;
+  fill: #76b900;
 }
 
 :deep(.vue-flow__arrowhead path) {
@@ -4110,10 +4344,10 @@ async function executeWorkflow() {
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: rgba(22, 27, 34, 0.98);
-  border: 1px solid #30363d;
-  border-radius: 16px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.98);
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
   overflow: hidden;
   z-index: 1200;
 }
@@ -4123,18 +4357,19 @@ async function executeWorkflow() {
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #5e5e5e;
 }
 
 .recording-panel-header h3 {
   margin: 0;
-  font-size: 1.75rem;
-  color: #58a6ff;
+  font-size: 1.5rem;
+  color: #ffffff;
+  line-height: 1.25;
 }
 
 .recording-panel-header p {
   margin: 0.5rem 0 0;
-  color: #8b949e;
+  color: #a7a7a7;
   font-size: 0.95rem;
   line-height: 1.5;
 }
@@ -4153,9 +4388,11 @@ async function executeWorkflow() {
 }
 
 .recording-mark-config-label {
-  color: #8b949e;
+  color: #a7a7a7;
   font-size: 0.82rem;
   letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .recording-mark-config-row {
@@ -4168,32 +4405,34 @@ async function executeWorkflow() {
   flex: 1;
   min-width: 0;
   padding: 0.55rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid #30363d;
-  background: #0d1117;
-  color: #c9d1d9;
+  border-radius: 2px;
+  border: 1px solid #5e5e5e;
+  background: #1a1a1a;
+  color: #ffffff;
 }
 
 .recording-mark-config-hint,
 .recording-mark-config-empty {
-  color: #8b949e;
+  color: #757575;
   font-size: 0.85rem;
   line-height: 1.5;
 }
 
 .recording-mode-tag {
   padding: 0.55rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid #58a6ff;
-  color: #58a6ff;
-  background: rgba(88, 166, 255, 0.12);
+  border-radius: 2px;
+  border: 1px solid #76b900;
+  color: #ffffff;
+  background: transparent;
   white-space: nowrap;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .recording-mode-tag.is-mark {
-  border-color: #a855f7;
-  color: #e9d5ff;
-  background: rgba(168, 85, 247, 0.16);
+  border-color: #b780ff;
+  color: #ffffff;
+  background: rgba(183, 128, 255, 0.08);
 }
 
 .recording-panel-toolbar {
@@ -4201,8 +4440,8 @@ async function executeWorkflow() {
   justify-content: space-between;
   align-items: center;
   padding: 0.9rem 1.25rem;
-  border-bottom: 1px solid #30363d;
-  color: #8b949e;
+  border-bottom: 1px solid #5e5e5e;
+  color: #a7a7a7;
 }
 
 .recording-panel-toolbar-actions {
@@ -4214,21 +4453,22 @@ async function executeWorkflow() {
 .loop-capture-panel {
   margin: 0 1.25rem 1rem;
   padding: 0.95rem 1rem;
-  border: 1px solid #2f81f7;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(31, 111, 235, 0.12) 0%, rgba(13, 17, 23, 0.78) 100%);
+  border: 1px solid #76b900;
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(118, 185, 0, 0.08) 0%, rgba(0, 0, 0, 0.9) 100%);
 }
 
 .loop-capture-title {
   margin-bottom: 0.5rem;
-  color: #79c0ff;
+  color: #76b900;
   font-size: 0.82rem;
   font-weight: 700;
+  text-transform: uppercase;
 }
 
 .loop-capture-body p {
   margin: 0 0 0.75rem;
-  color: #c9d1d9;
+  color: #ffffff;
   font-size: 0.82rem;
   line-height: 1.6;
 }
@@ -4242,9 +4482,9 @@ async function executeWorkflow() {
 .loop-capture-diff-panel {
   margin-top: 0.85rem;
   padding: 0.8rem 0.9rem;
-  border: 1px solid rgba(248, 81, 73, 0.42);
-  border-radius: 10px;
-  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid #e52020;
+  border-radius: 2px;
+  background: rgba(101, 11, 11, 0.4);
 }
 
 .loop-capture-diff-title {
@@ -4267,19 +4507,20 @@ async function executeWorkflow() {
 
 .loop-capture-record-space {
   padding: 0.9rem 0 0.45rem;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #5e5e5e;
   margin-bottom: 0.25rem;
 }
 
 .loop-capture-record-space-title {
-  color: #79c0ff;
+  color: #76b900;
   font-size: 0.82rem;
   font-weight: 700;
   margin-bottom: 0.35rem;
+  text-transform: uppercase;
 }
 
 .loop-capture-record-space-hint {
-  color: #8b949e;
+  color: #757575;
   font-size: 0.78rem;
   line-height: 1.5;
 }
@@ -4291,12 +4532,12 @@ async function executeWorkflow() {
 
 .empty-recording-state {
   padding: 1rem 0;
-  color: #8b949e;
+  color: #757575;
 }
 
 .recording-event-item {
   padding: 1rem 0;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #5e5e5e;
 }
 
 .recording-event-item:last-child {
@@ -4313,16 +4554,16 @@ async function executeWorkflow() {
 .recording-event-delete {
   flex-shrink: 0;
   padding: 0.35rem 0.6rem;
-  border: 1px solid #30363d;
-  border-radius: 8px;
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
   background: transparent;
-  color: #8b949e;
+  color: #a7a7a7;
   cursor: pointer;
 }
 
 .recording-event-delete:hover {
-  border-color: #58a6ff;
-  color: #c9d1d9;
+  border-color: #76b900;
+  color: #ffffff;
 }
 
 .recording-event-summary {
@@ -4332,7 +4573,7 @@ async function executeWorkflow() {
 
 .recording-event-meta {
   margin-top: 0.5rem;
-  color: #8b949e;
+  color: #757575;
   line-height: 1.5;
   word-break: break-word;
 }
@@ -4347,12 +4588,12 @@ async function executeWorkflow() {
   max-height: 90vh;
   overflow-y: auto;
   padding: 1.25rem;
-  border-radius: 18px;
+  border-radius: 2px;
   background:
-    radial-gradient(circle at top left, rgba(88, 166, 255, 0.12), transparent 28%),
-    linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98));
-  border: 1px solid rgba(88, 166, 255, 0.2);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+    radial-gradient(circle at top left, rgba(118, 185, 0, 0.08), transparent 28%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.98), rgba(0, 0, 0, 0.98));
+  border: 1px solid #5e5e5e;
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .ai-generate-header {
@@ -4362,7 +4603,7 @@ async function executeWorkflow() {
   gap: 1.25rem;
   margin-bottom: 1rem;
   padding: 0.25rem 0.25rem 0.9rem;
-  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+  border-bottom: 1px solid #5e5e5e;
 }
 
 .ai-generate-header h3 {
@@ -4373,13 +4614,13 @@ async function executeWorkflow() {
 
 .ai-generate-header p {
   margin: 0;
-  color: #8b949e;
+  color: #757575;
   line-height: 1.5;
 }
 
 .ai-generate-header .btn-secondary {
-  background: rgba(31, 41, 55, 0.92);
-  border: 1px solid rgba(71, 85, 105, 0.55);
+  background: transparent;
+  border: 1px solid #5e5e5e;
 }
 
 .ai-generate-layout {
@@ -4391,11 +4632,11 @@ async function executeWorkflow() {
 
 .ai-config-card,
 .ai-output-card {
-  background: rgba(15, 20, 28, 0.8);
-  border: 1px solid rgba(48, 54, 61, 0.92);
-  border-radius: 16px;
+  background: #111111;
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
   padding: 1rem;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .ai-config-card {
@@ -4423,7 +4664,7 @@ async function executeWorkflow() {
 }
 
 .ai-card-title small {
-  color: #8b949e;
+  color: var(--color-text-secondary);
   line-height: 1.4;
 }
 
@@ -4457,7 +4698,7 @@ async function executeWorkflow() {
 .ai-input {
   width: 100%;
   border: 1px solid rgba(71, 85, 105, 0.55);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   background: linear-gradient(180deg, rgba(13, 17, 23, 0.96), rgba(17, 24, 39, 0.96));
   color: #f3f4f6;
   padding: 0.8rem 0.9rem;
@@ -4498,7 +4739,7 @@ async function executeWorkflow() {
 .ai-result-textarea {
   flex: 1;
   min-height: 540px;
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   border-color: rgba(48, 54, 61, 0.95);
   background:
     linear-gradient(180deg, rgba(10, 14, 20, 0.98), rgba(12, 18, 26, 0.98));
@@ -4506,7 +4747,7 @@ async function executeWorkflow() {
 
 .ai-request-textarea {
   min-height: 260px;
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   border-color: rgba(48, 54, 61, 0.95);
   background:
     linear-gradient(180deg, rgba(10, 14, 20, 0.98), rgba(12, 18, 26, 0.98));
@@ -4531,10 +4772,10 @@ async function executeWorkflow() {
 .recording-mark-preview {
   margin-bottom: 1rem;
   padding: 0.9rem 1rem;
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
   border: 1px solid #30363d;
-  border-radius: 10px;
-  color: #8b949e;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
   line-height: 1.6;
   word-break: break-word;
 }

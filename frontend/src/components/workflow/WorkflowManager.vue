@@ -345,39 +345,39 @@ defineExpose({
 .search-input {
   flex: 1;
   padding: 10px 16px;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  color: #fff;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 14px;
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .new-workflow-form {
-  background: #2a2a2a;
+  background: var(--color-bg-panel);
   padding: 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin-bottom: 20px;
 }
 
 .new-workflow-form h3 {
   margin: 0 0 16px 0;
   font-size: 16px;
-  color: #fff;
+  color: var(--color-text-primary);
 }
 
 .form-input,
 .form-textarea {
   width: 100%;
   padding: 10px 12px;
-  background: #1c1c1c;
-  border: 1px solid #444;
-  border-radius: 6px;
-  color: #fff;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 14px;
   margin-bottom: 12px;
   font-family: inherit;
@@ -386,7 +386,7 @@ defineExpose({
 .form-input:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .form-actions {
@@ -406,9 +406,9 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: #2a2a2a;
+  background: var(--color-bg-panel);
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -419,7 +419,7 @@ defineExpose({
 }
 
 .workflow-item.active {
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
   background: #1c2d3f;
 }
 
@@ -431,7 +431,7 @@ defineExpose({
 .workflow-name {
   font-size: 16px;
   font-weight: 500;
-  color: #fff;
+  color: var(--color-text-primary);
   margin-bottom: 4px;
 }
 
@@ -439,7 +439,7 @@ defineExpose({
   display: flex;
   gap: 12px;
   font-size: 13px;
-  color: #999;
+  color: var(--color-text-muted);
 }
 
 .workflow-description {
@@ -464,7 +464,7 @@ defineExpose({
   border: none;
   padding: 6px 8px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 16px;
   transition: background 0.2s;
 }
@@ -480,14 +480,14 @@ defineExpose({
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--color-text-muted);
 }
 
 .btn-primary,
 .btn-secondary {
   padding: 10px 20px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -495,8 +495,8 @@ defineExpose({
 }
 
 .btn-primary {
-  background: #58a6ff;
-  color: #fff;
+  background: var(--color-brand-link-hover);
+  color: var(--color-text-primary);
 }
 
 .btn-primary:hover {
@@ -504,8 +504,8 @@ defineExpose({
 }
 
 .btn-secondary {
-  background: #444;
-  color: #fff;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
 }
 
 .btn-secondary:hover {

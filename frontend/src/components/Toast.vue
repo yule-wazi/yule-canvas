@@ -60,9 +60,9 @@ defineExpose({
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 10000;
   min-width: 300px;
@@ -119,7 +119,7 @@ defineExpose({
 
 .toast-content {
   flex: 1;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .toast-title {
@@ -131,7 +131,7 @@ defineExpose({
 
 .toast-message {
   font-size: 0.9rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   line-height: 1.4;
 }
 

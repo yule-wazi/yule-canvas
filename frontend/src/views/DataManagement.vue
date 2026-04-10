@@ -115,7 +115,7 @@ onMounted(() => {
 
 h2 {
   margin-bottom: 2rem;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .layout {
@@ -130,10 +130,10 @@ h2 {
 }
 
 .data-list {
-  background: #161b22;
+  background: var(--color-bg-surface);
   padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
   max-height: calc(100vh - 8rem);
   display: flex;
   flex-direction: column;
@@ -148,17 +148,17 @@ h2 {
 
 h3 {
   margin: 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .refresh-btn {
   padding: 0.4rem 1rem;
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.85rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .refresh-btn:hover {
@@ -172,19 +172,19 @@ h3 {
 
 .data-item {
   padding: 1rem;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   margin-bottom: 0.75rem;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
 }
 
 .data-item:hover {
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
   box-shadow: 0 2px 8px rgba(88, 166, 255, 0.2);
 }
 
@@ -220,13 +220,13 @@ h3 {
 
 .time {
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   margin-bottom: 0.2rem;
 }
 
 .duration {
   font-size: 0.75rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .delete-btn {
@@ -234,7 +234,7 @@ h3 {
   background: #da3633;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.8rem;
   cursor: pointer;
 }
@@ -250,22 +250,22 @@ h3 {
 }
 
 .logs-section {
-  background: #161b22;
+  background: var(--color-bg-surface);
   padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
 }
 
 .logs {
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   max-height: 300px;
   overflow-y: auto;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
-  border: 1px solid #30363d;
+  border: 1px solid var(--color-border-default);
 }
 
 .log-entry {
@@ -276,7 +276,7 @@ h3 {
 .empty {
   text-align: center;
   padding: 3rem 1rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 @media (max-width: 1024px) {

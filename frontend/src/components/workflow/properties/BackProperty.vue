@@ -20,10 +20,10 @@
   display: flex;
   gap: 0.5rem;
   padding: 0.75rem;
-  background: #1f2937;
-  border: 1px solid #374151;
-  border-radius: 6px;
-  color: #9ca3af;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
   line-height: 1.5;
 }

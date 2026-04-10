@@ -150,15 +150,15 @@ const copyWorkflowJson = async () => {
 
 <style scoped>
 .script-generator {
-  background: #161b22;
+  background: var(--color-bg-surface);
   padding: 2rem;
-  border-radius: 8px;
-  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
 }
 
 h3 {
   margin-top: 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .form-group {
@@ -169,29 +169,29 @@ label {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .model-select {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   font-size: 1rem;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
 }
 
 .prompt-input {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   font-size: 1rem;
   font-family: inherit;
   resize: vertical;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
 }
 
 .generate-btn {
@@ -199,7 +199,7 @@ label {
   color: white;
   border: none;
   padding: 0.75rem 2rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 1rem;
   cursor: pointer;
   transition: background 0.3s;
@@ -210,9 +210,9 @@ label {
 }
 
 .generate-btn:disabled {
-  background: #21262d;
+  background: var(--color-bg-panel);
   cursor: not-allowed;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .error-message {
@@ -230,20 +230,20 @@ label {
 
 .result h4 {
   margin-bottom: 1rem;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .workflow-info {
   padding: 1rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   margin-bottom: 1rem;
 }
 
 .workflow-info p {
   margin: 0.5rem 0;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .actions {
@@ -257,7 +257,7 @@ label {
 .import-btn {
   padding: 0.5rem 1.5rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.3s;
@@ -265,7 +265,7 @@ label {
 
 .save-btn,
 .import-btn {
-  background: #1f6feb;
+  background: var(--color-brand-link-hover);
   color: white;
 }
 
@@ -275,9 +275,9 @@ label {
 }
 
 .copy-btn {
-  background: #21262d;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
 }
 
 .copy-btn:hover {

@@ -200,7 +200,7 @@ function handleVariableChange() {
 
 .form-group label {
   font-size: 0.9rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
 
@@ -208,10 +208,10 @@ function handleVariableChange() {
 .form-group select,
 .form-group textarea {
   padding: 0.5rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
   font-size: 0.9rem;
 }
 
@@ -219,18 +219,18 @@ function handleVariableChange() {
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .form-group small {
   font-size: 0.8rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .info-box {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
   margin-top: 0.5rem;
 }
@@ -238,13 +238,13 @@ function handleVariableChange() {
 .info-box h4 {
   margin: 0 0 0.5rem 0;
   font-size: 0.9rem;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .info-box p {
   margin: 0.5rem 0;
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   line-height: 1.5;
 }
 
@@ -252,7 +252,7 @@ function handleVariableChange() {
   margin: 0.5rem 0;
   padding-left: 1.5rem;
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
@@ -261,7 +261,7 @@ function handleVariableChange() {
 }
 
 .info-box strong {
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .toggle-header {
@@ -272,23 +272,23 @@ function handleVariableChange() {
 
 .toggle-button {
   padding: 0.25rem 0.75rem;
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  color: #8b949e;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
   font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .toggle-button:hover {
-  background: #30363d;
-  border-color: #58a6ff;
+  background: var(--color-bg-surface);
+  border-color: var(--color-brand-link-hover);
 }
 
 .toggle-button.active {
-  background: #1f6feb;
-  border-color: #1f6feb;
-  color: #ffffff;
+  background: var(--color-brand-link-hover);
+  border-color: var(--color-brand-link-hover);
+  color: var(--color-text-primary);
 }
 </style>

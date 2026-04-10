@@ -83,16 +83,16 @@ function emitUpdate() {
 
 .form-group label {
   font-size: 0.9rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .form-group input,
 .form-group textarea {
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 0.5rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 0.9rem;
   font-family: inherit;
 }
@@ -100,7 +100,7 @@ function emitUpdate() {
 .form-group input:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .form-group textarea {
@@ -118,7 +118,7 @@ function emitUpdate() {
 
 .form-group small {
   font-size: 0.8rem;
-  color: #6e7681;
+  color: var(--color-text-muted);
   margin-top: -0.25rem;
 }
 </style>

@@ -51,20 +51,20 @@ function emitUpdate() {
 
 .form-group label {
   font-size: 0.9rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .form-group input {
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 0.5rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 0.9rem;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 </style>

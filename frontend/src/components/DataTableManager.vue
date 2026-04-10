@@ -579,8 +579,8 @@ function onColumnDrop(dropIndex: number) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
 }
 
 .manager-header {
@@ -594,7 +594,7 @@ function onColumnDrop(dropIndex: number) {
 
 .manager-header h2 {
   margin: 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
   font-size: 1.2rem;
 }
 
@@ -611,8 +611,8 @@ function onColumnDrop(dropIndex: number) {
 
 .tables-sidebar {
   width: 280px;
-  background: #161b22;
-  border-right: 1px solid #30363d;
+  background: var(--color-bg-surface);
+  border-right: 1px solid var(--color-border-default);
   display: flex;
   flex-direction: column;
   padding: 1rem;
@@ -631,21 +631,21 @@ function onColumnDrop(dropIndex: number) {
 .table-card {
   padding: 1rem;
   margin-bottom: 0.5rem;
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .table-card:hover {
-  background: #30363d;
-  border-color: #58a6ff;
+  background: var(--color-bg-surface);
+  border-color: var(--color-brand-link-hover);
 }
 
 .table-card.active {
-  background: #1f6feb;
-  border-color: #58a6ff;
+  background: var(--color-brand-link-hover);
+  border-color: var(--color-brand-link-hover);
 }
 
 .table-info h3 {
@@ -656,12 +656,12 @@ function onColumnDrop(dropIndex: number) {
 .table-info p {
   margin: 0.25rem 0;
   font-size: 0.9rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .table-info small {
   font-size: 0.8rem;
-  color: #6e7681;
+  color: var(--color-text-muted);
 }
 
 .table-actions {
@@ -688,7 +688,7 @@ function onColumnDrop(dropIndex: number) {
 
 .detail-header h3 {
   margin: 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
   flex-shrink: 0;
 }
 
@@ -704,15 +704,15 @@ function onColumnDrop(dropIndex: number) {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 0.4rem 0.6rem;
   transition: border-color 0.2s;
 }
 
 .search-bar-compact:focus-within {
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .search-input-compact {
@@ -726,7 +726,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .search-input-compact::placeholder {
-  color: #6e7681;
+  color: var(--color-text-muted);
 }
 
 .search-column-select-compact {
@@ -750,7 +750,7 @@ function onColumnDrop(dropIndex: number) {
 
 .search-info-compact {
   font-size: 0.8rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   margin-bottom: 0.5rem;
   padding-left: 0.25rem;
 }
@@ -929,7 +929,7 @@ function onColumnDrop(dropIndex: number) {
 .btn-icon-small {
   padding: 0.5rem 1rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
   transition: background 0.3s;
@@ -988,9 +988,9 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .modal-content {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 2rem;
   width: 90%;
   max-width: 600px;
@@ -1000,7 +1000,7 @@ function onColumnDrop(dropIndex: number) {
 
 .modal-content h3 {
   margin: 0 0 1rem 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .form-group {
@@ -1135,7 +1135,7 @@ function onColumnDrop(dropIndex: number) {
 .image-modal-header h3 {
   margin: 0;
   font-size: 1.1rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .image-modal-body {
@@ -1167,7 +1167,7 @@ function onColumnDrop(dropIndex: number) {
 .video-modal-header h3 {
   margin: 0;
   font-size: 1.1rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .video-modal-body {

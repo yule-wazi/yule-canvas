@@ -45,8 +45,8 @@ watch(code, (newValue) => {
 .script-editor-wrapper {
   width: 100%;
   height: 400px;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -54,10 +54,10 @@ watch(code, (newValue) => {
   width: 100%;
   height: 100%;
   padding: 1rem;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
   border: none;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-family: var(--font-family-mono);
   font-size: 14px;
   line-height: 1.5;
   resize: none;
@@ -65,7 +65,7 @@ watch(code, (newValue) => {
 }
 
 .code-textarea:focus {
-  outline: 2px solid #1f6feb;
+  outline: 2px solid var(--color-brand-link-hover);
   outline-offset: -2px;
 }
 </style>

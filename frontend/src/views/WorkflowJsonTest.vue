@@ -222,9 +222,9 @@ const scrollToBottom = async () => {
 <style scoped>
 .json-test-page {
   padding: 2rem;
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
   min-height: 100vh;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .test-header {
@@ -233,12 +233,12 @@ const scrollToBottom = async () => {
 
 .test-header h2 {
   margin: 0 0 0.5rem 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .test-header p {
   margin: 0;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .test-content {
@@ -261,7 +261,7 @@ const scrollToBottom = async () => {
 
 .editor-header h3 {
   margin: 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .editor-actions {
@@ -272,26 +272,26 @@ const scrollToBottom = async () => {
 .json-textarea {
   width: 100%;
   height: 500px;
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
-  color: #c9d1d9;
-  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
   font-size: 0.9rem;
   resize: vertical;
 }
 
 .json-textarea:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .json-error {
   padding: 0.75rem;
   background: #da3633;
   color: white;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
 }
 
@@ -306,7 +306,7 @@ const scrollToBottom = async () => {
   background: #238636;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
@@ -318,17 +318,17 @@ const scrollToBottom = async () => {
 }
 
 .btn-execute:disabled {
-  background: #21262d;
+  background: var(--color-bg-panel);
   cursor: not-allowed;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .btn-secondary {
   padding: 0.5rem 1rem;
-  background: #21262d;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.3s;
@@ -344,28 +344,28 @@ const scrollToBottom = async () => {
 
 .logs-container h4 {
   margin: 0 0 0.5rem 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .logs {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
   height: 300px;
   overflow-y: auto;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
 }
 
 .log-entry {
   margin-bottom: 0.5rem;
   line-height: 1.5;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
 }
 
 .no-logs {
-  color: #8b949e;
+  color: var(--color-text-secondary);
   text-align: center;
   padding: 2rem;
 }
@@ -376,19 +376,19 @@ const scrollToBottom = async () => {
 
 .result-container h4 {
   margin: 0 0 0.5rem 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .result-content {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
   max-height: 300px;
   overflow: auto;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   margin: 0;
 }
 </style>

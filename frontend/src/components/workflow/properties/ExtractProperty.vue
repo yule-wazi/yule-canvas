@@ -272,7 +272,7 @@ watch(
 
 .form-group label {
   font-size: 0.9rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -282,11 +282,11 @@ watch(
 .form-group input[type="text"],
 .form-group input[type="number"],
 .form-group select {
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 0.5rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 0.9rem;
 }
 
@@ -295,7 +295,7 @@ watch(
 .form-group input[type="number"]:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .form-group textarea {
@@ -319,14 +319,14 @@ watch(
 
 .form-group small {
   font-size: 0.8rem;
-  color: #6e7681;
+  color: var(--color-text-muted);
   margin-top: -0.25rem;
 }
 
 .extractions-section {
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--color-border-default);
 }
 
 .section-header {
@@ -339,14 +339,14 @@ watch(
 .section-header h4 {
   margin: 0;
   font-size: 1rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
 .extraction-item {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 1rem;
   margin-bottom: 1rem;
 }
@@ -357,22 +357,22 @@ watch(
   align-items: center;
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .extraction-number {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .btn-icon-small {
   background: transparent;
-  border: 1px solid #30363d;
-  color: #8b949e;
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-secondary);
   width: 24px;
   height: 24px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 1.2rem;
   line-height: 1;
@@ -391,11 +391,11 @@ watch(
 .empty-extractions {
   text-align: center;
   padding: 2rem;
-  color: #6e7681;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
-  background: #0d1117;
-  border: 1px dashed #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-page-elevated);
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--radius-sm);
   margin-bottom: 1rem;
 }
 
@@ -403,10 +403,10 @@ watch(
   width: 100%;
   padding: 0.75rem;
   font-size: 0.9rem;
-  border: 1px dashed #30363d;
-  border-radius: 6px;
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
   cursor: pointer;
   transition: all 0.2s;
   font-weight: 500;

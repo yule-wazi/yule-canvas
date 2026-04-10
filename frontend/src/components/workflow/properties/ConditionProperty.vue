@@ -284,7 +284,7 @@ function requiresCompareValue(operator: string) {
 
 .form-group label,
 .rule-head span {
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 0.9rem;
 }
 
@@ -297,9 +297,9 @@ function requiresCompareValue(operator: string) {
 .branch-card,
 .rule-card {
   padding: 1rem;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  background: #161b22;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
 }
 
 .branch-header,
@@ -329,10 +329,10 @@ function requiresCompareValue(operator: string) {
   width: 100%;
   box-sizing: border-box;
   padding: 0.6rem;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  background: #0d1117;
-  color: #c9d1d9;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-page-elevated);
+  color: var(--color-text-primary);
   font-size: 0.9rem;
 }
 
@@ -352,14 +352,14 @@ function requiresCompareValue(operator: string) {
 .form-group select:focus,
 .branch-name-input:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
 }
 
 .btn-icon-small,
 .btn-add-secondary,
 .btn-add-primary {
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -367,7 +367,7 @@ function requiresCompareValue(operator: string) {
   width: 28px;
   height: 28px;
   background: transparent;
-  color: #8b949e;
+  color: var(--color-text-secondary);
   font-size: 18px;
 }
 
@@ -380,7 +380,7 @@ function requiresCompareValue(operator: string) {
 .btn-add-primary {
   padding: 0.65rem 0.8rem;
   background: transparent;
-  color: #79c0ff;
+  color: var(--color-brand-link-hover);
 }
 
 .btn-add-primary {
@@ -388,7 +388,7 @@ function requiresCompareValue(operator: string) {
 }
 
 .form-group small {
-  color: #6e7681;
+  color: var(--color-text-muted);
   font-size: 0.8rem;
 }
 </style>

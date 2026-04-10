@@ -109,10 +109,10 @@ const formatValue = (value: any) => {
 
 <style scoped>
 .data-preview {
-  background: #161b22;
+  background: var(--color-bg-surface);
   padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
 }
 
 .header {
@@ -124,7 +124,7 @@ const formatValue = (value: any) => {
 
 h3 {
   margin: 0;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .actions {
@@ -136,7 +136,7 @@ h3 {
 .export-btn {
   padding: 0.4rem 1rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.85rem;
 }
@@ -165,15 +165,15 @@ h3 {
 }
 
 .json-view pre {
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
   padding: 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   margin: 0;
-  font-family: 'Consolas', 'Monaco', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.85rem;
   line-height: 1.5;
   color: #c9d1d9;
-  border: 1px solid #30363d;
+  border: 1px solid var(--color-border-default);
 }
 
 .table-view {
@@ -193,13 +193,13 @@ thead {
 th, td {
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid #30363d;
-  color: #c9d1d9;
+  border-bottom: 1px solid var(--color-border-default);
+  color: var(--color-text-primary);
 }
 
 th {
   font-weight: 600;
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 tbody tr:hover {
@@ -209,6 +209,6 @@ tbody tr:hover {
 .empty {
   text-align: center;
   padding: 3rem 1rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 </style>
