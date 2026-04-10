@@ -220,7 +220,7 @@ label {
   padding: 1rem;
   background: #3d1319;
   border: 1px solid #da3633;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: #f85149;
 }
 

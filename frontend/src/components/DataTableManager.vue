@@ -588,8 +588,8 @@ function onColumnDrop(dropIndex: number) {
   justify-content: space-between;
   align-items: center;
   padding: 1rem;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
+  background: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .manager-header h2 {
@@ -740,12 +740,12 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .search-column-select-compact option {
-  background: #161b22;
-  color: #c9d1d9;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
 }
 
 .search-column-select-compact:hover {
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
 }
 
 .search-info-compact {
@@ -773,7 +773,7 @@ function onColumnDrop(dropIndex: number) {
 
 .columns-section h4 {
   margin: 0;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .btn-small {
@@ -794,7 +794,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .columns-list::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
   border-radius: 3px;
 }
 
@@ -812,9 +812,9 @@ function onColumnDrop(dropIndex: number) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-panel);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   cursor: move;
   transition: all 0.2s;
   white-space: nowrap;
@@ -822,14 +822,14 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .column-item:hover {
-  background: #30363d;
-  border-color: #58a6ff;
+  background: var(--color-bg-surface);
+  border-color: var(--color-brand-link-hover);
 }
 
 .column-item.drag-over {
-  border-color: #58a6ff;
+  border-color: var(--color-brand-link-hover);
   border-style: dashed;
-  background: #1f6feb20;
+  background: rgba(56, 96, 190, 0.12);
 }
 
 .drag-handle {
@@ -848,13 +848,13 @@ function onColumnDrop(dropIndex: number) {
 
 .column-type {
   font-size: 0.85rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .data-table-container {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   overflow: auto;
   flex: 1;
 }
@@ -868,11 +868,11 @@ function onColumnDrop(dropIndex: number) {
 .data-table td {
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .data-table th {
-  background: #21262d;
+  background: var(--color-bg-panel);
   font-weight: 500;
   position: sticky;
   top: 0;
@@ -880,7 +880,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .data-table tbody tr:hover {
-  background: #21262d;
+  background: var(--color-bg-panel);
 }
 
 .table-image {
@@ -907,7 +907,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .table-link {
-  color: #58a6ff;
+  color: var(--color-brand-link-hover);
   text-decoration: none;
 }
 
@@ -919,7 +919,7 @@ function onColumnDrop(dropIndex: number) {
 .empty-data {
   text-align: center;
   padding: 2rem;
-  color: #6e7681;
+  color: var(--color-text-muted);
 }
 
 .btn-primary,
@@ -945,7 +945,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .btn-secondary {
-  background: #1f6feb;
+  background: var(--color-brand-link-hover);
   color: white;
 }
 
@@ -964,14 +964,14 @@ function onColumnDrop(dropIndex: number) {
 
 .btn-icon,
 .btn-icon-small {
-  background: #21262d;
-  color: #c9d1d9;
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
   padding: 0.25rem 0.5rem;
 }
 
 .btn-icon:hover,
 .btn-icon-small:hover {
-  background: #30363d;
+  background: var(--color-bg-surface);
 }
 
 .modal-overlay {
@@ -1010,17 +1010,17 @@ function onColumnDrop(dropIndex: number) {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #8b949e;
+  color: var(--color-text-secondary);
 }
 
 .form-group input,
 .form-group select {
   width: 100%;
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
+  background: var(--color-bg-page-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
   padding: 0.5rem;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 0.9rem;
 }
 
@@ -1050,7 +1050,7 @@ function onColumnDrop(dropIndex: number) {
   color: white;
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.2s;
@@ -1065,7 +1065,7 @@ function onColumnDrop(dropIndex: number) {
   position: relative;
   width: 200px;
   height: 120px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -1128,8 +1128,8 @@ function onColumnDrop(dropIndex: number) {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid #30363d;
-  background: #161b22;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
 }
 
 .image-modal-header h3 {
@@ -1140,7 +1140,7 @@ function onColumnDrop(dropIndex: number) {
 
 .image-modal-body {
   padding: 1rem;
-  background: #0d1117;
+  background: var(--color-bg-page-elevated);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1152,7 +1152,7 @@ function onColumnDrop(dropIndex: number) {
   max-width: min(88vw, 1400px);
   max-height: 80vh;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .video-modal-header {
@@ -1160,8 +1160,8 @@ function onColumnDrop(dropIndex: number) {
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid #30363d;
-  background: #161b22;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-bg-surface);
 }
 
 .video-modal-header h3 {

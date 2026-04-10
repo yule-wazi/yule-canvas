@@ -285,8 +285,8 @@ defineExpose({
 }
 
 .modal-content {
-  background: #1c1c1c;
-  border-radius: 12px;
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
   width: 90%;
   max-width: 800px;
   max-height: 80vh;

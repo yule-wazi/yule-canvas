@@ -211,13 +211,13 @@
           <button
             v-if="isRecording"
             @click="toggleRecordingMode"
-            class="btn-secondary"
+            class="btn-secondary recording-panel-btn"
             :class="{ 'is-active': recordingMode === 'mark' }"
           >
             {{ recordingMode === 'mark' ? '切到动作模式' : '切到标注模式' }}
           </button>
-          <button v-if="isRecording" @click="stopRecording" class="btn-danger">停止录制</button>
-          <button v-else @click="showRecordingPanel = false" class="btn-secondary">关闭</button>
+          <button v-if="isRecording" @click="stopRecording" class="btn-danger recording-panel-btn recording-panel-btn-danger">停止录制</button>
+          <button v-else @click="showRecordingPanel = false" class="btn-secondary recording-panel-btn">关闭</button>
         </div>
       </div>
       <div v-if="isRecording && recordingMode === 'mark'" class="recording-mark-config">
@@ -242,32 +242,32 @@
           <button
             v-if="isRecording && !loopCaptureState.active"
             @click="startLoopCapture"
-            class="btn-secondary"
+            class="btn-secondary recording-panel-btn recording-toolbar-btn"
           >
             循环录制
           </button>
           <button
             v-if="!isRecording && recordingEvents.length"
             @click="mapRecordingToWorkflow"
-            class="btn-success"
+            class="btn-success recording-panel-btn recording-toolbar-btn"
           >
             映射工作流
           </button>
           <button
             v-if="!isRecording && recordingEvents.length"
             @click="openAIGenerateModal"
-            class="btn-primary"
+            class="btn-primary recording-panel-btn recording-toolbar-btn"
           >
             AI 生成
           </button>
           <button
             v-if="!isRecording && recordingEvents.length"
             @click="copyRecordingJson"
-            class="btn-secondary"
+            class="btn-secondary recording-panel-btn recording-toolbar-btn"
           >
             复制 JSON
           </button>
-          <button v-if="recordingEvents.length" @click="clearRecordingEvents" class="btn-icon">清空</button>
+          <button v-if="recordingEvents.length" @click="clearRecordingEvents" class="btn-icon recording-toolbar-icon-btn">清空</button>
         </div>
       </div>
       <div v-if="isRecording && loopCaptureState.active" class="loop-capture-panel">
@@ -275,22 +275,22 @@
         <div v-if="loopCaptureState.phase === 'recording-first'" class="loop-capture-body">
           <p>当前正在录制首个循环子任务。动作模式和标注模式都可正常使用。</p>
           <div class="loop-capture-actions">
-            <button @click="finishFirstLoopCaptureTask" class="btn-success" :disabled="loopCaptureState.busy">完成首个子任务</button>
-            <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
+            <button @click="finishFirstLoopCaptureTask" class="btn-success recording-panel-btn recording-loop-btn" :disabled="loopCaptureState.busy">完成首个子任务</button>
+            <button @click="cancelLoopCapture" class="btn-secondary recording-panel-btn recording-loop-btn" :disabled="loopCaptureState.busy">取消循环录制</button>
           </div>
         </div>
         <div v-else-if="loopCaptureState.phase === 'transition'" class="loop-capture-body">
           <p>已完成首个子任务。现在可以自由滚动、翻页或定位尾部样本，这段操作不会被记录。</p>
           <div class="loop-capture-actions">
-            <button @click="startLastLoopCaptureTask" class="btn-primary" :disabled="loopCaptureState.busy">开始录制尾部子任务</button>
-            <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
+            <button @click="startLastLoopCaptureTask" class="btn-primary recording-panel-btn recording-loop-btn" :disabled="loopCaptureState.busy">开始录制尾部子任务</button>
+            <button @click="cancelLoopCapture" class="btn-secondary recording-panel-btn recording-loop-btn" :disabled="loopCaptureState.busy">取消循环录制</button>
           </div>
         </div>
         <div v-else-if="loopCaptureState.phase === 'recording-last'" class="loop-capture-body">
           <p>当前正在录制尾部循环子任务，完成后系统会比较两条样本并尝试生成循环模板。</p>
           <div class="loop-capture-actions">
-            <button @click="finishLoopCapture" class="btn-success" :disabled="loopCaptureState.busy">完成循环录制</button>
-            <button @click="cancelLoopCapture" class="btn-secondary" :disabled="loopCaptureState.busy">取消循环录制</button>
+            <button @click="finishLoopCapture" class="btn-success recording-panel-btn recording-loop-btn" :disabled="loopCaptureState.busy">完成循环录制</button>
+            <button @click="cancelLoopCapture" class="btn-secondary recording-panel-btn recording-loop-btn" :disabled="loopCaptureState.busy">取消循环录制</button>
           </div>
         </div>
         <div v-if="loopCaptureDiffVisible" class="loop-capture-diff-panel">
@@ -4378,7 +4378,9 @@ async function executeWorkflow() {
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  background: rgba(0, 0, 0, 0.98);
+  background:
+    radial-gradient(circle at top right, rgba(118, 185, 0, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.98), rgba(5, 5, 5, 0.98));
   border: 1px solid #5e5e5e;
   border-radius: 2px;
   box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
@@ -4389,33 +4391,39 @@ async function executeWorkflow() {
 .recording-panel-header {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 1rem;
-  padding: 1rem 1.25rem;
+  padding: 1.1rem 1.25rem 1rem;
   border-bottom: 1px solid #5e5e5e;
 }
 
 .recording-panel-header h3 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 24px;
   color: #ffffff;
   line-height: 1.25;
+  font-weight: 700;
 }
 
 .recording-panel-header p {
-  margin: 0.5rem 0 0;
+  margin: 0.45rem 0 0;
   color: #a7a7a7;
-  font-size: 0.95rem;
+  font-size: 15px;
   line-height: 1.5;
+  max-width: 220px;
 }
 
 .recording-panel-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.6rem;
   align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 280px;
 }
 
 .recording-mark-config {
-  padding: 0.9rem 1.25rem 0;
+  padding: 0.95rem 1.25rem 0.2rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -4438,7 +4446,7 @@ async function executeWorkflow() {
 .recording-mark-table-select {
   flex: 1;
   min-width: 0;
-  padding: 0.55rem 0.75rem;
+  padding: 0.65rem 0.8rem;
   border-radius: 2px;
   border: 1px solid #5e5e5e;
   background: #1a1a1a;
@@ -4453,7 +4461,11 @@ async function executeWorkflow() {
 }
 
 .recording-mode-tag {
-  padding: 0.55rem 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0.55rem 0.85rem;
   border-radius: 2px;
   border: 1px solid #76b900;
   color: #ffffff;
@@ -4461,12 +4473,14 @@ async function executeWorkflow() {
   white-space: nowrap;
   text-transform: uppercase;
   font-weight: 700;
+  font-size: 14px;
+  line-height: 1.25;
 }
 
 .recording-mode-tag.is-mark {
-  border-color: #b780ff;
+  border-color: #76b900;
   color: #ffffff;
-  background: rgba(183, 128, 255, 0.08);
+  background: rgba(118, 185, 0, 0.08);
 }
 
 .recording-panel-toolbar {
@@ -4476,20 +4490,69 @@ async function executeWorkflow() {
   padding: 0.9rem 1.25rem;
   border-bottom: 1px solid #5e5e5e;
   color: #a7a7a7;
+  gap: 0.75rem;
 }
 
 .recording-panel-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.recording-panel-btn {
+  min-height: 42px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 2px;
+  border-width: 1px;
+  background: transparent;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.recording-panel-btn:hover:not(:disabled) {
+  background: rgba(30, 174, 219, 0.14);
+  border-color: #76b900;
+  color: #ffffff;
+}
+
+.recording-panel-btn.is-active {
+  background: rgba(118, 185, 0, 0.08);
+  border-color: #76b900;
+}
+
+.recording-panel-btn-danger {
+  border-color: #e52020;
+  color: #ffffff;
+}
+
+.recording-panel-btn-danger:hover:not(:disabled) {
+  background: rgba(229, 32, 32, 0.16);
+  border-color: #e52020;
+}
+
+.recording-toolbar-btn {
+  min-height: 38px;
+  padding: 0.5rem 0.8rem;
+  font-size: 14px;
+}
+
+.recording-toolbar-icon-btn {
+  min-height: 38px;
+  padding: 0.45rem 0.7rem;
+  font-size: 14px;
 }
 
 .loop-capture-panel {
   margin: 0 1.25rem 1rem;
-  padding: 0.95rem 1rem;
+  padding: 1rem;
   border: 1px solid #76b900;
   border-radius: 2px;
-  background: linear-gradient(180deg, rgba(118, 185, 0, 0.08) 0%, rgba(0, 0, 0, 0.9) 100%);
+  background:
+    linear-gradient(180deg, rgba(118, 185, 0, 0.06) 0%, rgba(0, 0, 0, 0.92) 100%);
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .loop-capture-title {
@@ -4503,7 +4566,7 @@ async function executeWorkflow() {
 .loop-capture-body p {
   margin: 0 0 0.75rem;
   color: #ffffff;
-  font-size: 0.82rem;
+  font-size: 15px;
   line-height: 1.6;
 }
 
@@ -4511,6 +4574,10 @@ async function executeWorkflow() {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.recording-loop-btn {
+  min-height: 40px;
 }
 
 .loop-capture-diff-panel {
@@ -4565,8 +4632,10 @@ async function executeWorkflow() {
 }
 
 .empty-recording-state {
-  padding: 1rem 0;
+  padding: 1.1rem 0;
   color: #757575;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .recording-event-item {
@@ -4603,6 +4672,7 @@ async function executeWorkflow() {
 .recording-event-summary {
   flex: 1;
   line-height: 1.5;
+  color: #ffffff;
 }
 
 .recording-event-meta {
@@ -4610,6 +4680,38 @@ async function executeWorkflow() {
   color: #757575;
   line-height: 1.5;
   word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .recording-panel-floating {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 78vh;
+  }
+
+  .recording-panel-header,
+  .recording-panel-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .recording-panel-actions,
+  .recording-panel-toolbar-actions {
+    max-width: none;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .recording-panel-header p {
+    max-width: none;
+  }
+
+  .recording-mark-config-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .recording-setup-modal,
