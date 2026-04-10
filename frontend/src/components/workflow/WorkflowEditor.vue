@@ -667,31 +667,31 @@ interface RecordingEventItem {
 }
 
 interface RecordingEventExportItem {
-  step?: number;
-  stepId?: string;
-  summary?: string;
-  kind?: 'action' | 'mark' | 'meta' | string;
-  action?: string;
-  timestamp?: number;
-  pageId?: string;
+  step: number;
+  stepId: string;
+  summary: string;
+  kind: 'action' | 'mark' | 'meta';
+  action: string;
+  timestamp: number;
+  pageId: string;
   navigationKind?: 'explicit' | 'derived';
   navigationSource?: 'direct' | 'click' | 'contextmenu' | 'middle-click' | 'back' | 'forward';
-  page?: {
-    url?: string;
-    title?: string;
+  page: {
+    url: string;
+    title: string;
   };
-  target?: {
-    selector?: string;
-    tagName?: string;
-    text?: string;
-    id?: string;
-    className?: string;
-    href?: string;
-    src?: string;
-    value?: string;
+  target: {
+    selector: string;
+    tagName: string;
+    text: string;
+    id: string;
+    className: string;
+    href: string;
+    src: string;
+    value: string;
   };
   input?: {
-    value?: string;
+    value: string;
   };
   scroll?: {
     target?: string;
@@ -717,7 +717,7 @@ interface RecordingEventExportItem {
   };
   loopCapture?: RecordingEventItem['loopCapture'];
   raw?: {
-    value?: string;
+    value: string;
   };
 }
 
@@ -1416,7 +1416,41 @@ function buildRecordingExportEvent(event: RecordingEventItem, step?: number): Re
   };
 }
 
-function buildRecordingExport(events: RecordingEventItem[], mode: 'action' | 'mark', status: string) {
+function buildRecordingExport(
+  events: RecordingEventItem[],
+  mode: 'action' | 'mark',
+  status: string
+): {
+  schemaVersion: string;
+  exportedAt: string;
+  recorder: {
+    mode: 'action' | 'mark';
+    status: string;
+  };
+  summary: {
+    totalSteps: number;
+    pageCount: number;
+    actionCounts: Record<string, number>;
+    markedFields: Array<{ name: string; type: string; pageId: string; selector: string; tableId: string; tableName: string; attribute: string; recordAction: string }>;
+  };
+  pages: Array<{
+    pageId: string;
+    pageIndex: number;
+    firstSeenStep: number;
+    latestUrl: string;
+    latestTitle: string;
+    urls: string[];
+    titles: string[];
+    openedFrom?: {
+      pageId: string;
+      url: string;
+      selector: string;
+      action: string;
+      href: string;
+    };
+  }>;
+  events: RecordingEventExportItem[];
+} {
   const orderedEvents = [...events]
     .reverse()
     .map((event, index) => buildRecordingExportEvent(event, index + 1));

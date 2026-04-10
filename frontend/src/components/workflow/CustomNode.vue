@@ -30,21 +30,25 @@ interface Props {
   nodeStyle?: any;
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 </script>
 
 <style scoped>
 .custom-node {
-  border-radius: 8px;
-  border: 1px solid #30363d;
+  border-radius: 2px;
+  border: 1px solid #5e5e5e;
   min-width: 150px;
   text-align: center;
   position: relative;
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .node-label {
-  color: #fff;
+  color: inherit;
   font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  font-family: Arial, Helvetica, sans-serif;
   user-select: none;
   padding: 10px 20px;
 }

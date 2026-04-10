@@ -47,10 +47,10 @@ interface Props {
   nodeStyle?: any;
 }
 
-const props = defineProps<Props>();
+const { data, nodeStyle } = defineProps<Props>();
 
 const flowOutputs = computed(() =>
-  (Array.isArray(props.data?.outputs) ? props.data.outputs : []).filter((output: any) => output.type === 'flow')
+  (Array.isArray(data?.outputs) ? data.outputs : []).filter((output: any) => output.type === 'flow')
 );
 
 const pathOutputs = computed(() =>
@@ -76,10 +76,10 @@ function getHandleStyle(index: number, total: number) {
 .condition-node {
   position: relative;
   min-width: 220px;
-  border: 2px solid #1f6feb;
-  border-radius: 12px;
-  background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
-  box-shadow: 0 8px 20px rgba(31, 111, 235, 0.18);
+  border: 2px solid #bff230;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #26310f 0%, #171f0a 100%);
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .node-content {
@@ -92,18 +92,22 @@ function getHandleStyle(index: number, total: number) {
   justify-content: center;
   margin-bottom: 10px;
   padding: 6px 12px;
-  border-radius: 10px;
-  background: rgba(88, 166, 255, 0.2);
-  color: #79c0ff;
+  border-radius: 2px;
+  background: transparent;
+  border: 1px solid #bff230;
+  color: #bff230;
   font-size: 12px;
   font-weight: 700;
+  text-transform: uppercase;
 }
 
 .node-title {
   margin-bottom: 10px;
   color: #ffffff;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1.25;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .branch-list {
@@ -118,14 +122,16 @@ function getHandleStyle(index: number, total: number) {
   display: flex;
   align-items: center;
   padding: 8px 28px 8px 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(191, 242, 48, 0.22);
 }
 
 .branch-name {
-  color: rgba(255, 255, 255, 0.92);
+  color: #ffffff;
   font-size: 13px;
   user-select: none;
+  font-weight: 700;
 }
 
 .fallback-row {
@@ -136,8 +142,10 @@ function getHandleStyle(index: number, total: number) {
 
 .fallback-name {
   display: inline-block;
-  color: rgba(255, 255, 255, 0.72);
+  color: #a7a7a7;
   font-size: 12px;
   user-select: none;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 </style>

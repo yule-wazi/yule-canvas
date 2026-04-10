@@ -1,24 +1,22 @@
 <template>
   <div class="loop-node" :style="nodeStyle">
-    <!-- 左侧：发送连线（source）- 循环体开始 -->
-    <Handle 
-      type="source" 
-      :position="Position.Left" 
+    <Handle
+      type="source"
+      :position="Position.Left"
       id="loop-start"
       :connectable="true"
       :style="{ left: '-6px', top: '50%', transform: 'translateY(-50%)' }"
     />
-    
+
     <div class="node-content">
-      <div class="node-icon">🔄</div>
+      <div class="node-icon">↻</div>
       <div class="node-label">{{ data.label }}</div>
       <div class="node-info">{{ getLoopInfo() }}</div>
     </div>
-    
-    <!-- 右侧：接收连线（target）- 循环体结束 -->
-    <Handle 
-      type="target" 
-      :position="Position.Right" 
+
+    <Handle
+      type="target"
+      :position="Position.Right"
       id="loop-end"
       :connectable="true"
       :style="{ right: '-6px', left: 'auto', top: '50%', transform: 'translateY(-50%)' }"
@@ -34,27 +32,30 @@ interface Props {
   nodeStyle?: any;
 }
 
-const props = defineProps<Props>();
+const { data, nodeStyle } = defineProps<Props>();
 
 function getLoopInfo() {
-  if (props.data.mode === 'count') {
-    return `循环 ${props.data.count || 10} 次`;
-  } else if (props.data.mode === 'condition') {
+  if (data.mode === 'count') {
+    return `循环 ${data.count || 10} 次`;
+  }
+
+  if (data.mode === 'condition') {
     return '条件循环';
   }
+
   return '循环';
 }
 </script>
 
 <style scoped>
 .loop-node {
-  border-radius: 8px;
-  border: 2px solid #8957e5;
+  border-radius: 2px;
+  border: 2px solid #b780ff;
   min-width: 180px;
   text-align: center;
   position: relative;
-  background: linear-gradient(135deg, #8957e5 0%, #6e40c9 100%);
-  box-shadow: 0 4px 12px rgba(137, 87, 229, 0.3);
+  background: linear-gradient(180deg, #34184a 0%, #21102f 100%);
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .node-content {
@@ -71,6 +72,7 @@ function getLoopInfo() {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -79,14 +81,18 @@ function getLoopInfo() {
 .node-label {
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   user-select: none;
   margin-bottom: 4px;
+  line-height: 1.25;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .node-info {
-  color: rgba(255, 255, 255, 0.8);
+  color: #d9c2ff;
   font-size: 12px;
   user-select: none;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 </style>
