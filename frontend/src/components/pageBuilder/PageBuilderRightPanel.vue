@@ -2,49 +2,49 @@
   <aside class="page-builder-rightpanel">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">Inspector</p>
+        <p class="eyebrow">检查面板</p>
         <h2>{{ panelTitle }}</h2>
       </div>
-      <span class="panel-state">{{ selectedSection ? 'Section' : activeFile ? 'File' : 'Idle' }}</span>
+      <span class="panel-state">{{ selectedSection ? '区块' : activeFile ? '文件' : '空闲' }}</span>
     </div>
 
     <div v-if="selectedSection" class="inspector-card">
       <div class="info-row">
-        <span>Type</span>
-        <strong>{{ selectedSection.type }}</strong>
+        <span>类型</span>
+        <strong>{{ sectionTypeLabel(selectedSection.type) }}</strong>
       </div>
       <div class="info-row">
-        <span>Repeat</span>
-        <strong>{{ selectedSection.repeat ? 'Yes' : 'No' }}</strong>
+        <span>是否重复</span>
+        <strong>{{ selectedSection.repeat ? '是' : '否' }}</strong>
       </div>
       <div class="info-group">
-        <p class="group-title">Bindings</p>
+        <p class="group-title">字段绑定</p>
         <div v-if="Object.keys(selectedSection.bindings).length" class="binding-list">
           <div v-for="(field, key) in selectedSection.bindings" :key="key" class="binding-row">
             <span>{{ key }}</span>
             <strong>{{ field }}</strong>
           </div>
         </div>
-        <p v-else class="hint">No bindings assigned yet.</p>
+        <p v-else class="hint">还没有分配绑定字段。</p>
       </div>
       <p v-if="selectedSection.description" class="hint">{{ selectedSection.description }}</p>
     </div>
 
     <div v-else-if="activeFile" class="inspector-card">
       <div class="info-row">
-        <span>File</span>
+        <span>文件</span>
         <strong>{{ activeFile.name }}</strong>
       </div>
       <div class="info-row">
-        <span>Role</span>
+        <span>作用</span>
         <strong>{{ activeFile.role }}</strong>
       </div>
       <div class="info-row">
-        <span>Editable</span>
-        <strong>{{ activeFile.editable ? 'Yes' : 'Read-only' }}</strong>
+        <span>是否可编辑</span>
+        <strong>{{ activeFile.editable ? '可编辑' : '只读' }}</strong>
       </div>
       <div class="info-group">
-        <p class="group-title">Source Sections</p>
+        <p class="group-title">来源区块</p>
         <div v-if="activeFile.sourceSectionIds?.length" class="chip-list">
           <button
             v-for="sectionId in activeFile.sourceSectionIds"
@@ -56,16 +56,16 @@
             {{ sectionId }}
           </button>
         </div>
-        <p v-else class="hint">No section mapping metadata yet.</p>
+        <p v-else class="hint">暂时没有区块映射信息。</p>
       </div>
     </div>
 
     <div v-else class="inspector-card inspector-card--empty">
-      <p>Select a file or generated section to inspect bindings and context.</p>
+      <p>选择一个文件或生成区块后，这里会显示绑定关系和上下文信息。</p>
     </div>
 
     <div class="section-list">
-      <p class="group-title">Generated Sections</p>
+      <p class="group-title">已生成区块</p>
       <button
         v-for="section in sections"
         :key="section.id"
@@ -75,7 +75,7 @@
         @click="$emit('selectSection', section.id)"
       >
         <strong>{{ section.title }}</strong>
-        <span>{{ section.type }}</span>
+        <span>{{ sectionTypeLabel(section.type) }}</span>
       </button>
     </div>
   </aside>
@@ -108,8 +108,22 @@ const panelTitle = computed(() => {
     return props.activeFile.name;
   }
 
-  return 'Nothing Selected';
+  return '未选择内容';
 });
+
+function sectionTypeLabel(type: PageBuilderSectionSummary['type']) {
+  const map: Record<PageBuilderSectionSummary['type'], string> = {
+    hero: '首屏',
+    list: '列表',
+    grid: '网格',
+    'featured-card': '重点卡片',
+    content: '正文',
+    media: '媒体',
+    footer: '页脚'
+  };
+
+  return map[type];
+}
 </script>
 
 <style scoped>
@@ -118,9 +132,11 @@ const panelTitle = computed(() => {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
   padding: 18px;
   background: linear-gradient(180deg, rgba(12, 12, 12, 0.98) 0%, rgba(6, 6, 6, 0.98) 100%);
   border-left: 1px solid var(--color-border-default);
+  overflow: auto;
 }
 
 .panel-header {

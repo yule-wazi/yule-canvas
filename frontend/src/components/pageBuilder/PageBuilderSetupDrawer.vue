@@ -2,17 +2,17 @@
   <aside class="setup-drawer" :class="{ 'is-open': open }">
     <div class="drawer-header">
       <div>
-        <p class="eyebrow">Generation Setup</p>
-        <h2>Configure Inputs</h2>
+        <p class="eyebrow">生成配置</p>
+        <h2>配置输入项</h2>
       </div>
-      <button class="close-btn" type="button" @click="$emit('close')">×</button>
+      <button class="close-btn" type="button" @click="$emit('close')">关闭</button>
     </div>
 
     <div class="drawer-body">
       <label class="field">
-        <span>Data Table</span>
+        <span>数据表</span>
         <select :value="selectedTableId || ''" @change="$emit('update:selectedTableId', ($event.target as HTMLSelectElement).value)">
-          <option value="" disabled>Select a table</option>
+          <option value="" disabled>请选择数据表</option>
           <option v-for="table in tables" :key="table.id" :value="table.id">
             {{ table.name }}
           </option>
@@ -20,45 +20,45 @@
       </label>
 
       <label class="field">
-        <span>Page Type</span>
+        <span>页面类型</span>
         <select :value="pageType" @change="$emit('update:pageType', ($event.target as HTMLSelectElement).value as any)">
-          <option value="news-list">news-list</option>
-          <option value="article-detail">article-detail</option>
-          <option value="gallery">gallery</option>
-          <option value="catalog">catalog</option>
+          <option value="news-list">新闻列表</option>
+          <option value="article-detail">文章详情</option>
+          <option value="gallery">图片画廊</option>
+          <option value="catalog">卡片目录</option>
         </select>
       </label>
 
       <label class="field">
-        <span>Style Preset</span>
+        <span>风格预设</span>
         <select :value="stylePreset" @change="$emit('update:stylePreset', ($event.target as HTMLSelectElement).value as any)">
-          <option value="nvidia-tech">nvidia-tech</option>
-          <option value="editorial-dark">editorial-dark</option>
-          <option value="clean-catalog">clean-catalog</option>
+          <option value="nvidia-tech">英伟达科技风</option>
+          <option value="editorial-dark">编辑部深色风</option>
+          <option value="clean-catalog">清爽目录风</option>
         </select>
       </label>
 
       <label class="field">
-        <span>Page Title</span>
+        <span>页面标题</span>
         <input :value="pageTitle" type="text" @input="$emit('update:pageTitle', ($event.target as HTMLInputElement).value)" />
       </label>
 
       <label class="field">
-        <span>Goal</span>
+        <span>页面目标</span>
         <textarea :value="goal" rows="4" @input="$emit('update:goal', ($event.target as HTMLTextAreaElement).value)" />
       </label>
 
       <label class="field">
-        <span>Density</span>
+        <span>布局密度</span>
         <select :value="density" @change="$emit('update:density', ($event.target as HTMLSelectElement).value as any)">
-          <option value="comfortable">comfortable</option>
-          <option value="compact">compact</option>
+          <option value="comfortable">舒展</option>
+          <option value="compact">紧凑</option>
         </select>
       </label>
 
       <div class="field-role-panel">
         <div class="field-role-header">
-          <span>Inferred Field Roles</span>
+          <span>推断字段角色</span>
           <strong>{{ Object.keys(fieldRoleMap).length }}</strong>
         </div>
         <div v-if="Object.keys(fieldRoleMap).length" class="field-role-list">
@@ -67,13 +67,13 @@
             <strong>{{ role }}</strong>
           </div>
         </div>
-        <p v-else class="field-role-empty">Select a table to inspect inferred roles.</p>
+        <p v-else class="field-role-empty">选择数据表后，这里会显示字段角色推断结果。</p>
       </div>
     </div>
 
     <div class="drawer-footer">
-      <button class="secondary-btn" type="button" @click="$emit('close')">Close</button>
-      <button class="primary-btn" type="button" @click="$emit('generate')">Generate Page</button>
+      <button class="secondary-btn" type="button" @click="$emit('close')">收起</button>
+      <button class="primary-btn" type="button" @click="$emit('generate')">生成页面</button>
     </div>
   </aside>
 </template>
@@ -109,18 +109,19 @@ defineEmits<{
 <style scoped>
 .setup-drawer {
   position: absolute;
-  top: 0;
-  right: 0;
+  inset: 0 0 0 auto;
   z-index: 20;
   display: flex;
   flex-direction: column;
   width: min(420px, 100%);
+  max-width: 100%;
   height: 100%;
   transform: translateX(100%);
   transition: transform 0.25s ease;
   background: linear-gradient(180deg, rgba(12, 12, 12, 0.98) 0%, rgba(3, 3, 3, 0.98) 100%);
   border-left: 1px solid var(--color-border-default);
   box-shadow: rgba(0, 0, 0, 0.4) -12px 0 24px;
+  overflow: hidden;
 }
 
 .setup-drawer.is-open {
@@ -174,6 +175,10 @@ defineEmits<{
   color: var(--color-text-primary);
 }
 
+.close-btn {
+  min-width: 64px;
+}
+
 .primary-btn {
   border: 2px solid var(--color-brand-accent);
   background: transparent;
@@ -184,6 +189,7 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
   padding: 18px 20px 24px;
   overflow: auto;
 }
@@ -202,6 +208,7 @@ defineEmits<{
 .field select,
 .field textarea {
   width: 100%;
+  min-width: 0;
   padding: 12px 14px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
@@ -241,5 +248,12 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+@media (max-width: 980px) {
+  .setup-drawer {
+    width: 100%;
+    border-left: 0;
+  }
 }
 </style>

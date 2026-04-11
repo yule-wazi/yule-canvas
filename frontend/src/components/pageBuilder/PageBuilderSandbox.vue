@@ -40,8 +40,9 @@ defineEmits<{
 .page-builder-sandbox {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 18px;
+  gap: 0;
   min-height: 0;
+  height: 100%;
 }
 
 .page-builder-sandbox.is-split {

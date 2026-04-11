@@ -1,31 +1,31 @@
 <template>
   <header class="page-builder-topbar">
     <div class="topbar-left">
-      <router-link to="/" class="nav-back" title="Back to home">←</router-link>
+      <router-link to="/" class="nav-back" title="返回首页">返回</router-link>
       <div class="title-group">
-        <p class="eyebrow">Generated Page Sandbox</p>
+        <p class="eyebrow">页面生成工作台</p>
         <h1>{{ title }}</h1>
       </div>
     </div>
 
     <div class="topbar-center">
       <div class="meta-chip">
-        <span class="meta-label">Table</span>
+        <span class="meta-label">数据表</span>
         <strong>{{ tableName }}</strong>
       </div>
       <div class="meta-chip">
-        <span class="meta-label">Type</span>
-        <strong>{{ pageType }}</strong>
+        <span class="meta-label">页面类型</span>
+        <strong>{{ pageTypeLabel }}</strong>
       </div>
       <div class="meta-chip">
-        <span class="meta-label">Preset</span>
-        <strong>{{ stylePreset }}</strong>
+        <span class="meta-label">风格预设</span>
+        <strong>{{ stylePresetLabel }}</strong>
       </div>
     </div>
 
     <div class="topbar-right">
       <button class="ghost-btn" type="button" @click="$emit('toggleSetup')">
-        {{ setupOpen ? 'Hide Setup' : 'Setup' }}
+        {{ setupOpen ? '隐藏配置' : '打开配置' }}
       </button>
       <div class="mode-switch">
         <button
@@ -39,15 +39,16 @@
           {{ mode.label }}
         </button>
       </div>
-      <button class="generate-btn" type="button" @click="$emit('generate')">Generate</button>
+      <button class="generate-btn" type="button" @click="$emit('generate')">生成页面</button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { PageBuilderCenterMode, PageBuilderPageType, PageBuilderStylePreset } from '../../types/pageBuilder';
 
-defineProps<{
+const props = defineProps<{
   title: string;
   tableName: string;
   pageType: PageBuilderPageType;
@@ -63,10 +64,26 @@ defineEmits<{
 }>();
 
 const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
-  { label: 'Preview', value: 'preview' },
-  { label: 'Code', value: 'code' },
-  { label: 'Split', value: 'split' }
+  { label: '预览', value: 'preview' },
+  { label: '代码', value: 'code' },
+  { label: '分屏', value: 'split' }
 ];
+
+const pageTypeLabelMap: Record<PageBuilderPageType, string> = {
+  'news-list': '新闻列表',
+  'article-detail': '文章详情',
+  gallery: '图片画廊',
+  catalog: '卡片目录'
+};
+
+const stylePresetLabelMap: Record<PageBuilderStylePreset, string> = {
+  'nvidia-tech': '英伟达科技风',
+  'editorial-dark': '编辑部深色风',
+  'clean-catalog': '清爽目录风'
+};
+
+const pageTypeLabel = computed(() => pageTypeLabelMap[props.pageType]);
+const stylePresetLabel = computed(() => stylePresetLabelMap[props.stylePreset]);
 </script>
 
 <style scoped>
@@ -78,6 +95,7 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   padding: 18px 24px;
   background: linear-gradient(180deg, rgba(8, 8, 8, 0.98) 0%, rgba(0, 0, 0, 0.98) 100%);
   border-bottom: 1px solid var(--color-border-default);
+  overflow: hidden;
 }
 
 .topbar-left,
@@ -87,6 +105,11 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   align-items: center;
   gap: 14px;
   min-width: 0;
+}
+
+.topbar-center,
+.topbar-right {
+  flex-wrap: wrap;
 }
 
 .nav-back,
@@ -103,10 +126,12 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
+  min-width: 72px;
+  padding: 0 14px;
   border: 1px solid var(--color-border-default);
   background: var(--color-bg-page-elevated);
   color: var(--color-text-primary);
+  flex-shrink: 0;
 }
 
 .title-group {
@@ -117,6 +142,9 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   margin: 0;
   font-size: 22px;
   line-height: var(--line-height-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .eyebrow {
@@ -132,6 +160,7 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   display: grid;
   gap: 2px;
   min-width: 118px;
+  max-width: 160px;
   padding: 10px 12px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
@@ -186,6 +215,7 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   background: var(--color-bg-page-elevated);
+  flex-wrap: wrap;
 }
 
 .mode-btn {
@@ -193,14 +223,9 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   border-color: transparent;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1380px) {
   .page-builder-topbar {
     grid-template-columns: 1fr;
-  }
-
-  .topbar-center,
-  .topbar-right {
-    flex-wrap: wrap;
   }
 }
 

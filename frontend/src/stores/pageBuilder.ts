@@ -63,7 +63,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       if (!tables.length) {
         this.selectedTableId = null;
         this.fieldRoleMap = {};
-        this.error = 'No data table available yet.';
+        this.error = '当前还没有可用的数据表。';
         return;
       }
 
@@ -79,7 +79,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.fieldRoleMap = inferFieldRoles(table);
 
       if (table && !this.pageTitle) {
-        this.pageTitle = `${table.name} Page`;
+        this.pageTitle = `${table.name} 页面`;
       }
     },
 
@@ -109,7 +109,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const table = tables.find((item) => item.id === this.selectedTableId);
 
       if (!table) {
-        this.error = 'Select a data table before generating.';
+        this.error = '请先选择一个数据表，再生成页面。';
         this.previewStatus = 'error';
         return;
       }
@@ -120,7 +120,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const request: PageBuildRequest = {
         tableId: table.id,
         pageType: this.pageType,
-        title: this.pageTitle || `${table.name} Page`,
+        title: this.pageTitle || `${table.name} 页面`,
         goal: this.goal || undefined,
         stylePreset: this.stylePreset,
         density: this.density

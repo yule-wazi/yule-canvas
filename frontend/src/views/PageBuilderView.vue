@@ -1,8 +1,8 @@
 <template>
   <div class="page-builder-view">
     <PageBuilderTopBar
-      :title="store.pageTitle || 'Untitled Page Project'"
-      :table-name="selectedTable?.name || 'No table selected'"
+      :title="store.pageTitle || '未命名页面工程'"
+      :table-name="selectedTable?.name || '未选择数据表'"
       :page-type="store.pageType"
       :style-preset="store.stylePreset"
       :center-mode="store.centerMode"
@@ -84,18 +84,18 @@ const selectedTable = computed(() =>
 
 const statusLabel = computed(() => {
   if (store.previewStatus === 'ready') {
-    return 'Preview ready';
+    return '预览已就绪';
   }
 
   if (store.previewStatus === 'building') {
-    return 'Building preview';
+    return '正在生成预览';
   }
 
   if (store.previewStatus === 'error') {
-    return 'Generation blocked';
+    return '生成被阻止';
   }
 
-  return 'Awaiting generation';
+  return '等待生成';
 });
 
 onMounted(() => {
@@ -120,10 +120,12 @@ function generate() {
 .page-builder-view {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 83px);
+  height: 100vh;
+  min-height: 100vh;
   background:
     radial-gradient(circle at top right, rgba(118, 185, 0, 0.08) 0%, transparent 24%),
     linear-gradient(180deg, rgba(3, 3, 3, 1) 0%, rgba(0, 0, 0, 1) 100%);
+  overflow: hidden;
 }
 
 .page-builder-body {
@@ -131,19 +133,24 @@ function generate() {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 320px;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .page-builder-center {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
+  flex: 1;
   min-width: 0;
   min-height: 0;
-  padding: 18px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .error-banner {
+  margin: 12px;
   padding: 12px 14px;
   border: 1px solid var(--color-border-danger);
   border-radius: var(--radius-sm);
@@ -158,10 +165,6 @@ function generate() {
 }
 
 @media (max-width: 980px) {
-  .page-builder-view {
-    min-height: auto;
-  }
-
   .page-builder-body {
     grid-template-columns: 1fr;
   }

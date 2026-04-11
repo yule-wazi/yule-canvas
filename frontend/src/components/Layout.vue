@@ -1,6 +1,6 @@
 <template>
   <div class="layout">
-    <header class="header">
+    <header v-if="showHeader" class="header">
       <div class="brand">
         <span class="brand-kicker">YULECANVAS</span>
         <h1>数据抓取 Agent</h1>
@@ -12,16 +12,26 @@
         <router-link to="/page-builder">Page Builder</router-link>
       </nav>
     </header>
-    <main :class="['main', { 'main--workflow': route.name === 'workflow', 'main--page-builder': route.name === 'page-builder' }]">
+    <main
+      :class="[
+        'main',
+        {
+          'main--workflow': route.name === 'workflow',
+          'main--page-builder': route.name === 'page-builder'
+        }
+      ]"
+    >
       <router-view />
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();
+const showHeader = computed(() => route.name !== 'page-builder');
 </script>
 
 <style scoped>
@@ -31,6 +41,7 @@ const route = useRoute();
   flex-direction: column;
   background: var(--color-bg-page);
   color: var(--color-text-primary);
+  overflow: hidden;
 }
 
 .header {
@@ -107,6 +118,7 @@ nav a.router-link-active {
 .main--workflow,
 .main--page-builder {
   padding: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {

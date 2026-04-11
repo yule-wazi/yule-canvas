@@ -20,11 +20,11 @@
       <iframe
         v-if="srcdoc"
         class="preview-frame"
-        title="Generated page preview"
+        title="生成页面预览"
         :srcdoc="srcdoc"
       />
       <div v-else class="preview-placeholder">
-        Generate a page project to render the sandbox preview.
+        先生成页面工程，预览会显示在这里。
       </div>
     </div>
   </div>
@@ -42,9 +42,9 @@ defineEmits<{
 }>();
 
 const options = [
-  { label: 'Desktop', value: 'desktop' as const },
-  { label: 'Tablet', value: 'tablet' as const },
-  { label: 'Mobile', value: 'mobile' as const }
+  { label: '桌面', value: 'desktop' as const },
+  { label: '平板', value: 'tablet' as const },
+  { label: '手机', value: 'mobile' as const }
 ];
 </script>
 
@@ -53,10 +53,9 @@ const options = [
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
+  height: 100%;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(17, 17, 17, 0.98) 0%, rgba(6, 6, 6, 0.98) 100%);
+  background: #050505;
 }
 
 .preview-toolbar {
@@ -64,8 +63,9 @@ const options = [
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 14px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border-default);
+  background: rgba(10, 10, 10, 0.98);
 }
 
 .device-toggle {
@@ -103,10 +103,8 @@ const options = [
   align-items: stretch;
   justify-content: center;
   min-height: 0;
-  padding: 18px;
-  background:
-    radial-gradient(circle at top, rgba(118, 185, 0, 0.08) 0%, transparent 36%),
-    linear-gradient(180deg, rgba(4, 4, 4, 1) 0%, rgba(12, 12, 12, 1) 100%);
+  padding: 0;
+  background: #050505;
 }
 
 .preview-stage.is-desktop .preview-frame {
@@ -114,19 +112,20 @@ const options = [
 }
 
 .preview-stage.is-tablet .preview-frame {
-  width: 860px;
+  width: 960px;
   max-width: 100%;
 }
 
 .preview-stage.is-mobile .preview-frame {
-  width: 430px;
+  width: 440px;
   max-width: 100%;
 }
 
 .preview-frame {
+  width: 100%;
+  height: 100%;
   min-height: 100%;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
+  border: 0;
   background: #050505;
 }
 
@@ -134,9 +133,7 @@ const options = [
   display: grid;
   place-items: center;
   width: 100%;
-  min-height: 360px;
-  border: 1px dashed var(--color-border-default);
-  border-radius: var(--radius-sm);
+  min-height: 100%;
   color: var(--color-text-secondary);
 }
 </style>

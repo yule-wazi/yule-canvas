@@ -2,8 +2,8 @@
   <aside class="page-builder-filetree">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">Project Files</p>
-        <h2>Page Project</h2>
+        <p class="eyebrow">项目文件</p>
+        <h2>页面工程</h2>
       </div>
       <span class="count-badge">{{ files.length }}</span>
     </div>
@@ -23,8 +23,8 @@
     </div>
 
     <div v-else class="empty-state">
-      <p>No generated files yet.</p>
-      <span>Select inputs and generate the first sandbox project.</span>
+      <p>还没有生成文件。</p>
+      <span>先选择输入项，再生成第一版页面工程。</span>
     </div>
   </aside>
 </template>
@@ -48,9 +48,11 @@ defineEmits<{
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
   padding: 18px;
   background: linear-gradient(180deg, rgba(16, 16, 16, 0.98) 0%, rgba(8, 8, 8, 0.98) 100%);
   border-right: 1px solid var(--color-border-default);
+  overflow: auto;
 }
 
 .panel-header {
@@ -92,6 +94,7 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
 }
 
 .file-item {

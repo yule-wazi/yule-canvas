@@ -25,7 +25,7 @@
     </div>
 
     <div v-else class="code-empty">
-      Select a generated file to inspect its contents.
+      选择一个生成文件后，这里会显示对应代码。
     </div>
   </div>
 </template>
