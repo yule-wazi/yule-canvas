@@ -30,10 +30,40 @@ body {
   margin: 0;
   background: var(--color-bg-page);
   color: var(--color-text-primary);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
 }
 
 body {
   font-family: var(--font-family-sans);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scrollbar-thumb) var(--color-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6a6a6a 0%, var(--color-scrollbar-thumb) 100%);
+  border: 2px solid var(--color-scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--color-scrollbar-thumb-hover) 0%, #5c9400 100%);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--color-scrollbar-corner);
 }
 
 a {

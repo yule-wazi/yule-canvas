@@ -23,6 +23,10 @@
   --color-border-default: #5e5e5e;
   --color-border-danger: #e52020;
   --color-bg-danger: #650b0b;
+  --color-scrollbar-track: #050505;
+  --color-scrollbar-thumb: #5e5e5e;
+  --color-scrollbar-thumb-hover: #76b900;
+  --color-scrollbar-corner: #000000;
 
   --shadow-card: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 

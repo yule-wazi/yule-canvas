@@ -1,94 +1,116 @@
 ﻿<template>
   <div class="workflow-editor">
-    <div class="editor-toolbar">
-      <div class="toolbar-left toolbar-group toolbar-group--primary">
-        <button @click="showWorkflowManager = true" class="btn-workflow">
-          📁 {{ currentWorkflowName }}
+    <div class="editor-shell-header">
+      <div class="editor-header-left">
+        <button @click="goHome" class="header-home-btn" title="返回首页">
+          <span class="toolbar-icon toolbar-icon--lg">←</span>
         </button>
-        <button @click="save" class="btn-primary btn-toolbar-main">💾 保存</button>
-        <button @click="executeWorkflow" class="btn-success btn-toolbar-main">▶️ 执行</button>
-        <button @click="showRecordingSetupModal = true" class="btn-secondary btn-toolbar-main" :disabled="isRecording">🎥 开始录制</button>
-        <button @click="exportJson" class="btn-secondary btn-toolbar-sub">📤 导出JSON</button>
-        <button @click="showImportModal = true" class="btn-secondary btn-toolbar-sub">📥 导入JSON</button>
+
+        <div class="editor-workspace-meta">
+          <button @click="showWorkflowManager = true" class="workspace-switcher" title="切换工作流">
+            <span class="workspace-name">{{ currentWorkflowName }}</span>
+          </button>
+
+          <div class="save-status-chip" :class="{ 'is-unsaved': hasUnsavedChanges }" :title="hasUnsavedChanges ? '当前改动尚未保存' : '当前工作流已保存'">
+            <span class="save-status-dot">{{ hasUnsavedChanges ? '•' : '✓' }}</span>
+            <span class="save-status-text">{{ hasUnsavedChanges ? '未保存' : '已保存' }}</span>
+          </div>
+        </div>
       </div>
-      <div class="toolbar-right toolbar-group toolbar-group--secondary">
-        <button @click="loadExample" class="btn-secondary btn-toolbar-sub">📋 加载示例</button>
-        <button @click="showDataTableModal = true" class="btn-secondary btn-toolbar-sub">📊 数据表</button>
-        <button @click="showVariablesModal = true" class="btn-secondary btn-toolbar-sub">🔢 变量</button>
-        <button @click="undo" :disabled="!canUndo" class="btn-icon">↶</button>
-        <button @click="redo" :disabled="!canRedo" class="btn-icon">↷</button>
-        <button @click="clear" class="btn-danger">🗑️ 清空</button>
+
+      <div class="editor-header-center">
+        <button @click="undo" :disabled="!canUndo" class="header-control-btn header-control-btn--icon" title="撤销">
+          <span class="toolbar-icon">↶</span>
+        </button>
+        <button @click="redo" :disabled="!canRedo" class="header-control-btn header-control-btn--icon" title="重做">
+          <span class="toolbar-icon">↷</span>
+        </button>
+        <button @click="showRecordingSetupModal = true" class="header-record-btn" :disabled="isRecording">
+          <span class="toolbar-icon">◉</span>
+          <span>{{ isRecording ? '录制中' : '开始录制' }}</span>
+        </button>
+      </div>
+
+      <div class="editor-header-right">
+        <button @click="showDataTableModal = true" class="header-action-btn">
+          <span class="toolbar-icon">▦</span>
+          <span>数据表</span>
+        </button>
+        <button @click="showVariablesModal = true" class="header-action-btn">
+          <span class="toolbar-icon">{x}</span>
+          <span>变量</span>
+        </button>
+        <button @click="save" class="header-save-btn">
+          <span class="toolbar-icon">□</span>
+          <span>保存</span>
+        </button>
+        <button @click="executeWorkflow" class="header-run-btn">
+          <span class="toolbar-icon">▶</span>
+          <span>执行</span>
+        </button>
+
+        <div ref="moreMenuRef" class="header-more-menu">
+          <button @click="toggleMoreMenu" class="header-more-btn" title="更多操作">
+            <span class="toolbar-icon">⋯</span>
+          </button>
+
+          <div v-if="showMoreMenu" class="header-more-dropdown">
+            <button @click="handleMoreAction('import')" class="header-more-item">导入 JSON</button>
+            <button @click="handleMoreAction('export')" class="header-more-item">导出 JSON</button>
+            <button @click="handleMoreAction('clear')" class="header-more-item header-more-item-danger">清空工作流</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="editor-content">
-      <div class="block-palette">
-        <h3>功能块</h3>
-        
-        <div class="palette-category">
-          <h4>浏览器控制</h4>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'navigate')">
-            <span class="block-icon">🌐</span>
-            <span>访问页面</span>
-          </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'back')">
-            <span class="block-icon">⬅️</span>
-            <span>返回</span>
-          </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'forward')">
-            <span class="block-icon">➡️</span>
-            <span>前进</span>
-          </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'scroll')">
-            <span class="block-icon">📜</span>
-            <span>滚动页面</span>
-          </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'wait')">
-            <span class="block-icon">⏱️</span>
-            <span>等待</span>
-          </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'log')">
-            <span class="block-icon">📝</span>
-            <span>日志输出</span>
+    <div class="editor-content" :class="{ 'has-property-panel': hasPropertyPanel }">
+      <aside class="block-palette">
+        <div class="palette-header">
+          <div>
+            <h3>节点库</h3>
+            <p>拖拽功能块到画布中即可添加</p>
           </div>
         </div>
 
-        <div class="palette-category">
-          <h4>页面交互</h4>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'click')">
-            <span class="block-icon">👆</span>
-            <span>点击元素</span>
-          </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'type')">
-            <span class="block-icon">⌨️</span>
-            <span>输入文本</span>
-          </div>
+        <div class="palette-search">
+          <span class="palette-search-icon">⌕</span>
+          <input v-model="paletteSearch" type="text" placeholder="搜索节点..." />
         </div>
 
-        <div class="palette-category">
-          <h4>数据提取</h4>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'extract')">
-            <span class="block-icon">📊</span>
-            <span>提取数据</span>
-          </div>
-        </div>
+        <div class="palette-groups">
+          <div v-for="group in paletteGroups" :key="group.key" class="palette-category">
+            <button @click="togglePaletteCategory(group.key)" class="palette-category-header">
+              <span class="palette-category-title">{{ group.label }}</span>
+              <span class="palette-category-meta">
+                <span class="palette-category-toggle">{{ collapsedPaletteGroups[group.key] ? '+' : '−' }}</span>
+              </span>
+            </button>
 
-        <div class="palette-category">
-          <h4>逻辑控制</h4>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'condition')">
-            <span class="block-icon">🔀</span>
-            <span>条件</span>
+            <div
+              v-if="!collapsedPaletteGroups[group.key]"
+              v-for="item in group.items"
+              :key="item.type"
+              class="palette-block"
+              draggable="true"
+              @dragstart="onPaletteDragStart($event, item.type)"
+            >
+              <span class="block-icon" :class="`is-${item.type}`">{{ item.icon }}</span>
+              <div class="palette-block-copy">
+                <span class="palette-block-title">{{ item.label }}</span>
+                <span class="palette-block-desc">{{ item.description }}</span>
+              </div>
+            </div>
           </div>
-          <div class="palette-block" draggable="true" @dragstart="onPaletteDragStart($event, 'loop')">
-            <span class="block-icon">�</span>
-            <span>循环</span>
+
+          <div v-if="!paletteGroups.length" class="palette-empty-state">
+            没有匹配的功能块
           </div>
         </div>
-      </div>
+      </aside>
 
       <div
         ref="canvasAreaRef"
-        class="canvas-area"
+        class="canvas-workspace"
         @dragover.prevent="onCanvasDragOver"
         @drop="onCanvasDrop"
       >
@@ -122,25 +144,27 @@
           />
         </VueFlow>
         <div class="canvas-layout-actions">
-          <button @click="autoArrangeWorkflow('horizontal')" class="btn-icon" title="横向整理">⇢</button>
-          <button @click="autoArrangeWorkflow('grid')" class="btn-icon" title="井字整理">▦</button>
+          <button @click="autoArrangeWorkflow('horizontal')" class="canvas-float-btn" title="横向整理">⇢</button>
+          <button @click="autoArrangeWorkflow('grid')" class="canvas-float-btn" title="井字整理">▦</button>
         </div>
       </div>
 
-      <div class="property-panel" v-if="selectedBlock">
-        <h3>属性配置</h3>
-        <div class="property-content">
+      <aside class="property-panel" :class="{ 'is-collapsed': !hasPropertyPanel }">
+        <div v-if="hasPropertyPanel" class="property-panel-header">
+          <h3>{{ propertyPanelTitle }}</h3>
+          <p v-if="selectedBlock">当前正在编辑功能块参数</p>
+          <p v-else-if="selectedConnection">当前正在编辑连线配置</p>
+        </div>
+
+        <div v-if="selectedBlock" class="property-content">
           <component
             :is="getPropertyComponent(selectedBlock.type)"
             :block="selectedBlock"
             @update="updateBlockData"
           />
         </div>
-      </div>
 
-      <div class="property-panel" v-else-if="selectedConnection">
-        <h3>连接配置</h3>
-        <div class="property-content connection-panel">
+        <div v-else-if="selectedConnection" class="property-content connection-panel">
           <div class="connection-meta-row">
             <span class="connection-meta-label">起点</span>
             <span class="connection-meta-value">{{ selectedConnection.source }}</span>
@@ -161,7 +185,11 @@
             删除这条连线
           </button>
         </div>
-      </div>
+
+        <div v-else class="property-panel-collapsed-indicator" title="选择功能块后在此展开属性配置">
+          <span class="property-panel-collapsed-line"></span>
+        </div>
+      </aside>
     </div>
 
     <!-- 导入 JSON 弹窗 -->
@@ -577,6 +605,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, defineAsyncComponent, onMounted, onBeforeUnmount, markRaw, nextTick } from 'vue';
 import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core';
+import { useRouter } from 'vue-router';
 import type { Block } from '../../types/block';
 import { Background } from '@vue-flow/background';
 import { MiniMap } from '@vue-flow/minimap';
@@ -595,6 +624,16 @@ import '@vue-flow/core/dist/style.css';
 import '@vue-flow/core/dist/theme-default.css';
 import '@vue-flow/controls/dist/style.css';
 import '@vue-flow/minimap/dist/style.css';
+
+type PaletteCategoryKey = 'browser' | 'interaction' | 'extraction' | 'logic';
+
+interface PaletteItem {
+  type: BlockType;
+  label: string;
+  description: string;
+  icon: string;
+  category: PaletteCategoryKey;
+}
 
 // 动态导入属性组件
 const NavigateProperty = defineAsyncComponent(() => import('./properties/NavigateProperty.vue'));
@@ -729,6 +768,7 @@ const nodeTypes = {
 };
 
 const { project, fitView } = useVueFlow();
+const router = useRouter();
 
 function getApproximateNodeWidth(blockType: string) {
   if (blockType === 'condition') return 220;
@@ -767,17 +807,26 @@ function getEndpointX(
 const workflowStore = useWorkflowStore();
 const dataTableStore = useDataTableStore();
 const canvasAreaRef = ref<HTMLElement | null>(null);
+const moreMenuRef = ref<HTMLElement | null>(null);
 const showExecutionModal = ref(false);
 const showDataTableModal = ref(false);
 const showVariablesModal = ref(false);
 const showVariableForm = ref(false);
 const showWorkflowManager = ref(false);
 const showImportModal = ref(false);
+const showMoreMenu = ref(false);
 const showRecordingSetupModal = ref(false);
 const showRecordingPanel = ref(false);
 const showAIGenerateModal = ref(false);
 const importJsonText = ref('');
+const paletteSearch = ref('');
 const importJsonError = ref('');
+const collapsedPaletteGroups = reactive<Record<PaletteCategoryKey, boolean>>({
+  browser: false,
+  interaction: false,
+  extraction: false,
+  logic: false
+});
 const editingVariableIndex = ref<number | null>(null);
 const newVariable = ref({ name: '', value: '', description: '' });
 const variableNameError = ref('');
@@ -827,6 +876,7 @@ let loopCaptureDiffTimer: ReturnType<typeof setTimeout> | null = null;
 const confirmDialog = ref<InstanceType<typeof ConfirmDialog> | null>(null);
 const toast = ref<InstanceType<typeof Toast> | null>(null);
 const AI_GENERATE_SETTINGS_KEY = 'ai_generate_settings_v1';
+const lastSavedSignature = ref('');
 
 const recordingMarkTable = computed(() => {
   if (!recordingMarkTableId.value) {
@@ -938,6 +988,95 @@ const currentWorkflowName = computed(() => {
   return workflowStore.currentWorkflow?.name || '未命名工作流';
 });
 
+const paletteItems: PaletteItem[] = [
+  { type: 'navigate', label: '访问页面', description: '打开目标网址并进入页面', icon: '◎', category: 'browser' },
+  { type: 'back', label: '返回', description: '回到浏览历史的上一页', icon: '←', category: 'browser' },
+  { type: 'forward', label: '前进', description: '进入浏览历史的下一页', icon: '→', category: 'browser' },
+  { type: 'scroll', label: '滚动页面', description: '向页面或元素继续滚动', icon: '↕', category: 'browser' },
+  { type: 'wait', label: '等待', description: '等待页面或流程稳定下来', icon: '◌', category: 'browser' },
+  { type: 'log', label: '日志输出', description: '在执行时写入调试日志', icon: '≡', category: 'browser' },
+  { type: 'click', label: '点击元素', description: '触发页面元素交互动作', icon: '⌔', category: 'interaction' },
+  { type: 'type', label: '输入文本', description: '向输入框填入文本内容', icon: '⌨', category: 'interaction' },
+  { type: 'extract', label: '提取数据', description: '从页面中提取结构化内容', icon: '▣', category: 'extraction' },
+  { type: 'condition', label: '条件', description: '按规则判断流程分支走向', icon: '◇', category: 'logic' },
+  { type: 'loop', label: '循环', description: '重复执行一段采集流程', icon: '∞', category: 'logic' }
+];
+
+const paletteCategoryLabels: Record<PaletteCategoryKey, string> = {
+  browser: '浏览器控制',
+  interaction: '页面交互',
+  extraction: '数据提取',
+  logic: '逻辑控制'
+};
+
+const filteredPaletteItems = computed(() => {
+  const keyword = paletteSearch.value.trim().toLowerCase();
+  if (!keyword) {
+    return paletteItems;
+  }
+
+  return paletteItems.filter(item =>
+    item.label.toLowerCase().includes(keyword) ||
+    item.description.toLowerCase().includes(keyword)
+  );
+});
+
+const paletteGroups = computed(() => {
+  return (Object.keys(paletteCategoryLabels) as PaletteCategoryKey[])
+    .map(key => ({
+      key,
+      label: paletteCategoryLabels[key],
+      items: filteredPaletteItems.value.filter(item => item.category === key)
+    }))
+    .filter(group => group.items.length > 0);
+});
+
+function buildWorkflowSignature(snapshot?: Partial<{
+  name: string;
+  description: string;
+  blocks: Block[];
+  connections: typeof workflowStore.connections;
+  variables: Record<string, any>;
+}>) {
+  return JSON.stringify({
+    name: snapshot?.name || '',
+    description: snapshot?.description || '',
+    blocks: snapshot?.blocks || [],
+    connections: snapshot?.connections || [],
+    variables: snapshot?.variables || {}
+  });
+}
+
+function syncSavedSignature(snapshot?: Partial<{
+  name: string;
+  description: string;
+  blocks: Block[];
+  connections: typeof workflowStore.connections;
+  variables: Record<string, any>;
+}>) {
+  lastSavedSignature.value = buildWorkflowSignature(snapshot || {
+    name: workflowStore.currentWorkflow?.name || '',
+    description: workflowStore.currentWorkflow?.description || '',
+    blocks: workflowStore.blocks,
+    connections: workflowStore.connections,
+    variables: workflowStore.variables
+  });
+}
+
+const currentWorkflowSignature = computed(() => buildWorkflowSignature({
+  name: workflowStore.currentWorkflow?.name || '',
+  description: workflowStore.currentWorkflow?.description || '',
+  blocks: workflowStore.blocks,
+  connections: workflowStore.connections,
+  variables: workflowStore.variables
+}));
+
+const hasUnsavedChanges = computed(() => currentWorkflowSignature.value !== lastSavedSignature.value);
+
+function togglePaletteCategory(category: PaletteCategoryKey) {
+  collapsedPaletteGroups[category] = !collapsedPaletteGroups[category];
+}
+
 function mapDataTableColumnTypeToRecordingFieldType(columnType: DataTableColumn['type']): RecordingEventItem['fieldType'] {
   if (columnType === 'image') {
     return 'image';
@@ -972,6 +1111,45 @@ function syncRecordingMarkConfig() {
     tables: recordingMarkTableOptions.value,
     disableRecordAction: loopCaptureState.active
   });
+}
+
+function goHome() {
+  router.push({ name: 'home' });
+}
+
+function toggleMoreMenu() {
+  showMoreMenu.value = !showMoreMenu.value;
+}
+
+function closeMoreMenu() {
+  showMoreMenu.value = false;
+}
+
+function handleMoreAction(action: 'import' | 'export' | 'clear') {
+  closeMoreMenu();
+
+  if (action === 'import') {
+    showImportModal.value = true;
+    return;
+  }
+
+  if (action === 'export') {
+    exportJson();
+    return;
+  }
+
+  clear();
+}
+
+function handleWindowPointerDown(event: MouseEvent) {
+  const target = event.target as Node | null;
+  if (!moreMenuRef.value || !target) {
+    return;
+  }
+
+  if (!moreMenuRef.value.contains(target)) {
+    closeMoreMenu();
+  }
 }
 
 // 验证变量名
@@ -2252,12 +2430,14 @@ function initializeWorkflow() {
     
     if (savedWorkflow) {
       workflowStore.loadWorkflow(savedWorkflow);
+      syncSavedSignature(savedWorkflow);
       return;
     }
   }
   
   // 如果没有保存的工作流，创建新的
   workflowStore.initWorkflow();
+  lastSavedSignature.value = '';
 }
 
 initializeWorkflow();
@@ -2270,6 +2450,7 @@ onMounted(() => {
   workflowStore.migrateConditionBlocks();
   loadAIGenerateSettings();
   updateHandleStyles();
+  window.addEventListener('mousedown', handleWindowPointerDown);
 });
 
 watch(
@@ -2437,6 +2618,7 @@ onBeforeUnmount(() => {
   stopExecutionPanelDrag();
   executionPanelResizeObserver?.disconnect();
   executionPanelResizeObserver = null;
+  window.removeEventListener('mousedown', handleWindowPointerDown);
   if (isRecording.value) {
     socketService.stopRecording();
   }
@@ -2579,6 +2761,18 @@ const selectedConnection = computed(() => {
 
   return workflowStore.connections.find(conn => conn.id === selectedConnectionId.value) || null;
 });
+const propertyPanelTitle = computed(() => {
+  if (selectedBlock.value) {
+    return selectedBlock.value.label || '功能块配置';
+  }
+
+  if (selectedConnection.value) {
+    return '连接配置';
+  }
+
+  return '';
+});
+const hasPropertyPanel = computed(() => Boolean(selectedBlock.value || selectedConnection.value));
 const canUndo = computed(() => workflowStore.canUndo);
 const canRedo = computed(() => workflowStore.canRedo);
 
@@ -3097,6 +3291,7 @@ async function save() {
     localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(workflows));
     
     workflowStore.currentWorkflow = workflow as any;
+    syncSavedSignature(workflow as any);
 
     // 记住当前工作流ID
     localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
@@ -3115,6 +3310,7 @@ function loadWorkflow(workflowId: string) {
   
   if (workflow) {
     workflowStore.loadWorkflow(workflow);
+    syncSavedSignature(workflow);
     localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflowId);
     toast.value?.show({ message: `已加载工作流: ${workflow.name}`, type: 'success' });
   } else {
@@ -3124,6 +3320,7 @@ function loadWorkflow(workflowId: string) {
 
 function createNewWorkflow(workflow: any) {
   workflowStore.loadWorkflow(workflow);
+  syncSavedSignature(workflow);
   localStorage.setItem(CURRENT_WORKFLOW_ID_KEY, workflow.id);
   toast.value?.show({ message: `已创建工作流: ${workflow.name}`, type: 'success' });
 }
@@ -3133,6 +3330,7 @@ function onWorkflowDeleted(workflowId: string) {
   if (workflowStore.currentWorkflow?.id === workflowId) {
     workflowStore.initWorkflow();
     localStorage.removeItem(CURRENT_WORKFLOW_ID_KEY);
+    lastSavedSignature.value = '';
   }
 }
 
@@ -3242,6 +3440,7 @@ function clear() {
       workflowStore.connections = [];
       workflowStore.selectedBlockId = null;
       workflowStore.saveToHistory();
+      closeMoreMenu();
       
       toast.value?.show({ message: '工作流已清空', type: 'success' });
     }
@@ -3442,58 +3641,282 @@ async function executeWorkflow() {
 
 <style scoped>
 .workflow-editor {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: 68px minmax(0, 1fr);
   background: var(--color-bg-page);
   color: var(--color-text-primary);
   font-family: var(--font-family-sans);
+  overflow: hidden;
 }
 
-.editor-toolbar {
+.editor-shell-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
-  padding: 1rem;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 18px;
   background: var(--color-bg-page);
   border-bottom: 1px solid var(--color-border-default);
+  min-height: 0;
 }
 
-.toolbar-left,
-.toolbar-right {
+.editor-header-left,
+.editor-header-center,
+.editor-header-right {
   display: flex;
-  gap: 0.5rem;
   align-items: center;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
-.toolbar-group--secondary {
+.editor-header-left {
+  gap: 14px;
+  flex: 1;
+}
+
+.editor-header-center {
+  gap: 10px;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.editor-header-right {
+  gap: 10px;
   justify-content: flex-end;
+  flex: 1;
 }
 
-.btn-workflow {
-  padding: 0.5rem 1rem;
-  border: 2px solid var(--color-brand-accent);
+.header-home-btn,
+.workspace-switcher,
+.header-control-btn,
+.header-action-btn,
+.header-save-btn,
+.header-run-btn,
+.header-more-btn {
+  height: 40px;
   border-radius: var(--radius-sm);
   background: transparent;
+  border: 1px solid var(--color-border-default);
   color: var(--color-text-primary);
   cursor: pointer;
-  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.header-home-btn:hover,
+.workspace-switcher:hover,
+.header-control-btn:hover,
+.header-action-btn:hover,
+.header-save-btn:hover,
+.header-more-btn:hover {
+  border-color: var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.08);
+}
+
+.header-home-btn {
+  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--color-brand-accent);
+}
+
+.editor-workspace-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.workspace-switcher {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 220px;
+  max-width: 360px;
+  height: 40px;
+  padding: 0 14px;
+  text-align: left;
+  overflow: hidden;
+}
+
+.workspace-name {
+  width: 100%;
+  display: block;
+  font-size: 16px;
   font-weight: 700;
-  text-transform: uppercase;
-  transition: all 0.3s;
-  max-width: 250px;
+  line-height: 1.25;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.save-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(118, 185, 0, 0.38);
+  border-radius: var(--radius-sm);
+  background: rgba(118, 185, 0, 0.08);
+  color: var(--color-text-primary);
+  flex: 0 0 auto;
+}
+
+.save-status-chip.is-unsaved {
+  border-color: rgba(229, 32, 32, 0.55);
+  background: rgba(101, 11, 11, 0.38);
+}
+
+.save-status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(118, 185, 0, 0.18);
+  color: var(--color-brand-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.save-status-chip.is-unsaved .save-status-dot {
+  background: rgba(229, 32, 32, 0.16);
+  color: #ff8a80;
+}
+
+.save-status-text {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.header-control-btn,
+.header-action-btn,
+.header-save-btn,
+.header-run-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
-.btn-workflow:hover {
-  background: var(--color-brand-accent-hover);
-  border-color: var(--color-brand-accent);
+.header-control-btn--icon {
+  width: 40px;
+  justify-content: center;
+  padding: 0;
+}
+
+.header-control-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.header-record-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.08);
   color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.header-record-btn:hover:not(:disabled) {
+  background: var(--color-brand-accent-hover);
+  border-color: var(--color-brand-accent-hover);
+}
+
+.header-record-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.header-run-btn {
+  border-color: var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.92);
+  color: #000000;
+}
+
+.header-run-btn:hover {
+  background: var(--color-brand-accent-bright);
+  border-color: var(--color-brand-accent-bright);
+  color: #000000;
+}
+
+.header-more-menu {
+  position: relative;
+}
+
+.header-more-btn {
+  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-more-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 168px;
+  padding: 8px;
+  background: #050505;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 40;
+}
+
+.header-more-item {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.header-more-item:hover {
+  border-color: var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.08);
+}
+
+.header-more-item-danger {
+  color: #ff8a80;
+}
+
+.toolbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.toolbar-icon--lg {
+  font-size: 18px;
 }
 
 .btn-primary, .btn-secondary, .btn-danger, .btn-icon, .btn-success {
@@ -3584,57 +4007,139 @@ async function executeWorkflow() {
 }
 
 .editor-content {
-  display: flex;
-  flex: 1;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 18px;
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
+}
+
+.editor-content.has-property-panel {
+  grid-template-columns: 280px minmax(0, 1fr) 300px;
 }
 
 .block-palette {
-  width: 250px;
   background: var(--color-bg-page);
   border-right: 1px solid var(--color-border-default);
-  overflow-y: auto;
-  padding: 1rem;
+  overflow: hidden;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.block-palette h3 {
-  margin: 0 0 1rem 0;
+.palette-header h3,
+.property-panel-header h3,
+.canvas-stage-header h3 {
+  margin: 0;
   color: var(--color-text-primary);
-  font-size: 1.5rem;
+  font-size: 24px;
   font-weight: 700;
   line-height: var(--line-height-tight);
 }
 
-.palette-category {
-  margin-bottom: 1.5rem;
+.palette-header p,
+.property-panel-header p,
+.canvas-stage-header p {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.palette-category h4 {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.88rem;
+.palette-search {
+  position: relative;
+}
+
+.palette-search input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px 0 40px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-panel);
+  color: var(--color-text-primary);
+  font-size: 14px;
+}
+
+.palette-search input:focus {
+  outline: none;
+  border-color: var(--color-brand-accent);
+  box-shadow: 0 0 0 1px var(--color-brand-accent);
+}
+
+.palette-search-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  font-size: 15px;
+}
+
+.palette-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.palette-category + .palette-category {
+  margin-top: 18px;
+}
+
+.palette-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.palette-category-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.palette-category-title {
+  font-size: 13px;
   color: var(--color-text-secondary);
   text-transform: uppercase;
   font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.palette-category-toggle {
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .palette-block {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  margin-bottom: 0.5rem;
-  background: var(--color-bg-panel);
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: linear-gradient(180deg, rgba(12, 12, 12, 0.96), rgba(20, 20, 20, 0.96));
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   cursor: move;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   color: var(--color-text-primary);
+  box-shadow: var(--shadow-card);
 }
 
 .palette-block:hover {
-  background: var(--color-bg-surface);
+  background: linear-gradient(180deg, rgba(18, 18, 18, 0.98), rgba(24, 24, 24, 0.98));
   border-color: var(--color-brand-accent);
+  transform: translateY(-1px);
 }
 
 .palette-block:active {
@@ -3642,12 +4147,59 @@ async function executeWorkflow() {
 }
 
 .block-icon {
-  font-size: 1.2rem;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  flex: 0 0 auto;
 }
 
-.canvas-area {
+.block-icon.is-extract,
+.block-icon.is-condition,
+.block-icon.is-loop {
+  color: var(--color-brand-accent);
+}
+
+.palette-block-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.palette-block-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.palette-block-desc {
+  margin-top: 2px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.palette-empty-state {
+  padding: 18px 14px;
+  border: 1px dashed var(--color-border-default);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  text-align: center;
+  font-size: 14px;
+}
+
+.canvas-workspace {
   flex: 1;
   position: relative;
+  min-width: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(118, 185, 0, 0.06) 0%, rgba(118, 185, 0, 0) 22%),
     var(--color-bg-page-elevated);
@@ -3666,26 +4218,129 @@ async function executeWorkflow() {
   background: rgba(0, 0, 0, 0.92);
 }
 
-.property-panel {
-  width: 300px;
-  background: var(--color-bg-page);
-  border-left: 1px solid var(--color-border-default);
-  padding: 1rem;
-  overflow-y: auto;
+.canvas-float-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
 }
 
-.property-panel h3 {
-  margin: 0 0 1rem 0;
-  color: var(--color-text-primary);
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: var(--line-height-tight);
+.canvas-float-btn:hover:not(:disabled) {
+  border-color: var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.1);
+}
+
+.canvas-float-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.property-panel {
+  background: var(--color-bg-page);
+  border-left: 1px solid var(--color-border-default);
+  padding: 18px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.property-panel.is-collapsed {
+  padding: 0;
+  align-items: stretch;
+  justify-content: center;
 }
 
 .property-content {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.property-panel-collapsed-indicator {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, rgba(118, 185, 0, 0.05), rgba(118, 185, 0, 0.01));
+}
+
+.property-panel-collapsed-line {
+  width: 2px;
+  height: 56px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(118, 185, 0, 0.2), rgba(118, 185, 0, 0.8), rgba(118, 185, 0, 0.2));
+}
+
+@media (max-width: 1480px) {
+  .editor-content {
+    grid-template-columns: 252px minmax(0, 1fr) 18px;
+  }
+
+  .editor-content.has-property-panel {
+    grid-template-columns: 252px minmax(0, 1fr) 272px;
+  }
+
+  .workspace-switcher {
+    max-width: 280px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .editor-shell-header {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 68px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+  }
+
+  .editor-header-left,
+  .editor-header-center,
+  .editor-header-right {
+    flex: 1 1 100%;
+  }
+
+  .editor-header-center {
+    justify-content: flex-start;
+  }
+
+  .editor-header-right {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .editor-content {
+    grid-template-columns: 232px minmax(0, 1fr) 18px;
+  }
+
+  .editor-content.has-property-panel {
+    grid-template-columns: 232px minmax(0, 1fr) 260px;
+  }
+}
+
+@media (max-width: 960px) {
+  .editor-content {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .property-panel {
+    display: none;
+  }
+
+  .workspace-switcher {
+    min-width: 180px;
+  }
 }
 
 .property-panel :deep(.property-form) {

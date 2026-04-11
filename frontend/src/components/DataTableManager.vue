@@ -789,24 +789,6 @@ function onColumnDrop(dropIndex: number) {
   padding-bottom: 0.5rem;
 }
 
-.columns-list::-webkit-scrollbar {
-  height: 6px;
-}
-
-.columns-list::-webkit-scrollbar-track {
-  background: var(--color-bg-page-elevated);
-  border-radius: 3px;
-}
-
-.columns-list::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border-radius: 3px;
-}
-
-.columns-list::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
-}
-
 .column-item {
   display: flex;
   align-items: center;
