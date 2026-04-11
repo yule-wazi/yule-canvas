@@ -579,7 +579,9 @@ function onColumnDrop(dropIndex: number) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-bg-page-elevated);
+  background:
+    radial-gradient(circle at top left, rgba(118, 185, 0, 0.06), transparent 22%),
+    var(--color-bg-page-elevated);
   color: var(--color-text-primary);
 }
 
@@ -594,8 +596,9 @@ function onColumnDrop(dropIndex: number) {
 
 .manager-header h2 {
   margin: 0;
-  color: var(--color-brand-link-hover);
-  font-size: 1.2rem;
+  color: var(--color-text-primary);
+  font-size: 1.5rem;
+  line-height: var(--line-height-tight);
 }
 
 .header-actions {
@@ -630,32 +633,45 @@ function onColumnDrop(dropIndex: number) {
 
 .table-card {
   padding: 1rem;
-  margin-bottom: 0.5rem;
-  background: var(--color-bg-panel);
+  margin-bottom: 0.75rem;
+  background: linear-gradient(180deg, rgba(24, 24, 24, 0.96), rgba(31, 31, 31, 0.96));
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  overflow: hidden;
 }
 
 .table-card:hover {
-  background: var(--color-bg-surface);
-  border-color: var(--color-brand-link-hover);
+  border-color: var(--color-brand-accent);
+  box-shadow: var(--shadow-card);
+  transform: translateY(-1px);
 }
 
 .table-card.active {
-  background: var(--color-brand-link-hover);
-  border-color: var(--color-brand-link-hover);
+  background:
+    linear-gradient(180deg, rgba(118, 185, 0, 0.1), rgba(20, 20, 20, 0.98));
+  border-color: var(--color-brand-accent);
+  box-shadow: inset 3px 0 0 var(--color-brand-accent), var(--shadow-card);
+}
+
+.table-card.active .table-info h3,
+.table-card.active .table-info p,
+.table-card.active .table-info small {
+  color: var(--color-text-primary);
 }
 
 .table-info h3 {
   margin: 0 0 0.5rem 0;
-  font-size: 1rem;
+  font-size: 1.15rem;
+  color: var(--color-brand-link-hover);
+  line-height: 1.3;
+  word-break: break-word;
 }
 
 .table-info p {
   margin: 0.25rem 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   color: var(--color-text-secondary);
 }
 
@@ -688,8 +704,10 @@ function onColumnDrop(dropIndex: number) {
 
 .detail-header h3 {
   margin: 0;
-  color: var(--color-brand-link-hover);
+  color: var(--color-text-primary);
   flex-shrink: 0;
+  font-size: 1.85rem;
+  line-height: var(--line-height-tight);
 }
 
 .header-right {
@@ -712,14 +730,15 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .search-bar-compact:focus-within {
-  border-color: var(--color-brand-link-hover);
+  border-color: var(--color-brand-accent);
+  box-shadow: 0 0 0 1px var(--color-brand-accent);
 }
 
 .search-input-compact {
   background: transparent;
   border: none;
-  color: #c9d1d9;
-  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
   outline: none;
   width: 180px;
   padding: 0;
@@ -732,7 +751,7 @@ function onColumnDrop(dropIndex: number) {
 .search-column-select-compact {
   background: transparent;
   border: none;
-  color: #c9d1d9;
+  color: var(--color-text-primary);
   font-size: 0.8rem;
   outline: none;
   cursor: pointer;
@@ -745,7 +764,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .search-column-select-compact:hover {
-  color: var(--color-brand-link-hover);
+  color: var(--color-brand-accent);
 }
 
 .search-info-compact {
@@ -773,7 +792,8 @@ function onColumnDrop(dropIndex: number) {
 
 .columns-section h4 {
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+  font-size: 1.15rem;
 }
 
 .btn-small {
@@ -794,7 +814,7 @@ function onColumnDrop(dropIndex: number) {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: var(--color-bg-panel);
+  background: linear-gradient(180deg, rgba(24, 24, 24, 0.96), rgba(29, 29, 29, 0.96));
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   cursor: move;
@@ -804,14 +824,13 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .column-item:hover {
-  background: var(--color-bg-surface);
-  border-color: var(--color-brand-link-hover);
+  border-color: var(--color-brand-accent);
 }
 
 .column-item.drag-over {
-  border-color: var(--color-brand-link-hover);
+  border-color: var(--color-brand-accent);
   border-style: dashed;
-  background: rgba(56, 96, 190, 0.12);
+  background: rgba(118, 185, 0, 0.08);
 }
 
 .drag-handle {
@@ -855,14 +874,15 @@ function onColumnDrop(dropIndex: number) {
 
 .data-table th {
   background: var(--color-bg-panel);
-  font-weight: 500;
+  font-weight: 700;
   position: sticky;
   top: 0;
   z-index: 1;
+  color: var(--color-text-primary);
 }
 
 .data-table tbody tr:hover {
-  background: var(--color-bg-panel);
+  background: rgba(118, 185, 0, 0.04);
 }
 
 .table-image {
@@ -889,12 +909,12 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .table-link {
-  color: var(--color-brand-link-hover);
+  color: var(--color-brand-accent);
   text-decoration: none;
 }
 
 .table-link:hover {
-  text-decoration: underline;
+  color: var(--color-brand-link-hover);
 }
 
 .empty-state,
@@ -910,38 +930,39 @@ function onColumnDrop(dropIndex: number) {
 .btn-icon,
 .btn-icon-small {
   padding: 0.5rem 1rem;
-  border: none;
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: 0.9rem;
-  transition: background 0.3s;
+  transition: all 0.2s ease;
+  background: transparent;
 }
 
 .btn-primary {
-  background: #238636;
-  color: white;
+  border-color: var(--color-brand-accent);
+  color: var(--color-text-primary);
 }
 
 .btn-primary:hover {
-  background: #2ea043;
+  background: rgba(118, 185, 0, 0.12);
 }
 
 .btn-secondary {
-  background: var(--color-brand-link-hover);
-  color: white;
+  color: var(--color-text-primary);
 }
 
 .btn-secondary:hover {
-  background: #388bfd;
+  border-color: var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.08);
 }
 
 .btn-danger {
-  background: #da3633;
-  color: white;
+  border-color: var(--color-border-danger);
+  color: var(--color-text-primary);
 }
 
 .btn-danger:hover {
-  background: #f85149;
+  background: rgba(229, 32, 32, 0.16);
 }
 
 .btn-icon,
@@ -953,7 +974,8 @@ function onColumnDrop(dropIndex: number) {
 
 .btn-icon:hover,
 .btn-icon-small:hover {
-  background: var(--color-bg-surface);
+  border-color: var(--color-brand-accent);
+  background: rgba(118, 185, 0, 0.08);
 }
 
 .modal-overlay {
@@ -982,7 +1004,7 @@ function onColumnDrop(dropIndex: number) {
 
 .modal-content h3 {
   margin: 0 0 1rem 0;
-  color: var(--color-brand-link-hover);
+  color: var(--color-text-primary);
 }
 
 .form-group {
@@ -1028,9 +1050,9 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .video-preview-btn {
-  background: #238636;
-  color: white;
-  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-brand-accent);
   padding: 0.5rem 1rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -1039,7 +1061,7 @@ function onColumnDrop(dropIndex: number) {
 }
 
 .video-preview-btn:hover {
-  background: #2ea043;
+  background: rgba(118, 185, 0, 0.12);
   transform: translateY(-1px);
 }
 
@@ -1052,7 +1074,7 @@ function onColumnDrop(dropIndex: number) {
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1a1a 0%, #0b0b0b 100%);
   display: flex;
   align-items: center;
   justify-content: center;
