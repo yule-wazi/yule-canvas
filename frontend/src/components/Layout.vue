@@ -3,15 +3,16 @@
     <header class="header">
       <div class="brand">
         <span class="brand-kicker">YULECANVAS</span>
-        <h1>数据爬取 Agent</h1>
+        <h1>数据抓取 Agent</h1>
       </div>
       <nav>
         <router-link to="/">首页</router-link>
         <router-link to="/workflow">可视化编辑器</router-link>
         <router-link to="/data">数据管理</router-link>
+        <router-link to="/page-builder">Page Builder</router-link>
       </nav>
     </header>
-    <main :class="['main', { 'main--workflow': route.name === 'workflow' }]">
+    <main :class="['main', { 'main--workflow': route.name === 'workflow', 'main--page-builder': route.name === 'page-builder' }]">
       <router-view />
     </main>
   </div>
@@ -100,11 +101,11 @@ nav a.router-link-active {
   flex: 1;
   min-height: 0;
   padding: 32px;
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 1) 100%);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 1) 100%);
 }
 
-.main--workflow {
+.main--workflow,
+.main--page-builder {
   padding: 0;
 }
 
@@ -124,7 +125,8 @@ nav a.router-link-active {
     padding: 20px 16px;
   }
 
-  .main--workflow {
+  .main--workflow,
+  .main--page-builder {
     padding: 0;
   }
 }

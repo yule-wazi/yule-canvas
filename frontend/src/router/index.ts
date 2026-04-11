@@ -28,6 +28,11 @@ const router = createRouter({
       component: () => import('../components/workflow/WorkflowEditor.vue')
     },
     {
+      path: '/page-builder',
+      name: 'page-builder',
+      component: () => import('../views/PageBuilderView.vue')
+    },
+    {
       path: '/test',
       name: 'test',
       component: () => import('../views/WorkflowJsonTest.vue')
