@@ -1,3 +1,4 @@
+import api from './api';
 import type { DataTable } from '../stores/dataTable';
 import type {
   PageBindingContract,
@@ -257,6 +258,30 @@ function buildTree(files: PageBuilderFile[]): PageBuilderTreeNode[] {
       children: node.children ? buildTreeFromNodes(node.children) : undefined
     }))
     .sort(sortTreeNodes);
+}
+
+function inferFileType(filePath: string): PageBuilderFile['type'] {
+  if (filePath.endsWith('.vue')) return 'vue';
+  if (filePath.endsWith('.ts')) return 'ts';
+  if (filePath.endsWith('.js')) return 'js';
+  if (filePath.endsWith('.css')) return 'css';
+  if (filePath.endsWith('.json')) return 'json';
+  return 'html';
+}
+
+function inferFileRole(filePath: string) {
+  const roleMap: Record<string, string> = {
+    'app/PageView.vue': 'Generated page entry point.',
+    'components/sections/HeroSection.vue': 'Hero section component.',
+    'components/sections/FeedSection.vue': 'Repeated collection section component.',
+    'components/sections/FooterSection.vue': 'Footer section component.',
+    'data/bindings.ts': 'Binding contract between table fields and page sections.',
+    'data/tableAdapter.ts': 'Stable data access adapter for generated sections.',
+    'spec/page-spec.json': 'Stable page spec used for regeneration.',
+    'styles/page.css': 'Generated page stylesheet.'
+  };
+
+  return roleMap[filePath] || 'Generated project file.';
 }
 
 function buildTreeFromNodes(nodes: PageBuilderTreeNode[]): PageBuilderTreeNode[] {
@@ -839,4 +864,113 @@ export function buildMockPageProject(table: DataTable, request: PageBuildRequest
     sectionSummaries: createSectionSummaries(spec.layout.sections),
     previewHtml
   };
+}
+
+export function buildProjectFromGeneratedFiles(params: {
+  table: DataTable;
+  files: Array<{ path: string; content: string }>;
+  assistantMessage?: string;
+}) {
+  const specFile = params.files.find((file) => file.path === 'spec/page-spec.json');
+  const spec = specFile
+    ? JSON.parse(specFile.content) as PageSpec
+    : createPageSpec(params.table, {
+        tableId: params.table.id,
+        pageType: 'news-list',
+        title: `${params.table.name} Page`
+      }, inferFieldRoles(params.table));
+
+  const fieldRoleMap = inferFieldRoles(params.table);
+  const bindingContract = createBindingContract(spec, fieldRoleMap);
+  const files: PageBuilderFile[] = params.files.map((file, index) => ({
+    id: `generated-${index}`,
+    path: file.path,
+    name: file.path.split('/').pop() || file.path,
+    type: inferFileType(file.path),
+    role: inferFileRole(file.path),
+    editable: file.path !== 'spec/page-spec.json',
+    visibility: 'project',
+    content: file.content,
+    sourceSectionIds: spec.layout.sections.map((section) => section.id)
+  }));
+
+  const project: PageBuilderProject = {
+    rootName: 'Page Project',
+    files,
+    tree: buildTree(files),
+    bindingContract
+  };
+
+  return {
+    assistantMessage: params.assistantMessage || '',
+    fieldRoleMap,
+    spec,
+    project,
+    sectionSummaries: createSectionSummaries(spec.layout.sections)
+  };
+}
+
+export async function generatePageProjectWithAI(params: {
+  table: DataTable;
+  prompt: string;
+  provider?: 'openrouter' | 'qwen' | 'siliconflow';
+  model?: string;
+  apiKey?: string;
+}) {
+  let response: {
+    success: boolean;
+    project: {
+      assistantMessage: string;
+      entryPath: string;
+      files: Array<{ path: string; content: string }>;
+    } | null;
+    error: string | null;
+  };
+
+  try {
+    response = await api.post('/page-builder/generate', {
+      prompt: params.prompt,
+      model: params.provider || 'openrouter',
+      options: {
+        model: params.model,
+        apiKey: params.apiKey
+      },
+      table: {
+        id: params.table.id,
+        name: params.table.name,
+        columns: params.table.columns,
+        rows: params.table.rows.slice(0, 6)
+      }
+    }) as typeof response;
+  } catch (error: any) {
+    throw new Error(error?.response?.data?.error || error?.message || 'Failed to generate project with AI.');
+  }
+
+  if (!response.success || !response.project) {
+    throw new Error(response.error || 'Failed to generate project with AI.');
+  }
+
+  return response.project;
+}
+
+export async function renderProjectPreview(files: PageBuilderFile[], options?: { entryPath?: string; title?: string }) {
+  const response = await api.post('/page-builder/render-preview', {
+    files: files.map((file) => ({
+      path: file.path,
+      type: file.type,
+      content: file.content
+    })),
+    entryPath: options?.entryPath || 'app/PageView.vue',
+    title: options?.title
+  }) as {
+    success: boolean;
+    html: string;
+    error: string | null;
+  };
+
+  if (!response.success) {
+    return response.html;
+  }
+
+  return response.html;
 }

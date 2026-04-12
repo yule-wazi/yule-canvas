@@ -440,6 +440,30 @@ export class AIAdapterManager {
     return this.generateWorkflowFromMessages(modelId, WORKFLOW_JSON_SYSTEM_PROMPT, prompt, options);
   }
 
+  async generateText(modelId: string, systemPrompt: string, userPrompt: string, options: Record<string, any> = {}) {
+    const providerRequest = this.buildProviderRequest(modelId, systemPrompt, userPrompt, options);
+    const adapter = this.getAdapter(modelId);
+
+    if (!adapter) {
+      throw new Error(`Unsupported model: ${modelId}`);
+    }
+
+    try {
+      const response = await axios.post(providerRequest.endpoint, providerRequest.body, {
+        headers: providerRequest.headers,
+        timeout: options.timeoutMs ?? 120000
+      });
+
+      return sanitizeJsonResponse(adapter.parseResponse(response.data));
+    } catch (error: any) {
+      if (error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message || ''))) {
+        throw new Error('AI provider request timed out.');
+      }
+
+      throw new Error(error.response?.data?.error?.message || error.response?.data?.message || error.message || 'AI provider request failed.');
+    }
+  }
+
   async generateWorkflowFromRecording(
     modelId: string,
     payload: { events?: RecordingInputEvent[]; mode?: string; status?: string; recorder?: { mode?: string; status?: string } } | RecordingInputEvent[],

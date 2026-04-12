@@ -1,8 +1,8 @@
 <template>
   <div class="page-builder-view">
     <PageBuilderTopBar
-      :title="store.pageTitle || 'Untitled Project'"
-      :table-name="selectedTable?.name || 'No table selected'"
+      :title="store.pageTitle || '未命名项目'"
+      :table-name="selectedTable?.name || '未选择数据表'"
       :page-type="store.pageType"
       :style-preset="store.stylePreset"
       :center-mode="store.centerMode"
@@ -34,34 +34,34 @@
           @select-file="openFile"
           @change-viewport="viewport = $event"
           @preview-select="store.selectPreviewElement"
+          @preview-error="store.setError($event)"
         />
 
         <div v-if="store.error" class="error-banner">{{ store.error }}</div>
       </div>
 
-      <PageBuilderRightPanel
-        :selection="store.selectedPreviewElement"
-        @select-file-by-path="selectFileByPath"
-      />
-
       <PageBuilderSetupDrawer
         :open="store.isSetupDrawerOpen"
         :tables="dataTableStore.tables"
         :selected-table-id="store.selectedTableId"
-        :page-type="store.pageType"
-        :style-preset="store.stylePreset"
-        :page-title="store.pageTitle"
         :goal="store.goal"
-        :density="store.density"
         :field-role-map="store.fieldRoleMap"
-        @close="store.toggleSetupDrawer(false)"
+        :assistant-message="store.assistantMessage"
+        @open-config="store.toggleAIConfig(true)"
         @generate="generate"
         @update:selected-table-id="store.setSelectedTable($event, dataTableStore.tables)"
-        @update:page-type="store.pageType = $event"
-        @update:style-preset="store.stylePreset = $event"
-        @update:page-title="store.pageTitle = $event"
         @update:goal="store.goal = $event"
-        @update:density="store.density = $event"
+      />
+
+      <PageBuilderAIConfigModal
+        :open="store.isAIConfigOpen"
+        :provider="store.aiProvider"
+        :model="store.aiModel"
+        :api-key="store.aiApiKey"
+        @close="store.toggleAIConfig(false)"
+        @update:provider="store.updateAIConfig({ provider: $event })"
+        @update:model="store.updateAIConfig({ model: $event })"
+        @update:apiKey="store.updateAIConfig({ apiKey: $event })"
       />
     </div>
   </div>
@@ -69,8 +69,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import PageBuilderAIConfigModal from '../components/pageBuilder/PageBuilderAIConfigModal.vue';
 import PageBuilderFileTree from '../components/pageBuilder/PageBuilderFileTree.vue';
-import PageBuilderRightPanel from '../components/pageBuilder/PageBuilderRightPanel.vue';
 import PageBuilderSandbox from '../components/pageBuilder/PageBuilderSandbox.vue';
 import PageBuilderSetupDrawer from '../components/pageBuilder/PageBuilderSetupDrawer.vue';
 import PageBuilderTopBar from '../components/pageBuilder/PageBuilderTopBar.vue';
@@ -87,28 +87,28 @@ const selectedTable = computed(() =>
 
 const statusLabel = computed(() => {
   if (store.previewStatus === 'ready') {
-    return 'Preview ready';
+    return '预览已就绪';
   }
 
   if (store.previewStatus === 'building') {
-    return 'Building preview';
+    return '正在生成预览';
   }
 
   if (store.previewStatus === 'error') {
-    return 'Generation blocked';
+    return '生成被阻止';
   }
 
-  return 'Waiting to generate';
+  return '等待生成';
 });
 
-const dataTitle = computed(() => `${selectedTable.value?.name || 'Current Table'} JSON`);
+const dataTitle = computed(() => `${selectedTable.value?.name || '当前数据表'} JSON`);
 
 const dataDescription = computed(() => {
   if (!selectedTable.value) {
-    return 'No selected table.';
+    return '当前还没有选中的数据表。';
   }
 
-  return `${selectedTable.value.rows.length} rows, ${selectedTable.value.columns.length} fields`;
+  return `${selectedTable.value.rows.length} 行，${selectedTable.value.columns.length} 个字段`;
 });
 
 const dataContent = computed(() =>
@@ -139,20 +139,13 @@ watch(
   { deep: true }
 );
 
-function generate() {
-  store.generateFromTable(dataTableStore.tables);
+async function generate() {
+  await store.generateFromTable(dataTableStore.tables);
 }
 
 function openFile(fileId: string) {
   store.setActiveFile(fileId);
   store.setCenterMode('code');
-}
-
-function selectFileByPath(filePath: string) {
-  const file = store.files.find((item) => item.path === filePath);
-  if (file) {
-    openFile(file.id);
-  }
 }
 </script>
 
@@ -171,7 +164,7 @@ function selectFileByPath(filePath: string) {
 .page-builder-body {
   position: relative;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-columns: 280px minmax(0, 1fr);
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -182,10 +175,8 @@ function selectFileByPath(filePath: string) {
   display: flex;
   flex-direction: column;
   gap: 0;
-  flex: 1;
   min-width: 0;
   min-height: 0;
-  padding: 0;
   overflow: hidden;
 }
 
@@ -200,7 +191,7 @@ function selectFileByPath(filePath: string) {
 
 @media (max-width: 1200px) {
   .page-builder-body {
-    grid-template-columns: 240px minmax(0, 1fr) 280px;
+    grid-template-columns: 240px minmax(0, 1fr);
   }
 }
 

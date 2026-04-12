@@ -30,7 +30,7 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 app.use('/api', apiRoutes);
 app.use('/api/workflow', workflowRoutes);

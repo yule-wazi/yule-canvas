@@ -7,6 +7,7 @@
       :status-label="statusLabel"
       @change-viewport="$emit('changeViewport', $event)"
       @preview-select="$emit('previewSelect', $event)"
+      @preview-error="$emit('previewError', $event)"
     />
 
     <PageBuilderCodeTabs
@@ -47,6 +48,7 @@ defineEmits<{
   selectFile: [fileId: string];
   changeViewport: [viewport: 'desktop' | 'tablet' | 'mobile'];
   previewSelect: [selection: PageBuilderPreviewSelection];
+  previewError: [message: string];
 }>();
 </script>
 

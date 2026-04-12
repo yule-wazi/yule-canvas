@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia';
 import type { DataTable } from './dataTable';
-import { buildMockPageProject, inferFieldRoles } from '../services/pageBuilder';
+import {
+  buildMockPageProject,
+  buildProjectFromGeneratedFiles,
+  generatePageProjectWithAI,
+  inferFieldRoles,
+  renderProjectPreview
+} from '../services/pageBuilder';
 import type {
   PageBindingContract,
   PageBuildRequest,
@@ -33,8 +39,42 @@ interface PageBuilderState {
   previewHtml: string;
   error: string | null;
   isSetupDrawerOpen: boolean;
+  isAIConfigOpen: boolean;
   sectionSummaries: PageBuilderSectionSummary[];
+  assistantMessage: string;
+  aiProvider: 'openrouter' | 'qwen' | 'siliconflow';
+  aiModel: string;
+  aiApiKey: string;
 }
+
+const AI_CONFIG_STORAGE_KEY = 'page_builder_ai_config';
+
+function readPersistedAIConfig() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AI_CONFIG_STORAGE_KEY);
+    return raw ? JSON.parse(raw) as Partial<Pick<PageBuilderState, 'aiProvider' | 'aiModel' | 'aiApiKey'>> : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistAIConfig(config: Partial<Pick<PageBuilderState, 'aiProvider' | 'aiModel' | 'aiApiKey'>>) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // ignore local storage write failures
+  }
+}
+
+const persistedAIConfig = readPersistedAIConfig();
 
 export const usePageBuilderStore = defineStore('pageBuilder', {
   state: (): PageBuilderState => ({
@@ -55,7 +95,12 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     previewHtml: '',
     error: null,
     isSetupDrawerOpen: true,
-    sectionSummaries: []
+    isAIConfigOpen: false,
+    sectionSummaries: [],
+    assistantMessage: '',
+    aiProvider: persistedAIConfig?.aiProvider || 'openrouter',
+    aiModel: persistedAIConfig?.aiModel || 'openai/gpt-4.1-mini',
+    aiApiKey: persistedAIConfig?.aiApiKey || ''
   }),
 
   getters: {
@@ -131,11 +176,46 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.selectedPreviewElement = null;
     },
 
+    setError(message: string | null) {
+      this.error = message;
+      if (message) {
+        this.previewStatus = 'error';
+      }
+    },
+
     toggleSetupDrawer(force?: boolean) {
       this.isSetupDrawerOpen = typeof force === 'boolean' ? force : !this.isSetupDrawerOpen;
     },
 
-    generateFromTable(tables: DataTable[]) {
+    toggleAIConfig(force?: boolean) {
+      this.isAIConfigOpen = typeof force === 'boolean' ? force : !this.isAIConfigOpen;
+    },
+
+    updateAIConfig(payload: {
+      provider?: 'openrouter' | 'qwen' | 'siliconflow';
+      model?: string;
+      apiKey?: string;
+    }) {
+      if (payload.provider) {
+        this.aiProvider = payload.provider;
+      }
+
+      if (typeof payload.model === 'string') {
+        this.aiModel = payload.model;
+      }
+
+      if (typeof payload.apiKey === 'string') {
+        this.aiApiKey = payload.apiKey;
+      }
+
+      persistAIConfig({
+        aiProvider: this.aiProvider,
+        aiModel: this.aiModel,
+        aiApiKey: this.aiApiKey
+      });
+    },
+
+    async generateFromTable(tables: DataTable[]) {
       const table = tables.find((item) => item.id === this.selectedTableId);
 
       if (!table) {
@@ -157,17 +237,59 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         density: this.density
       };
 
-      const output = buildMockPageProject(table, request);
+      try {
+        const aiProject = await generatePageProjectWithAI({
+          table,
+          prompt: this.goal || this.pageTitle || `${table.name} page`,
+          provider: this.aiProvider,
+          model: this.aiModel,
+          apiKey: this.aiApiKey || undefined
+        });
+        const output = buildProjectFromGeneratedFiles({
+          table,
+          files: aiProject.files,
+          assistantMessage: aiProject.assistantMessage
+        });
 
-      this.fieldRoleMap = output.fieldRoleMap;
-      this.spec = output.spec;
-      this.project = output.project;
-      this.activeFileId = output.project.files.find((file) => file.visibility === 'project')?.id || null;
-      this.previewHtml = output.previewHtml;
-      this.sectionSummaries = output.sectionSummaries;
-      this.previewStatus = 'ready';
-      this.selectedSectionId = output.sectionSummaries[0]?.id || null;
-      this.isSetupDrawerOpen = false;
+        const previewHtml = await renderProjectPreview(output.project.files, {
+          entryPath: 'app/PageView.vue',
+          title: output.spec.meta.title
+        });
+
+        this.fieldRoleMap = output.fieldRoleMap;
+        this.spec = output.spec;
+        this.project = output.project;
+        this.activeFileId = output.project.files.find((file) => file.visibility === 'project')?.id || null;
+        this.previewHtml = previewHtml;
+        this.sectionSummaries = output.sectionSummaries;
+        this.assistantMessage = output.assistantMessage;
+        this.previewStatus = 'ready';
+        this.selectedSectionId = output.sectionSummaries[0]?.id || null;
+        this.isSetupDrawerOpen = false;
+      } catch (error: any) {
+        const fallback = buildMockPageProject(table, request);
+
+        try {
+          const previewHtml = await renderProjectPreview(fallback.project.files, {
+            entryPath: 'app/PageView.vue',
+            title: fallback.spec.meta.title
+          });
+
+          this.fieldRoleMap = fallback.fieldRoleMap;
+          this.spec = fallback.spec;
+          this.project = fallback.project;
+          this.activeFileId = fallback.project.files.find((file) => file.visibility === 'project')?.id || null;
+          this.previewHtml = previewHtml;
+          this.sectionSummaries = fallback.sectionSummaries;
+          this.assistantMessage = `AI 生成失败，当前展示的是本地回退生成结果。${error.message ? ` 原因：${error.message}` : ''}`;
+          this.previewStatus = 'ready';
+          this.selectedSectionId = fallback.sectionSummaries[0]?.id || null;
+          this.error = error.message || 'AI generation failed.';
+        } catch (previewError: any) {
+          this.previewStatus = 'error';
+          this.error = previewError.message || error.message || 'Failed to generate page preview.';
+        }
+      }
     }
   }
 });

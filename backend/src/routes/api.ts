@@ -1,10 +1,64 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { AIAdapterManager, WorkflowGenerationError } from '../services/AIAdapter';
+import { PageBuilderPreviewRenderer } from '../services/PageBuilderPreviewRenderer';
 import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
 const aiManager = new AIAdapterManager();
+
+const PAGE_BUILDER_SYSTEM_PROMPT = `You generate page-builder project files for a constrained Vue page workspace.
+Output rules:
+1. Output JSON only. No markdown, no code fences, no explanation outside JSON.
+2. Root keys must be assistantMessage, entryPath, files.
+3. assistantMessage is a short natural-language summary for the user.
+4. entryPath must be "app/PageView.vue".
+5. files must contain only these project paths:
+   - app/PageView.vue
+   - components/sections/HeroSection.vue
+   - components/sections/FeedSection.vue
+   - components/sections/FooterSection.vue
+   - data/bindings.ts
+   - data/tableAdapter.ts
+   - spec/page-spec.json
+   - styles/page.css
+6. Use Vue 3 <script setup lang="ts"> for .vue files.
+7. Do not import any third-party packages.
+8. Generated code must stay compatible with a simple in-browser preview runtime.
+9. tableAdapter.ts must expose stable helper functions for reading row fields and a documented fetch placeholder for future API integration.
+10. The page should be complete and visually intentional, not a placeholder.`;
+
+function sanitizeGeneratedPagePayload(payload: any) {
+  const allowedPaths = new Set([
+    'app/PageView.vue',
+    'components/sections/HeroSection.vue',
+    'components/sections/FeedSection.vue',
+    'components/sections/FooterSection.vue',
+    'data/bindings.ts',
+    'data/tableAdapter.ts',
+    'spec/page-spec.json',
+    'styles/page.css'
+  ]);
+
+  const files = Array.isArray(payload?.files)
+    ? payload.files
+        .filter((file: any) => allowedPaths.has(file?.path))
+        .map((file: any) => ({
+          path: String(file.path),
+          content: String(file.content || '')
+        }))
+    : [];
+
+  if (!files.length) {
+    throw new Error('AI did not return any usable page files.');
+  }
+
+  return {
+    assistantMessage: typeof payload?.assistantMessage === 'string' ? payload.assistantMessage : '',
+    entryPath: 'app/PageView.vue',
+    files
+  };
+}
 
 router.get('/ai/models', (_req, res) => {
   const models = aiManager.getAllAdapters().map(adapter => ({
@@ -185,6 +239,94 @@ router.post('/ai/generate-default', async (req, res) => {
       success: false,
       workflow: null,
       error: error.message
+    });
+  }
+});
+
+router.post('/page-builder/render-preview', (req, res) => {
+  try {
+    const { files, entryPath, title } = req.body || {};
+
+    const html = PageBuilderPreviewRenderer.render({
+      files: Array.isArray(files) ? files : [],
+      entryPath: typeof entryPath === 'string' ? entryPath : undefined,
+      title: typeof title === 'string' ? title : undefined
+    });
+
+    return res.json({
+      success: true,
+      html,
+      error: null
+    });
+  } catch (error: any) {
+    return res.json({
+      success: false,
+      html: PageBuilderPreviewRenderer.renderErrorDocument(error.message || 'Failed to render page builder preview.'),
+      error: error.message || 'Failed to render page builder preview.'
+    });
+  }
+});
+
+router.post('/page-builder/generate', async (req, res) => {
+  try {
+    const {
+      prompt,
+      table,
+      model = 'openrouter',
+      options = {}
+    } = req.body || {};
+
+    if (!prompt || !String(prompt).trim()) {
+      return res.status(400).json({
+        success: false,
+        project: null,
+        error: 'Prompt is required.'
+      });
+    }
+
+    if (!table || !Array.isArray(table.columns)) {
+      return res.status(400).json({
+        success: false,
+        project: null,
+        error: 'Table schema is required.'
+      });
+    }
+
+    const userPrompt = `User request:
+${String(prompt).trim()}
+
+Data source:
+${JSON.stringify(
+  {
+    id: table.id,
+    name: table.name,
+    columns: table.columns,
+    sampleRows: Array.isArray(table.rows) ? table.rows.slice(0, 6) : []
+  },
+  null,
+  2
+)}
+
+Generate the complete project files for this page-builder workspace.`;
+
+    const raw = await aiManager.generateText(model, PAGE_BUILDER_SYSTEM_PROMPT, userPrompt, {
+      ...options,
+      maxTokens: options.maxTokens ?? 5000,
+      temperature: options.temperature ?? 0.4
+    });
+
+    const payload = sanitizeGeneratedPagePayload(JSON.parse(raw));
+
+    return res.json({
+      success: true,
+      project: payload,
+      error: null
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      success: false,
+      project: null,
+      error: error.message || 'Failed to generate page project.'
     });
   }
 });
