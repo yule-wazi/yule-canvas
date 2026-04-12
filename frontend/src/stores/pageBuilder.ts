@@ -2,12 +2,16 @@ import { defineStore } from 'pinia';
 import type { DataTable } from './dataTable';
 import { buildMockPageProject, inferFieldRoles } from '../services/pageBuilder';
 import type {
+  PageBindingContract,
   PageBuildRequest,
   PageBuilderCenterMode,
   PageBuilderFile,
   PageBuilderPageType,
+  PageBuilderProject,
+  PageBuilderPreviewSelection,
   PageBuilderSectionSummary,
   PageBuilderStylePreset,
+  PageBuilderTreeNode,
   PageSpec
 } from '../types/pageBuilder';
 
@@ -20,9 +24,10 @@ interface PageBuilderState {
   density: 'compact' | 'comfortable';
   fieldRoleMap: Record<string, string>;
   spec: PageSpec | null;
-  files: PageBuilderFile[];
+  project: PageBuilderProject | null;
   activeFileId: string | null;
   selectedSectionId: string | null;
+  selectedPreviewElement: PageBuilderPreviewSelection | null;
   centerMode: PageBuilderCenterMode;
   previewStatus: 'idle' | 'building' | 'ready' | 'error';
   previewHtml: string;
@@ -41,9 +46,10 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     density: 'comfortable',
     fieldRoleMap: {},
     spec: null,
-    files: [],
+    project: null,
     activeFileId: null,
     selectedSectionId: null,
+    selectedPreviewElement: null,
     centerMode: 'preview',
     previewStatus: 'idle',
     previewHtml: '',
@@ -53,8 +59,17 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
   }),
 
   getters: {
+    files(state): PageBuilderFile[] {
+      return state.project?.files.filter((file) => file.visibility === 'project') || [];
+    },
+    tree(state): PageBuilderTreeNode[] {
+      return state.project?.tree || [];
+    },
+    bindingContract(state): PageBindingContract | null {
+      return state.project?.bindingContract || null;
+    },
     activeFile(state) {
-      return state.files.find((file) => file.id === state.activeFileId) || null;
+      return state.project?.files.find((file) => file.id === state.activeFileId) || null;
     }
   },
 
@@ -63,7 +78,10 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       if (!tables.length) {
         this.selectedTableId = null;
         this.fieldRoleMap = {};
-        this.error = '当前还没有可用的数据表。';
+        this.project = null;
+        this.activeFileId = null;
+        this.previewHtml = '';
+        this.error = 'No data table is available yet.';
         return;
       }
 
@@ -79,7 +97,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.fieldRoleMap = inferFieldRoles(table);
 
       if (table && !this.pageTitle) {
-        this.pageTitle = `${table.name} 页面`;
+        this.pageTitle = `${table.name} Page`;
       }
     },
 
@@ -94,11 +112,23 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
     setActiveFile(fileId: string) {
       this.activeFileId = fileId;
-      this.selectedSectionId = null;
     },
 
     selectSection(sectionId: string) {
       this.selectedSectionId = sectionId;
+    },
+
+    selectPreviewElement(selection: PageBuilderPreviewSelection) {
+      this.selectedPreviewElement = selection;
+      this.selectedSectionId = selection.sectionId;
+      const relatedFile = this.project?.files.find((file) => selection.relatedFilePaths.includes(file.path));
+      if (relatedFile) {
+        this.activeFileId = relatedFile.id;
+      }
+    },
+
+    clearPreviewSelection() {
+      this.selectedPreviewElement = null;
     },
 
     toggleSetupDrawer(force?: boolean) {
@@ -109,33 +139,34 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const table = tables.find((item) => item.id === this.selectedTableId);
 
       if (!table) {
-        this.error = '请先选择一个数据表，再生成页面。';
+        this.error = 'Select a data table before generating the page.';
         this.previewStatus = 'error';
         return;
       }
 
       this.previewStatus = 'building';
       this.error = null;
+      this.selectedPreviewElement = null;
 
       const request: PageBuildRequest = {
         tableId: table.id,
         pageType: this.pageType,
-        title: this.pageTitle || `${table.name} 页面`,
+        title: this.pageTitle || `${table.name} Page`,
         goal: this.goal || undefined,
         stylePreset: this.stylePreset,
         density: this.density
       };
 
-      const project = buildMockPageProject(table, request);
+      const output = buildMockPageProject(table, request);
 
-      this.fieldRoleMap = project.fieldRoleMap;
-      this.spec = project.spec;
-      this.files = project.files;
-      this.activeFileId = project.files[0]?.id || null;
-      this.previewHtml = project.previewHtml;
-      this.sectionSummaries = project.sectionSummaries;
+      this.fieldRoleMap = output.fieldRoleMap;
+      this.spec = output.spec;
+      this.project = output.project;
+      this.activeFileId = output.project.files.find((file) => file.visibility === 'project')?.id || null;
+      this.previewHtml = output.previewHtml;
+      this.sectionSummaries = output.sectionSummaries;
       this.previewStatus = 'ready';
-      this.selectedSectionId = project.sectionSummaries[0]?.id || null;
+      this.selectedSectionId = output.sectionSummaries[0]?.id || null;
       this.isSetupDrawerOpen = false;
     }
   }

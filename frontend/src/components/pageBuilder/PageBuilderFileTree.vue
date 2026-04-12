@@ -1,151 +1,329 @@
 <template>
   <aside class="page-builder-filetree">
-    <div class="panel-header">
-      <div>
-        <p class="eyebrow">项目文件</p>
-        <h2>页面工程</h2>
-      </div>
-      <span class="count-badge">{{ files.length }}</span>
-    </div>
+    <div class="explorer-title">Page Project</div>
 
-    <div v-if="files.length" class="file-list">
-      <button
-        v-for="file in files"
-        :key="file.id"
-        class="file-item"
-        :class="{ 'is-active': file.id === activeFileId }"
-        type="button"
-        @click="$emit('selectFile', file.id)"
-      >
-        <span class="file-badge">{{ file.type.toUpperCase() }}</span>
-        <span class="file-name">{{ file.name }}</span>
-      </button>
-    </div>
+    <ul v-if="nodes.length" class="tree-list tree-list--root">
+      <TreeBranch
+        :nodes="nodes"
+        :depth="0"
+        :active-file-id="activeFileId"
+        :open-folders="openFolders"
+        @toggle-folder="toggleFolder"
+        @select-file="$emit('selectFile', $event)"
+      />
+    </ul>
 
     <div v-else class="empty-state">
-      <p>还没有生成文件。</p>
-      <span>先选择输入项，再生成第一版页面工程。</span>
+      <p>No generated project yet.</p>
+      <span>Generate a page to populate the explorer.</span>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import type { PageBuilderFile } from '../../types/pageBuilder';
+import { defineComponent, h, reactive } from 'vue';
+import type { PageBuilderTreeNode } from '../../types/pageBuilder';
 
-defineProps<{
-  files: PageBuilderFile[];
+const props = defineProps<{
+  nodes: PageBuilderTreeNode[];
+  fileCount: number;
   activeFileId: string | null;
 }>();
 
 defineEmits<{
   selectFile: [fileId: string];
 }>();
+
+const openFolders = reactive<Record<string, boolean>>({
+  app: true,
+  components: true,
+  'components/sections': true,
+  data: true,
+  spec: true,
+  styles: true
+});
+
+function toggleFolder(path: string) {
+  openFolders[path] = !isFolderOpen(path);
+}
+
+function isFolderOpen(path: string) {
+  return openFolders[path] ?? true;
+}
+
+function caretIcon(open: boolean) {
+  return h(
+    'span',
+    {
+      class: ['tree-caret', { 'is-open': open }]
+    },
+    [
+      h(
+        'svg',
+        { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
+        [
+          h('path', {
+            d: 'M6 3l5 5-5 5',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+            'stroke-width': '1.5'
+          })
+        ]
+      )
+    ]
+  );
+}
+
+function folderIcon() {
+  return h(
+    'span',
+    { class: 'tree-icon folder-icon' },
+    [
+      h(
+        'svg',
+        { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
+        [
+          h('path', {
+            d: 'M1.75 4.25h4.1l1.35 1.5h7.05v6.5H1.75z',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-linejoin': 'round',
+            'stroke-width': '1.2'
+          })
+        ]
+      )
+    ]
+  );
+}
+
+function fileIcon() {
+  return h(
+    'span',
+    { class: 'tree-icon file-icon' },
+    [
+      h(
+        'svg',
+        { viewBox: '0 0 16 16', 'aria-hidden': 'true' },
+        [
+          h('path', {
+            d: 'M4.25 1.75h5.5l2.5 2.5v10H4.25z',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-linejoin': 'round',
+            'stroke-width': '1.2'
+          }),
+          h('path', {
+            d: 'M9.75 1.75v2.5h2.5',
+            fill: 'none',
+            stroke: 'currentColor',
+            'stroke-linejoin': 'round',
+            'stroke-width': '1.2'
+          })
+        ]
+      )
+    ]
+  );
+}
+
+const TreeBranch = defineComponent({
+  name: 'TreeBranch',
+  props: {
+    nodes: {
+      type: Array as () => PageBuilderTreeNode[],
+      required: true
+    },
+    depth: {
+      type: Number,
+      required: true
+    },
+    activeFileId: {
+      type: String,
+      default: null
+    },
+    openFolders: {
+      type: Object as () => Record<string, boolean>,
+      required: true
+    }
+  },
+  emits: ['toggle-folder', 'select-file'],
+  setup(branchProps, { emit }) {
+    const isOpen = (path: string) => branchProps.openFolders[path] ?? true;
+
+    const renderNode = (node: PageBuilderTreeNode) => {
+      if (node.kind === 'folder') {
+        const open = isOpen(node.path);
+
+        return h('li', { class: 'tree-item', key: node.id }, [
+          h(
+            'div',
+            {
+              class: 'tree-row tree-row--folder',
+              style: { paddingLeft: `${8 + branchProps.depth * 16}px` },
+              onClick: () => emit('toggle-folder', node.path)
+            },
+            [
+              caretIcon(open),
+              folderIcon(),
+              h('span', { class: 'tree-name' }, node.name)
+            ]
+          ),
+          open && node.children?.length
+            ? h(
+                'ul',
+                { class: 'tree-list' },
+                h(TreeBranch, {
+                  nodes: node.children,
+                  depth: branchProps.depth + 1,
+                  activeFileId: branchProps.activeFileId,
+                  openFolders: branchProps.openFolders,
+                  onToggleFolder: (path: string) => emit('toggle-folder', path),
+                  onSelectFile: (fileId: string) => emit('select-file', fileId)
+                })
+              )
+            : null
+        ]);
+      }
+
+      return h('li', { class: 'tree-item', key: node.id }, [
+        h(
+          'div',
+          {
+            class: ['tree-row', 'tree-row--file', { 'is-active': node.fileId === branchProps.activeFileId }],
+            style: { paddingLeft: `${8 + branchProps.depth * 16}px` },
+            onClick: () => node.fileId && emit('select-file', node.fileId)
+          },
+          [
+            h('span', { class: 'tree-caret tree-caret--empty' }),
+            fileIcon(),
+            h('span', { class: 'tree-name' }, node.name)
+          ]
+        )
+      ]);
+    };
+
+    return () => branchProps.nodes.map(renderNode);
+  }
+});
 </script>
 
-<style scoped>
+<style>
 .page-builder-filetree {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   min-width: 0;
   min-height: 0;
-  padding: 18px;
-  background: linear-gradient(180deg, rgba(16, 16, 16, 0.98) 0%, rgba(8, 8, 8, 0.98) 100%);
-  border-right: 1px solid var(--color-border-default);
+  padding: 8px 0 10px;
+  background: #111;
+  border-right: 1px solid #222;
   overflow: auto;
 }
 
-.panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+.explorer-title {
+  padding: 6px 12px 10px;
+  color: #f3f3f3;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
-.panel-header h2 {
+.tree-list {
   margin: 0;
-  font-size: 18px;
-  line-height: var(--line-height-tight);
+  padding: 0;
+  list-style: none;
 }
 
-.eyebrow {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-brand-accent);
+.tree-list--root {
+  padding-right: 0;
 }
 
-.count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 999px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
+.tree-item {
+  margin: 0;
+  padding: 0;
 }
 
-.file-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-}
-
-.file-item {
+.tree-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 16px 16px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--color-text-primary);
+  gap: 6px;
+  min-height: 22px;
+  padding-right: 12px;
+  color: #d4d4d4;
+  user-select: none;
   cursor: pointer;
-  text-align: left;
 }
 
-.file-item.is-active {
-  border-color: var(--color-border-strong);
-  box-shadow: inset 0 0 0 1px rgba(118, 185, 0, 0.25);
+.tree-row:hover {
+  background: #1a1a1a;
 }
 
-.file-badge {
+.tree-row.is-active {
+  background: #37373d;
+}
+
+.tree-caret {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 46px;
-  padding: 6px 8px;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-brand-accent);
+  width: 16px;
+  height: 16px;
+  color: #c5c5c5;
+  transform: rotate(0deg);
+  transition: transform 120ms ease;
 }
 
-.file-name {
+.tree-caret.is-open {
+  transform: rotate(90deg);
+}
+
+.tree-caret--empty {
+  opacity: 0;
+}
+
+.tree-caret svg,
+.tree-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.folder-icon {
+  color: #d7ba7d;
+}
+
+.file-icon {
+  color: #c5c5c5;
+}
+
+.tree-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .empty-state {
-  padding: 16px;
-  border: 1px dashed var(--color-border-default);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
+  margin: 8px 12px 0;
+  padding: 12px;
+  border: 1px dashed #2a2a2a;
+  border-radius: 6px;
+  color: #989898;
 }
 
 .empty-state p {
-  margin: 0 0 8px;
-  color: var(--color-text-primary);
+  margin: 0 0 6px;
+  color: #e8e8e8;
 }
 </style>

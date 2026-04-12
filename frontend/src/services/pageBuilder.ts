@@ -1,8 +1,13 @@
 import type { DataTable } from '../stores/dataTable';
 import type {
+  PageBindingContract,
+  PageBindingContractSection,
+  PageBindingEntry,
   PageBuildRequest,
   PageBuilderFile,
+  PageBuilderProject,
   PageBuilderSectionSummary,
+  PageBuilderTreeNode,
   PageSpec,
   PageSpecField,
   PageSectionSpec
@@ -18,6 +23,35 @@ const FIELD_ROLE_RULES: Array<{ pattern: RegExp; role: string }> = [
 ];
 
 type FieldRoleMap = Record<string, string>;
+
+interface PreviewSectionDescriptor {
+  sectionId: string;
+  sectionTitle: string;
+  componentPath: string;
+  relatedFilePaths: string[];
+  bindings: PageBindingEntry[];
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function toJsonAttribute(value: unknown): string {
+  return escapeHtml(JSON.stringify(value));
+}
+
+function makeBindingEntries(bindings: Record<string, string> | undefined, fieldRoleMap: FieldRoleMap): PageBindingEntry[] {
+  return Object.entries(bindings || {}).map(([prop, fieldKey]) => ({
+    prop,
+    fieldKey,
+    fieldRole: fieldRoleMap[fieldKey]
+  }));
+}
 
 export function inferFieldRoles(table: DataTable | null): FieldRoleMap {
   if (!table) {
@@ -55,8 +89,8 @@ function buildNewsListSections(fieldRoleMap: FieldRoleMap, request: PageBuildReq
     {
       id: 'hero',
       kind: 'hero',
-      title: '首屏',
-      description: '根据数据主题生成的顶部概览区。',
+      title: 'Hero',
+      description: 'Top-level overview for the generated page.',
       bindings: {
         ...(titleField ? { heading: titleField } : {}),
         ...(summaryField ? { subheading: summaryField } : {}),
@@ -70,8 +104,8 @@ function buildNewsListSections(fieldRoleMap: FieldRoleMap, request: PageBuildReq
     {
       id: 'news-list',
       kind: 'list',
-      title: '新闻列表',
-      description: '绑定提取结果的主列表区块。',
+      title: 'Feed',
+      description: 'Main repeated collection rendered from table rows.',
       repeat: true,
       bindings: {
         ...(titleField ? { title: titleField } : {}),
@@ -80,21 +114,14 @@ function buildNewsListSections(fieldRoleMap: FieldRoleMap, request: PageBuildReq
         ...(mediaField ? { image: mediaField } : {}),
         ...(linkField ? { href: linkField } : {}),
         ...(metaField ? { meta: metaField } : {})
-      },
-      props: {
-        cardStyle: request.stylePreset || 'nvidia-tech',
-        density: request.density || 'comfortable'
       }
     },
     {
       id: 'footer',
       kind: 'footer',
-      title: '页脚',
-      description: '用于承载补充说明和元信息的轻量区域。',
-      bindings: metaField ? { meta: metaField } : {},
-      props: {
-        note: '当前内容由页面生成工作台创建'
-      }
+      title: 'Footer',
+      description: 'Closing metadata and source note.',
+      bindings: metaField ? { meta: metaField } : {}
     }
   ];
 }
@@ -109,42 +136,41 @@ function buildGenericSections(fieldRoleMap: FieldRoleMap, request: PageBuildRequ
     {
       id: 'hero',
       kind: 'hero',
-      title: '首屏',
-      description: '页面顶部的概览区域。',
+      title: 'Hero',
+      description: 'Top-level overview for the generated page.',
       bindings: {
         ...(titleField ? { heading: titleField } : {}),
         ...(summaryField ? { subheading: summaryField } : {}),
         ...(mediaField ? { image: mediaField } : {})
-      },
-      props: {
-        emphasis: request.stylePreset || 'nvidia-tech'
       }
     },
     {
       id: request.pageType === 'gallery' ? 'gallery-grid' : 'content-list',
       kind: request.pageType === 'gallery' ? 'grid' : 'list',
-      title: request.pageType === 'gallery' ? '图片网格' : '内容列表',
-      description: '绑定提取结果的主要重复区块。',
+      title: request.pageType === 'gallery' ? 'Gallery' : 'Collection',
+      description: 'Main repeated collection rendered from table rows.',
       repeat: true,
       bindings: {
         ...(titleField ? { title: titleField } : {}),
         ...(summaryField ? { summary: summaryField } : {}),
         ...(mediaField ? { image: mediaField } : {}),
         ...(linkField ? { href: linkField } : {})
-      },
-      props: {
-        density: request.density || 'comfortable'
       }
+    },
+    {
+      id: 'footer',
+      kind: 'footer',
+      title: 'Footer',
+      description: 'Closing metadata and source note.',
+      bindings: {}
     }
   ];
 }
 
 function buildPageSections(fieldRoleMap: FieldRoleMap, request: PageBuildRequest): PageSectionSpec[] {
-  if (request.pageType === 'news-list') {
-    return buildNewsListSections(fieldRoleMap, request);
-  }
-
-  return buildGenericSections(fieldRoleMap, request);
+  return request.pageType === 'news-list'
+    ? buildNewsListSections(fieldRoleMap, request)
+    : buildGenericSections(fieldRoleMap, request);
 }
 
 function createSectionSummaries(sections: PageSectionSpec[]): PageBuilderSectionSummary[] {
@@ -162,8 +188,8 @@ function createPageSpec(table: DataTable, request: PageBuildRequest, fieldRoleMa
   return {
     version: 'v1',
     meta: {
-      title: request.title || `${table.name} 页面`,
-      description: request.goal || `基于 ${table.name} 数据表生成的 ${request.pageType} 页面`,
+      title: request.title || `${table.name} Page`,
+      description: request.goal || `Generated ${request.pageType} page based on ${table.name}.`,
       pageType: request.pageType,
       stylePreset: request.stylePreset || 'nvidia-tech'
     },
@@ -177,104 +203,228 @@ function createPageSpec(table: DataTable, request: PageBuildRequest, fieldRoleMa
   };
 }
 
-function getSectionBindings(spec: PageSpec, sectionId: string) {
-  return spec.layout.sections.find((section) => section.id === sectionId)?.bindings || {};
+function createBindingContract(spec: PageSpec, fieldRoleMap: FieldRoleMap): PageBindingContract {
+  const sections: PageBindingContractSection[] = spec.layout.sections.map((section) => ({
+    sectionId: section.id,
+    sectionTitle: section.title || section.id,
+    repeat: Boolean(section.repeat),
+    bindings: makeBindingEntries(section.bindings, fieldRoleMap)
+  }));
+
+  return {
+    tableId: spec.dataSource.tableId,
+    mode: 'collection',
+    fields: spec.dataSource.fields,
+    sections
+  };
 }
 
-function buildGeneratedVueSource(spec: PageSpec) {
-  const heroBindings = getSectionBindings(spec, 'hero');
-  const listSection = spec.layout.sections.find((section) => section.repeat);
-  const listBindings = listSection?.bindings || {};
-  const footerBindings = getSectionBindings(spec, 'footer');
+function buildTree(files: PageBuilderFile[]): PageBuilderTreeNode[] {
+  const root: PageBuilderTreeNode[] = [];
 
+  for (const file of files.filter((item) => item.visibility === 'project')) {
+    const parts = file.path.split('/');
+    let level = root;
+    let currentPath = '';
+
+    for (let index = 0; index < parts.length; index += 1) {
+      const part = parts[index];
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isFile = index === parts.length - 1;
+      let existing = level.find((node) => node.path === currentPath);
+
+      if (!existing) {
+        existing = {
+          id: currentPath,
+          name: part,
+          path: currentPath,
+          kind: isFile ? 'file' : 'folder',
+          ...(isFile ? { fileId: file.id, fileType: file.type } : { children: [] })
+        };
+        level.push(existing);
+      }
+
+      if (!isFile) {
+        existing.children ||= [];
+        level = existing.children;
+      }
+    }
+  }
+
+  return root
+    .map((node) => ({
+      ...node,
+      children: node.children ? buildTreeFromNodes(node.children) : undefined
+    }))
+    .sort(sortTreeNodes);
+}
+
+function buildTreeFromNodes(nodes: PageBuilderTreeNode[]): PageBuilderTreeNode[] {
+  return nodes
+    .map((node) => ({
+      ...node,
+      children: node.children ? buildTreeFromNodes(node.children) : undefined
+    }))
+    .sort(sortTreeNodes);
+}
+
+function sortTreeNodes(a: PageBuilderTreeNode, b: PageBuilderTreeNode) {
+  if (a.kind !== b.kind) {
+    return a.kind === 'folder' ? -1 : 1;
+  }
+
+  return a.name.localeCompare(b.name);
+}
+
+function buildBindingsFileSource(contract: PageBindingContract) {
+  return `export const pageBindingContract = ${JSON.stringify(contract, null, 2)} as const;
+
+export function bindingsForSection(sectionId: string) {
+  return pageBindingContract.sections.find((section) => section.sectionId === sectionId) || null;
+}
+`;
+}
+
+function buildTableAdapterSource() {
+  return `import { pageBindingContract } from './bindings';
+
+export function getTableId() {
+  return pageBindingContract.tableId;
+}
+
+export function listFieldKeys() {
+  return pageBindingContract.fields.map((field) => field.key);
+}
+
+export function readField(row: Record<string, unknown>, fieldKey?: string) {
+  if (!fieldKey) {
+    return '';
+  }
+
+  return row?.[fieldKey] ?? '';
+}
+`;
+}
+
+function buildPageViewSource() {
   return `<template>
-  <main class="generated-page">
-    <section class="hero-section">
-      <div class="hero-copy">
-        <p class="eyebrow">{{ spec.meta.pageType }}</p>
-        <h1>{{ spec.meta.title }}</h1>
-        <p class="hero-text">{{ spec.meta.description }}</p>
-      </div>
-
-      <div class="hero-panel">
-        <div class="hero-stat">
-          <strong>{{ items.length }}</strong>
-          <span>条样例数据</span>
-        </div>
-        <div class="hero-stat">
-          <strong>{{ spec.dataSource.fields.length }}</strong>
-          <span>个可用字段</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="list-section">
-      <header class="section-header">
-        <div>
-          <p class="eyebrow">已生成区块</p>
-          <h2>${listSection?.title || '内容列表'}</h2>
-        </div>
-        <p class="section-note">数据来源：{{ spec.dataSource.tableId }}</p>
-      </header>
-
-      <div v-if="items.length" class="card-grid">
-        <a
-          v-for="(item, index) in items"
-          :key="item._id || index"
-          class="feed-card"
-          :href="read(item, listBindings.href) || '#'"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <div v-if="read(item, listBindings.image)" class="card-media">
-            <img :src="read(item, listBindings.image)" alt="" />
-          </div>
-          <div class="card-body">
-            <p class="card-meta">{{ read(item, listBindings.meta) || \`第 \${index + 1} 条\` }}</p>
-            <h3>{{ read(item, listBindings.title) || '未命名内容' }}</h3>
-            <p>{{ read(item, listBindings.summary) || read(item, listBindings.content) || '补充摘要字段后，这里会显示更完整的简介内容。' }}</p>
-          </div>
-        </a>
-      </div>
-
-      <div v-else class="empty-block">
-        当前没有样例数据，请先向数据表写入内容。
-      </div>
-    </section>
-
-    <footer class="footer-section">
-      <span>{{ read(firstItem, footerBindings.meta) || '页面生成工作台输出' }}</span>
-    </footer>
+  <main class="page-root">
+    <HeroSection :spec="spec" />
+    <FeedSection :spec="spec" :items="items" />
+    <FooterSection :spec="spec" :items="items" />
   </main>
 </template>
 
 <script setup lang="ts">
-import spec from './page-spec.json';
-import items from './sample-data.json';
-import './styles.css';
-
-const firstItem = items[0] || {};
-const heroBindings = ${JSON.stringify(heroBindings, null, 2)};
-const listBindings = ${JSON.stringify(listBindings, null, 2)};
-const footerBindings = ${JSON.stringify(footerBindings, null, 2)};
-
-function read(row: Record<string, any>, key?: string) {
-  if (!key) {
-    return '';
-  }
-
-  return row?.[key] ?? '';
-}
+import HeroSection from '../components/sections/HeroSection.vue';
+import FeedSection from '../components/sections/FeedSection.vue';
+import FooterSection from '../components/sections/FooterSection.vue';
+import items from '../preview/sample-data.json';
+import spec from '../spec/page-spec.json';
+import '../styles/page.css';
 </script>
 `;
 }
 
-function buildGeneratedStylesSource() {
+function buildHeroSectionSource(spec: PageSpec) {
+  const heroBindings = spec.layout.sections.find((section) => section.id === 'hero')?.bindings || {};
+
+  return `<template>
+  <section class="hero-section">
+    <div class="hero-copy">
+      <p class="eyebrow">{{ spec.meta.pageType }}</p>
+      <h1>{{ spec.meta.title }}</h1>
+      <p class="hero-text">{{ spec.meta.description }}</p>
+    </div>
+    <aside class="hero-panel">
+      <div class="hero-stat">
+        <strong>{{ Object.keys(heroBindings).length }}</strong>
+        <span>bound props</span>
+      </div>
+      <div class="hero-stat">
+        <strong>{{ spec.dataSource.fields.length }}</strong>
+        <span>available fields</span>
+      </div>
+    </aside>
+  </section>
+</template>
+
+<script setup lang="ts">
+defineProps<{ spec: any }>();
+
+const heroBindings = ${JSON.stringify(heroBindings, null, 2)};
+</script>
+`;
+}
+
+function buildFeedSectionSource(spec: PageSpec) {
+  const listBindings = spec.layout.sections.find((section) => section.repeat)?.bindings || {};
+
+  return `<template>
+  <section class="feed-section">
+    <header class="section-header">
+      <div>
+        <p class="eyebrow">Generated Section</p>
+        <h2>Collection</h2>
+      </div>
+      <p class="section-note">{{ spec.dataSource.tableId }}</p>
+    </header>
+    <div v-if="items.length" class="card-grid">
+      <a
+        v-for="(item, index) in items"
+        :key="item._id || index"
+        class="feed-card"
+        :href="read(item, listBindings.href) || '#'"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <div v-if="read(item, listBindings.image)" class="card-media">
+          <img :src="read(item, listBindings.image)" alt="" />
+        </div>
+        <div class="card-body">
+          <p class="card-meta">{{ read(item, listBindings.meta) || \`Item \${index + 1}\` }}</p>
+          <h3>{{ read(item, listBindings.title) || 'Untitled' }}</h3>
+          <p>{{ read(item, listBindings.summary) || read(item, listBindings.content) || 'No summary binding yet.' }}</p>
+        </div>
+      </a>
+    </div>
+    <div v-else class="empty-block">No preview rows available for this table.</div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { readField as read } from '../../data/tableAdapter';
+
+defineProps<{ spec: any; items: Record<string, any>[] }>();
+
+const listBindings = ${JSON.stringify(listBindings, null, 2)};
+</script>
+`;
+}
+
+function buildFooterSectionSource(spec: PageSpec) {
+  const footerBindings = spec.layout.sections.find((section) => section.id === 'footer')?.bindings || {};
+
+  return `<template>
+  <footer class="footer-section">
+    <span>{{ footerText }}</span>
+  </footer>
+</template>
+
+<script setup lang="ts">
+const footerBindings = ${JSON.stringify(footerBindings, null, 2)};
+
+const footerText = footerBindings.meta
+  ? \`Bound to \${footerBindings.meta}\`
+  : 'Generated from the page builder workbench';
+</script>
+`;
+}
+
+function buildStylesSource() {
   return `:root {
   color-scheme: dark;
   --accent: #76b900;
-  --accent-soft: rgba(118, 185, 0, 0.14);
-  --bg: #050505;
   --panel: #111111;
   --panel-soft: #171717;
   --border: #5e5e5e;
@@ -282,9 +432,7 @@ function buildGeneratedStylesSource() {
   --muted: #a7a7a7;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -295,273 +443,276 @@ body {
   color: var(--text);
 }
 
-.generated-page {
-  min-height: 100vh;
-  padding: 40px 32px 64px;
-}
-
-.hero-section {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.hero-copy,
-.hero-panel,
-.feed-card,
-.empty-block {
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  box-shadow: rgba(0, 0, 0, 0.3) 0 0 5px 0;
-}
-
-.hero-copy,
-.hero-panel {
-  position: relative;
-  background: rgba(0, 0, 0, 0.86);
-}
-
-.hero-copy::before,
-.hero-panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-top: 2px solid var(--accent);
-  pointer-events: none;
-}
-
-.hero-copy {
-  padding: 28px;
-}
-
-.hero-panel {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-  padding: 24px;
-}
-
-.hero-stat strong {
-  display: block;
-  font-size: 28px;
-  margin-bottom: 6px;
-}
-
-.hero-stat span,
-.hero-text,
-.section-note,
-.card-body p,
-.footer-section,
-.empty-block {
-  color: var(--muted);
-}
-
-.eyebrow {
-  margin: 0 0 12px;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hero-copy h1,
-.section-header h2,
-.card-body h3 {
-  margin: 0 0 12px;
-  line-height: 1.25;
-}
-
-.hero-copy h1 {
-  font-size: 36px;
-}
-
-.section-header {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.section-header h2 {
-  font-size: 24px;
-}
-
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 16px;
-}
-
-.feed-card {
-  overflow: hidden;
-  background: linear-gradient(180deg, rgba(17, 17, 17, 0.96), rgba(7, 7, 7, 0.98));
-  color: inherit;
-  text-decoration: none;
-}
-
-.card-media {
-  height: 170px;
-  background: #000000;
-  border-bottom: 1px solid var(--border);
-}
-
-.card-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.card-body {
-  padding: 16px;
-}
-
-.card-meta {
-  margin: 0 0 8px;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.card-body h3 {
-  font-size: 20px;
-}
-
-.card-body p {
-  margin: 0;
-  line-height: 1.6;
-}
-
-.empty-block {
-  padding: 18px;
-  background: var(--panel-soft);
-}
-
-.footer-section {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-  font-size: 14px;
-}
-
-@media (max-width: 900px) {
-  .generated-page {
-    padding: 24px 16px 48px;
-  }
-
-  .hero-section {
-    grid-template-columns: 1fr;
-  }
-
-  .hero-copy h1 {
-    font-size: 28px;
-  }
-}
+.page-root { min-height: 100vh; padding: 40px 32px 64px; }
+.hero-section { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); gap: 20px; margin-bottom: 24px; }
+.hero-copy, .hero-panel, .feed-card, .empty-block { border: 1px solid var(--border); border-radius: 2px; box-shadow: rgba(0, 0, 0, 0.3) 0 0 5px 0; }
+.hero-copy, .hero-panel { position: relative; background: rgba(0, 0, 0, 0.86); }
+.hero-copy::before, .hero-panel::before { content: ''; position: absolute; inset: 0; border-top: 2px solid var(--accent); pointer-events: none; }
+.hero-copy { padding: 28px; }
+.hero-panel { display: grid; gap: 16px; align-content: start; padding: 24px; }
+.hero-stat strong { display: block; font-size: 28px; margin-bottom: 6px; }
+.hero-stat span, .hero-text, .section-note, .card-body p, .footer-section, .empty-block { color: var(--muted); }
+.eyebrow { margin: 0 0 12px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.hero-copy h1, .section-header h2, .card-body h3 { margin: 0 0 12px; line-height: 1.25; }
+.hero-copy h1 { font-size: 36px; }
+.section-header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.section-header h2 { font-size: 24px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.feed-card { overflow: hidden; background: linear-gradient(180deg, rgba(17, 17, 17, 0.96), rgba(7, 7, 7, 0.98)); color: inherit; text-decoration: none; }
+.card-media { height: 170px; background: #000000; border-bottom: 1px solid var(--border); }
+.card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card-body { padding: 16px; }
+.card-meta { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.card-body h3 { font-size: 20px; }
+.card-body p { margin: 0; line-height: 1.6; }
+.empty-block { padding: 18px; background: var(--panel-soft); }
+.footer-section { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
 `;
 }
 
 function createProjectFiles(
   spec: PageSpec,
-  previewHtml: string,
-  sampleRows: Record<string, unknown>[]
+  contract: PageBindingContract,
+  sampleRows: Record<string, unknown>[],
+  previewHtml: string
 ): PageBuilderFile[] {
-  const pageSpecJson = JSON.stringify(spec, null, 2);
-  const sampleDataJson = JSON.stringify(sampleRows, null, 2);
-  const pageViewSource = buildGeneratedVueSource(spec);
-  const styleSource = buildGeneratedStylesSource();
+  const repeatedSection = contract.sections.find((section) => section.repeat);
 
   return [
     {
-      id: 'page-view',
+      id: 'app-page-view',
+      path: 'app/PageView.vue',
       name: 'PageView.vue',
       type: 'vue',
-      role: '生成页面的主入口文件',
+      role: 'Generated page entry point.',
       editable: true,
-      content: pageViewSource,
+      visibility: 'project',
+      content: buildPageViewSource(),
       sourceSectionIds: spec.layout.sections.map((section) => section.id)
     },
     {
-      id: 'styles',
-      name: 'styles.css',
-      type: 'css',
-      role: '生成页面的全局样式文件',
+      id: 'section-hero',
+      path: 'components/sections/HeroSection.vue',
+      name: 'HeroSection.vue',
+      type: 'vue',
+      role: 'Hero section component.',
       editable: true,
-      content: styleSource,
+      visibility: 'project',
+      content: buildHeroSectionSource(spec),
+      sourceSectionIds: ['hero'],
+      sourceBindingKeys: contract.sections.find((section) => section.sectionId === 'hero')?.bindings.map((entry) => entry.fieldKey)
+    },
+    {
+      id: 'section-feed',
+      path: 'components/sections/FeedSection.vue',
+      name: 'FeedSection.vue',
+      type: 'vue',
+      role: 'Repeated collection section component.',
+      editable: true,
+      visibility: 'project',
+      content: buildFeedSectionSource(spec),
+      sourceSectionIds: repeatedSection ? [repeatedSection.sectionId] : [],
+      sourceBindingKeys: repeatedSection?.bindings.map((entry) => entry.fieldKey)
+    },
+    {
+      id: 'section-footer',
+      path: 'components/sections/FooterSection.vue',
+      name: 'FooterSection.vue',
+      type: 'vue',
+      role: 'Footer section component.',
+      editable: true,
+      visibility: 'project',
+      content: buildFooterSectionSource(spec),
+      sourceSectionIds: ['footer'],
+      sourceBindingKeys: contract.sections.find((section) => section.sectionId === 'footer')?.bindings.map((entry) => entry.fieldKey)
+    },
+    {
+      id: 'data-bindings',
+      path: 'data/bindings.ts',
+      name: 'bindings.ts',
+      type: 'ts',
+      role: 'Binding contract between table fields and page sections.',
+      editable: true,
+      visibility: 'project',
+      content: buildBindingsFileSource(contract),
       sourceSectionIds: spec.layout.sections.map((section) => section.id)
     },
     {
-      id: 'sample-data',
-      name: 'sample-data.json',
-      type: 'json',
-      role: '用于本地预览和模板调试的样例数据',
-      editable: false,
-      content: sampleDataJson,
-      sourceSectionIds: spec.layout.sections.filter((section) => section.repeat).map((section) => section.id)
+      id: 'data-table-adapter',
+      path: 'data/tableAdapter.ts',
+      name: 'tableAdapter.ts',
+      type: 'ts',
+      role: 'Stable data access adapter for generated sections.',
+      editable: true,
+      visibility: 'project',
+      content: buildTableAdapterSource(),
+      sourceSectionIds: repeatedSection ? [repeatedSection.sectionId] : []
     },
     {
-      id: 'page-spec',
+      id: 'spec-page-spec',
+      path: 'spec/page-spec.json',
       name: 'page-spec.json',
       type: 'json',
-      role: '用于重新生成和校验的稳定规格文件',
+      role: 'Stable page spec used for regeneration.',
       editable: false,
-      content: pageSpecJson,
+      visibility: 'project',
+      content: JSON.stringify(spec, null, 2),
       sourceSectionIds: spec.layout.sections.map((section) => section.id)
     },
     {
-      id: 'preview',
-      name: 'preview.html',
-      type: 'html',
-      role: '在 iframe 中渲染的预览载荷文件',
+      id: 'styles-page',
+      path: 'styles/page.css',
+      name: 'page.css',
+      type: 'css',
+      role: 'Generated page stylesheet.',
+      editable: true,
+      visibility: 'project',
+      content: buildStylesSource(),
+      sourceSectionIds: spec.layout.sections.map((section) => section.id)
+    },
+    {
+      id: 'preview-sample-data',
+      path: 'preview/sample-data.json',
+      name: 'sample-data.json',
+      type: 'json',
+      role: 'Preview bootstrap data.',
       editable: false,
+      visibility: 'internal',
+      content: JSON.stringify(sampleRows, null, 2),
+      sourceSectionIds: repeatedSection ? [repeatedSection.sectionId] : []
+    },
+    {
+      id: 'preview-runtime',
+      path: 'preview/runtime.html',
+      name: 'runtime.html',
+      type: 'html',
+      role: 'Iframe preview runtime.',
+      editable: false,
+      visibility: 'internal',
       content: previewHtml,
       sourceSectionIds: spec.layout.sections.map((section) => section.id)
     }
   ];
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function buildPreviewSectionDescriptors(contract: PageBindingContract): Record<string, PreviewSectionDescriptor> {
+  return contract.sections.reduce<Record<string, PreviewSectionDescriptor>>((result, section) => {
+    const componentPath = section.sectionId === 'hero'
+      ? 'components/sections/HeroSection.vue'
+      : section.sectionId === 'footer'
+        ? 'components/sections/FooterSection.vue'
+        : 'components/sections/FeedSection.vue';
+
+    result[section.sectionId] = {
+      sectionId: section.sectionId,
+      sectionTitle: section.sectionTitle,
+      componentPath,
+      relatedFilePaths: [componentPath, 'data/bindings.ts', 'spec/page-spec.json'],
+      bindings: section.bindings
+    };
+
+    return result;
+  }, {});
+}
+
+function renderSelectable(params: {
+  descriptor: PreviewSectionDescriptor;
+  elementId: string;
+  elementLabel: string;
+  textValue?: unknown;
+  className?: string;
+  tag?: string;
+  body: string;
+}) {
+  const tag = params.tag || 'div';
+
+  return `<${tag}
+  class="${params.className || ''}"
+  data-selectable="true"
+  data-element-id="${escapeHtml(params.elementId)}"
+  data-element-label="${escapeHtml(params.elementLabel)}"
+  data-section-id="${escapeHtml(params.descriptor.sectionId)}"
+  data-section-title="${escapeHtml(params.descriptor.sectionTitle)}"
+  data-component-path="${escapeHtml(params.descriptor.componentPath)}"
+  data-related-files="${toJsonAttribute(params.descriptor.relatedFilePaths)}"
+  data-bindings="${toJsonAttribute(params.descriptor.bindings)}"
+  ${params.textValue !== undefined ? `data-text-value="${escapeHtml(params.textValue)}"` : ''}
+>${params.body}</${tag}>`;
 }
 
 function createPreviewHtml(
   spec: PageSpec,
   table: DataTable,
   rows: Record<string, unknown>[],
-  fieldRoleMap: FieldRoleMap
+  fieldRoleMap: FieldRoleMap,
+  contract: PageBindingContract
 ) {
+  const sections = buildPreviewSectionDescriptors(contract);
+  const heroSection = sections.hero;
+  const footerSection = sections.footer;
+  const repeatedSection = contract.sections.find((section) => section.repeat) || contract.sections[0];
+  const listSection = sections[repeatedSection.sectionId];
+
   const titleField = pickFieldByRole(fieldRoleMap, 'title');
   const summaryField = pickFieldByRole(fieldRoleMap, 'summary');
   const mediaField = pickFieldByRole(fieldRoleMap, 'media');
   const metaField = pickFieldByRole(fieldRoleMap, 'meta');
+  const linkField = pickFieldByRole(fieldRoleMap, 'link');
 
-  const listSectionId = spec.layout.sections.find((section) => section.repeat)?.id || 'news-list';
-  const cards = rows
-    .map((row, index) => {
-      const title = titleField ? row[titleField] : `示例内容 ${index + 1}`;
-      const summary = summaryField ? row[summaryField] : '补充摘要字段后，这里会显示更完整的简介内容。';
-      const media = mediaField ? row[mediaField] : '';
-      const meta = metaField ? row[metaField] : `第 ${index + 1} 条`;
+  const cards = rows.map((row, index) => {
+    const title = titleField ? row[titleField] : `Preview item ${index + 1}`;
+    const summary = summaryField ? row[summaryField] : 'Add a summary-style field to make this card richer.';
+    const media = mediaField ? row[mediaField] : '';
+    const meta = metaField ? row[metaField] : `Item ${index + 1}`;
+    const href = linkField ? row[linkField] : '#';
 
-      return `<article class="card" data-section-id="${escapeHtml(listSectionId)}">
-  ${media ? `<div class="card-media"><img src="${escapeHtml(media)}" alt="" /></div>` : ''}
+    return renderSelectable({
+      descriptor: listSection,
+      tag: 'article',
+      className: 'card',
+      elementId: `feed-card-${index + 1}`,
+      elementLabel: 'Feed card',
+      textValue: title,
+      body: `
+${media ? renderSelectable({
+  descriptor: listSection,
+  className: 'card-media',
+  elementId: `feed-card-media-${index + 1}`,
+  elementLabel: 'Card image',
+  textValue: media,
+  body: `<img src="${escapeHtml(media)}" alt="" />`
+}) : ''}
+<a class="card-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">
   <div class="card-body">
-    <p class="card-meta">${escapeHtml(meta)}</p>
-    <h3>${escapeHtml(title)}</h3>
-    <p>${escapeHtml(summary)}</p>
+    ${renderSelectable({
+      descriptor: listSection,
+      tag: 'p',
+      className: 'card-meta',
+      elementId: `feed-card-meta-${index + 1}`,
+      elementLabel: 'Card meta',
+      textValue: meta,
+      body: escapeHtml(meta)
+    })}
+    ${renderSelectable({
+      descriptor: listSection,
+      tag: 'h3',
+      elementId: `feed-card-title-${index + 1}`,
+      elementLabel: 'Card title',
+      textValue: title,
+      body: escapeHtml(title)
+    })}
+    ${renderSelectable({
+      descriptor: listSection,
+      tag: 'p',
+      elementId: `feed-card-summary-${index + 1}`,
+      elementLabel: 'Card summary',
+      textValue: summary,
+      body: escapeHtml(summary)
+    })}
   </div>
-</article>`;
-    })
-    .join('\n');
+</a>`
+    });
+  }).join('\n');
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -570,184 +721,99 @@ function createPreviewHtml(
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(spec.meta.title)}</title>
     <style>
-      :root {
-        color-scheme: dark;
-        --accent: #76b900;
-        --bg: #050505;
-        --panel: #111111;
-        --border: #5e5e5e;
-        --text: #ffffff;
-        --muted: #a7a7a7;
-      }
+      :root { color-scheme: dark; --accent: #76b900; --panel: #111111; --border: #5e5e5e; --text: #ffffff; --muted: #a7a7a7; }
       * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: Arial, Helvetica, sans-serif;
-        background:
-          radial-gradient(circle at top right, rgba(118, 185, 0, 0.12), transparent 24%),
-          linear-gradient(180deg, #030303 0%, #0a0a0a 100%);
-        color: var(--text);
-      }
-      .page {
-        min-height: 100vh;
-        padding: 40px 32px 64px;
-      }
-      .hero {
-        display: grid;
-        grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr);
-        gap: 20px;
-        margin-bottom: 24px;
-      }
-      .hero-copy,
-      .hero-panel,
-      .card {
-        border: 1px solid var(--border);
-        border-radius: 2px;
-        box-shadow: rgba(0, 0, 0, 0.3) 0 0 5px 0;
-      }
-      .hero-copy {
-        background: rgba(0, 0, 0, 0.86);
-        padding: 28px;
-        position: relative;
-      }
-      .hero-panel {
-        background: var(--panel);
-        padding: 24px;
-        position: relative;
-      }
-      .hero-copy::before,
-      .hero-panel::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        border-top: 2px solid var(--accent);
-        pointer-events: none;
-      }
-      .eyebrow {
-        margin: 0 0 12px;
-        color: var(--accent);
-        font-size: 12px;
-        font-weight: 700;
-        text-transform: uppercase;
-      }
+      body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: radial-gradient(circle at top right, rgba(118,185,0,.12), transparent 24%), linear-gradient(180deg, #030303 0%, #0a0a0a 100%); color: var(--text); }
+      .page { min-height: 100vh; padding: 40px 32px 64px; }
+      .hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); gap: 20px; margin-bottom: 24px; }
+      .hero-copy, .hero-panel, .card { border: 1px solid var(--border); border-radius: 2px; box-shadow: rgba(0,0,0,.3) 0 0 5px 0; }
+      .hero-copy, .hero-panel { position: relative; background: rgba(0,0,0,.86); }
+      .hero-copy::before, .hero-panel::before { content: ''; position: absolute; inset: 0; border-top: 2px solid var(--accent); pointer-events: none; }
+      .hero-copy { padding: 28px; }
+      .hero-panel { padding: 24px; }
+      .hero-stat strong { display: block; font-size: 28px; }
+      .eyebrow { margin: 0 0 12px; color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; }
       h1, h2, h3, p { margin-top: 0; }
-      h1 {
-        margin-bottom: 12px;
-        font-size: 36px;
-        line-height: 1.25;
-      }
-      .hero-copy p:last-child {
-        margin-bottom: 0;
-        color: var(--muted);
-        line-height: 1.6;
-      }
-      .hero-stat {
-        display: grid;
-        gap: 10px;
-      }
-      .hero-stat strong {
-        font-size: 28px;
-      }
-      .list-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 16px;
-      }
-      .list-header p {
-        margin: 0;
-        color: var(--muted);
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 16px;
-      }
-      .card {
-        overflow: hidden;
-        background: linear-gradient(180deg, rgba(17, 17, 17, 0.94), rgba(7, 7, 7, 0.98));
-      }
-      .card-media {
-        height: 160px;
-        background: #050505;
-        border-bottom: 1px solid var(--border);
-      }
-      .card-media img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-      }
-      .card-body {
-        padding: 16px;
-      }
-      .card-meta {
-        color: var(--accent);
-        text-transform: uppercase;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-      }
-      .card h3 {
-        font-size: 20px;
-        line-height: 1.25;
-        margin-bottom: 10px;
-      }
-      .card p {
-        color: var(--muted);
-        line-height: 1.6;
-      }
-      footer {
-        margin-top: 24px;
-        padding-top: 16px;
-        border-top: 1px solid var(--border);
-        color: var(--muted);
-        font-size: 14px;
-      }
-      @media (max-width: 900px) {
-        .page { padding: 24px 16px 48px; }
-        .hero { grid-template-columns: 1fr; }
-        h1 { font-size: 28px; }
-      }
+      h1 { margin-bottom: 12px; font-size: 36px; }
+      .hero-copy p:last-child, .hero-panel span, .list-header p, .card p, footer { color: var(--muted); }
+      .list-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+      .card { overflow: hidden; background: linear-gradient(180deg, rgba(17,17,17,.94), rgba(7,7,7,.98)); }
+      .card-link { color: inherit; text-decoration: none; }
+      .card-media { height: 160px; background: #050505; border-bottom: 1px solid var(--border); }
+      .card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .card-body { padding: 16px; }
+      .card-meta { color: var(--accent); text-transform: uppercase; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+      .card h3 { font-size: 20px; line-height: 1.25; margin-bottom: 10px; }
+      footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
+      [data-selectable='true'] { cursor: pointer; }
+      [data-selectable='true']:hover { outline: 1px solid rgba(118,185,0,.55); outline-offset: 2px; }
     </style>
   </head>
   <body>
     <main class="page">
-      <section class="hero" data-section-id="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">${escapeHtml(spec.meta.pageType)}</p>
-          <h1>${escapeHtml(spec.meta.title)}</h1>
-          <p>${escapeHtml(spec.meta.description || `基于 ${table.name} 数据表生成的页面`)}</p>
-        </div>
-        <aside class="hero-panel">
-          <p class="eyebrow">工作台状态</p>
-          <div class="hero-stat">
-            <strong>${rows.length}</strong>
-            <span>条样例数据可用于预览</span>
-          </div>
-          <div class="hero-stat">
-            <strong>${table.columns.length}</strong>
-            <span>个字段可参与绑定</span>
-          </div>
-        </aside>
-      </section>
-      <section data-section-id="${escapeHtml(listSectionId)}">
-        <div class="list-header">
-          <div>
-            <p class="eyebrow">已生成区块</p>
-            <h2>${escapeHtml(table.name)} 列表</h2>
-          </div>
-          <p>${escapeHtml(spec.meta.stylePreset)} 预设</p>
-        </div>
-        <div class="grid">
-          ${cards || '<article class="card"><div class="card-body"><h3>还没有数据</h3><p>给当前数据表添加内容后，这里会显示真实卡片预览。</p></div></article>'}
-        </div>
-      </section>
-      <footer data-section-id="footer">
-        当前页面基于 <strong>${escapeHtml(table.name)}</strong> 数据表生成，风格预设为 ${escapeHtml(spec.meta.stylePreset)}。
-      </footer>
+      ${renderSelectable({
+        descriptor: heroSection,
+        tag: 'section',
+        className: 'hero',
+        elementId: 'hero-section',
+        elementLabel: 'Hero section',
+        textValue: spec.meta.title,
+        body: `
+${renderSelectable({
+  descriptor: heroSection,
+  className: 'hero-copy',
+  elementId: 'hero-copy',
+  elementLabel: 'Hero copy',
+  textValue: spec.meta.description,
+  body: `<p class="eyebrow">${escapeHtml(spec.meta.pageType)}</p><h1>${escapeHtml(spec.meta.title)}</h1><p>${escapeHtml(spec.meta.description || `Generated from ${table.name}`)}</p>`
+})}
+${renderSelectable({
+  descriptor: heroSection,
+  tag: 'aside',
+  className: 'hero-panel',
+  elementId: 'hero-panel',
+  elementLabel: 'Hero metrics',
+  body: `<p class="eyebrow">Workbench status</p><div class="hero-stat"><strong>${rows.length}</strong><span>preview rows</span></div><div class="hero-stat"><strong>${table.columns.length}</strong><span>available fields</span></div>`
+})}`
+      })}
+      ${renderSelectable({
+        descriptor: listSection,
+        tag: 'section',
+        elementId: 'feed-section',
+        elementLabel: listSection.sectionTitle,
+        body: `<div class="list-header"><div><p class="eyebrow">Generated section</p><h2>${escapeHtml(table.name)} collection</h2></div><p>${escapeHtml(spec.meta.stylePreset)}</p></div><div class="grid">${cards || '<article class="card"><div class="card-body"><h3>No rows yet</h3><p>Add rows to the current table and regenerate the page.</p></div></article>'}</div>`
+      })}
+      ${renderSelectable({
+        descriptor: footerSection,
+        tag: 'footer',
+        elementId: 'footer-section',
+        elementLabel: 'Footer',
+        textValue: table.name,
+        body: `Bound to <strong>${escapeHtml(table.name)}</strong> using the <strong>${escapeHtml(spec.meta.stylePreset)}</strong> preset.`
+      })}
     </main>
+    <script>
+      document.addEventListener('click', function(event) {
+        const target = event.target instanceof Element ? event.target.closest('[data-selectable="true"]') : null;
+        if (!target) return;
+        event.preventDefault();
+        event.stopPropagation();
+        window.parent.postMessage({
+          source: 'page-builder-preview-select',
+          payload: {
+            elementId: target.getAttribute('data-element-id') || '',
+            elementLabel: target.getAttribute('data-element-label') || 'Selected element',
+            sectionId: target.getAttribute('data-section-id') || '',
+            sectionTitle: target.getAttribute('data-section-title') || '',
+            componentPath: target.getAttribute('data-component-path'),
+            relatedFilePaths: JSON.parse(target.getAttribute('data-related-files') || '[]'),
+            bindings: JSON.parse(target.getAttribute('data-bindings') || '[]'),
+            textValue: target.getAttribute('data-text-value') || ''
+          }
+        }, '*');
+      }, true);
+    </script>
   </body>
 </html>`;
 }
@@ -755,13 +821,21 @@ function createPreviewHtml(
 export function buildMockPageProject(table: DataTable, request: PageBuildRequest) {
   const fieldRoleMap = inferFieldRoles(table);
   const spec = createPageSpec(table, request, fieldRoleMap);
+  const bindingContract = createBindingContract(spec, fieldRoleMap);
   const sampleRows = table.rows.slice(0, 6);
-  const previewHtml = createPreviewHtml(spec, table, sampleRows, fieldRoleMap);
+  const previewHtml = createPreviewHtml(spec, table, sampleRows, fieldRoleMap, bindingContract);
+  const files = createProjectFiles(spec, bindingContract, sampleRows, previewHtml);
+  const project: PageBuilderProject = {
+    rootName: 'Page Project',
+    files,
+    tree: buildTree(files),
+    bindingContract
+  };
 
   return {
     fieldRoleMap,
     spec,
-    files: createProjectFiles(spec, previewHtml, sampleRows),
+    project,
     sectionSummaries: createSectionSummaries(spec.layout.sections),
     previewHtml
   };

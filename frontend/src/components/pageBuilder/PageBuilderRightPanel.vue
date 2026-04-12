@@ -2,128 +2,74 @@
   <aside class="page-builder-rightpanel">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">检查面板</p>
-        <h2>{{ panelTitle }}</h2>
+        <p class="eyebrow">Element Inspector</p>
+        <h2>{{ selection?.elementLabel || 'No element selected' }}</h2>
       </div>
-      <span class="panel-state">{{ selectedSection ? '区块' : activeFile ? '文件' : '空闲' }}</span>
+      <span class="panel-state">{{ selection ? 'Selected' : 'Waiting' }}</span>
     </div>
 
-    <div v-if="selectedSection" class="inspector-card">
+    <div v-if="selection" class="inspector-card">
       <div class="info-row">
-        <span>类型</span>
-        <strong>{{ sectionTypeLabel(selectedSection.type) }}</strong>
+        <span>Section</span>
+        <strong>{{ selection.sectionTitle }}</strong>
       </div>
-      <div class="info-row">
-        <span>是否重复</span>
-        <strong>{{ selectedSection.repeat ? '是' : '否' }}</strong>
+
+      <div v-if="selection.componentPath" class="info-row">
+        <span>Component</span>
+        <strong>{{ selection.componentPath }}</strong>
       </div>
+
+      <div v-if="selection.textValue" class="info-group">
+        <p class="group-title">Preview text</p>
+        <div class="text-preview">{{ selection.textValue }}</div>
+      </div>
+
       <div class="info-group">
-        <p class="group-title">字段绑定</p>
-        <div v-if="Object.keys(selectedSection.bindings).length" class="binding-list">
-          <div v-for="(field, key) in selectedSection.bindings" :key="key" class="binding-row">
-            <span>{{ key }}</span>
-            <strong>{{ field }}</strong>
+        <p class="group-title">Field bindings</p>
+        <div v-if="selection.bindings.length" class="binding-list">
+          <div v-for="binding in selection.bindings" :key="`${binding.prop}:${binding.fieldKey}`" class="binding-row">
+            <div class="binding-meta">
+              <span>{{ binding.prop }}</span>
+              <small>{{ binding.fieldRole || 'field' }}</small>
+            </div>
+            <strong>{{ binding.fieldKey }}</strong>
           </div>
         </div>
-        <p v-else class="hint">还没有分配绑定字段。</p>
+        <p v-else class="hint">This element does not expose any field binding yet.</p>
       </div>
-      <p v-if="selectedSection.description" class="hint">{{ selectedSection.description }}</p>
-    </div>
 
-    <div v-else-if="activeFile" class="inspector-card">
-      <div class="info-row">
-        <span>文件</span>
-        <strong>{{ activeFile.name }}</strong>
-      </div>
-      <div class="info-row">
-        <span>作用</span>
-        <strong>{{ activeFile.role }}</strong>
-      </div>
-      <div class="info-row">
-        <span>是否可编辑</span>
-        <strong>{{ activeFile.editable ? '可编辑' : '只读' }}</strong>
-      </div>
-      <div class="info-group">
-        <p class="group-title">来源区块</p>
-        <div v-if="activeFile.sourceSectionIds?.length" class="chip-list">
+      <div v-if="selection.relatedFilePaths.length" class="info-group">
+        <p class="group-title">Related files</p>
+        <div class="file-chip-list">
           <button
-            v-for="sectionId in activeFile.sourceSectionIds"
-            :key="sectionId"
-            class="section-chip"
+            v-for="filePath in selection.relatedFilePaths"
+            :key="filePath"
+            class="file-chip"
             type="button"
-            @click="$emit('selectSection', sectionId)"
+            @click="$emit('selectFileByPath', filePath)"
           >
-            {{ sectionId }}
+            {{ filePath }}
           </button>
         </div>
-        <p v-else class="hint">暂时没有区块映射信息。</p>
       </div>
     </div>
 
     <div v-else class="inspector-card inspector-card--empty">
-      <p>选择一个文件或生成区块后，这里会显示绑定关系和上下文信息。</p>
-    </div>
-
-    <div class="section-list">
-      <p class="group-title">已生成区块</p>
-      <button
-        v-for="section in sections"
-        :key="section.id"
-        class="section-item"
-        :class="{ 'is-active': section.id === selectedSectionId }"
-        type="button"
-        @click="$emit('selectSection', section.id)"
-      >
-        <strong>{{ section.title }}</strong>
-        <span>{{ sectionTypeLabel(section.type) }}</span>
-      </button>
+      <p>Click an element in the preview to inspect its bindings, section context, and related source files.</p>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { PageBuilderFile, PageBuilderSectionSummary } from '../../types/pageBuilder';
+import type { PageBuilderPreviewSelection } from '../../types/pageBuilder';
 
-const props = defineProps<{
-  activeFile: PageBuilderFile | null;
-  sections: PageBuilderSectionSummary[];
-  selectedSectionId: string | null;
+defineProps<{
+  selection: PageBuilderPreviewSelection | null;
 }>();
 
 defineEmits<{
-  selectSection: [sectionId: string];
+  selectFileByPath: [filePath: string];
 }>();
-
-const selectedSection = computed(
-  () => props.sections.find((section) => section.id === props.selectedSectionId) || null
-);
-
-const panelTitle = computed(() => {
-  if (selectedSection.value) {
-    return selectedSection.value.title;
-  }
-
-  if (props.activeFile) {
-    return props.activeFile.name;
-  }
-
-  return '未选择内容';
-});
-
-function sectionTypeLabel(type: PageBuilderSectionSummary['type']) {
-  const map: Record<PageBuilderSectionSummary['type'], string> = {
-    hero: '首屏',
-    list: '列表',
-    grid: '网格',
-    'featured-card': '重点卡片',
-    content: '正文',
-    media: '媒体',
-    footer: '页脚'
-  };
-
-  return map[type];
-}
 </script>
 
 <style scoped>
@@ -148,7 +94,7 @@ function sectionTypeLabel(type: PageBuilderSectionSummary['type']) {
 
 .panel-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 22px;
 }
 
 .eyebrow,
@@ -173,18 +119,14 @@ function sectionTypeLabel(type: PageBuilderSectionSummary['type']) {
   font-size: 12px;
 }
 
-.inspector-card,
-.section-item {
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.02);
-}
-
 .inspector-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .inspector-card--empty {
@@ -201,7 +143,8 @@ function sectionTypeLabel(type: PageBuilderSectionSummary['type']) {
 
 .info-row span,
 .binding-row span,
-.hint {
+.hint,
+.binding-meta small {
   color: var(--color-text-secondary);
 }
 
@@ -211,47 +154,42 @@ function sectionTypeLabel(type: PageBuilderSectionSummary['type']) {
 }
 
 .binding-list,
-.section-list {
+.file-chip-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.chip-list {
-  display: flex;
-  flex-wrap: wrap;
   gap: 8px;
 }
 
-.section-chip,
-.section-item {
+.binding-row {
+  align-items: flex-start;
+}
+
+.binding-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.text-preview {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.file-chip {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--color-text-primary);
+  text-align: left;
   cursor: pointer;
 }
 
-.section-chip {
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 999px;
-  background: transparent;
-}
-
-.section-item {
-  display: grid;
-  gap: 6px;
-  padding: 12px;
-  text-align: left;
-}
-
-.section-item span {
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.section-item.is-active,
-.section-chip:hover,
-.section-item:hover {
+.file-chip:hover {
   border-color: var(--color-border-strong);
 }
 </style>

@@ -1,8 +1,8 @@
 <template>
   <div class="page-builder-view">
     <PageBuilderTopBar
-      :title="store.pageTitle || '未命名页面工程'"
-      :table-name="selectedTable?.name || '未选择数据表'"
+      :title="store.pageTitle || 'Untitled Project'"
+      :table-name="selectedTable?.name || 'No table selected'"
       :page-type="store.pageType"
       :style-preset="store.stylePreset"
       :center-mode="store.centerMode"
@@ -14,7 +14,8 @@
 
     <div class="page-builder-body">
       <PageBuilderFileTree
-        :files="store.files"
+        :nodes="store.tree"
+        :file-count="store.files.length"
         :active-file-id="store.activeFileId"
         @select-file="store.setActiveFile"
       />
@@ -29,16 +30,15 @@
           :status-label="statusLabel"
           @select-file="store.setActiveFile"
           @change-viewport="viewport = $event"
+          @preview-select="store.selectPreviewElement"
         />
 
         <div v-if="store.error" class="error-banner">{{ store.error }}</div>
       </div>
 
       <PageBuilderRightPanel
-        :active-file="store.activeFile"
-        :sections="store.sectionSummaries"
-        :selected-section-id="store.selectedSectionId"
-        @select-section="store.selectSection"
+        :selection="store.selectedPreviewElement"
+        @select-file-by-path="selectFileByPath"
       />
 
       <PageBuilderSetupDrawer
@@ -84,18 +84,18 @@ const selectedTable = computed(() =>
 
 const statusLabel = computed(() => {
   if (store.previewStatus === 'ready') {
-    return '预览已就绪';
+    return 'Preview ready';
   }
 
   if (store.previewStatus === 'building') {
-    return '正在生成预览';
+    return 'Building preview';
   }
 
   if (store.previewStatus === 'error') {
-    return '生成被阻止';
+    return 'Generation blocked';
   }
 
-  return '等待生成';
+  return 'Waiting to generate';
 });
 
 onMounted(() => {
@@ -113,6 +113,14 @@ watch(
 
 function generate() {
   store.generateFromTable(dataTableStore.tables);
+}
+
+function selectFileByPath(filePath: string) {
+  const file = store.files.find((item) => item.path === filePath);
+  if (file) {
+    store.setActiveFile(file.id);
+    store.setCenterMode('split');
+  }
 }
 </script>
 
