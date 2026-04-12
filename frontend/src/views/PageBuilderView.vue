@@ -17,7 +17,7 @@
         :nodes="store.tree"
         :file-count="store.files.length"
         :active-file-id="store.activeFileId"
-        @select-file="store.setActiveFile"
+        @select-file="openFile"
       />
 
       <div class="page-builder-center">
@@ -28,7 +28,10 @@
           :preview-html="store.previewHtml"
           :viewport="viewport"
           :status-label="statusLabel"
-          @select-file="store.setActiveFile"
+          :data-title="dataTitle"
+          :data-description="dataDescription"
+          :data-content="dataContent"
+          @select-file="openFile"
           @change-viewport="viewport = $event"
           @preview-select="store.selectPreviewElement"
         />
@@ -98,6 +101,31 @@ const statusLabel = computed(() => {
   return 'Waiting to generate';
 });
 
+const dataTitle = computed(() => `${selectedTable.value?.name || 'Current Table'} JSON`);
+
+const dataDescription = computed(() => {
+  if (!selectedTable.value) {
+    return 'No selected table.';
+  }
+
+  return `${selectedTable.value.rows.length} rows, ${selectedTable.value.columns.length} fields`;
+});
+
+const dataContent = computed(() =>
+  JSON.stringify(
+    selectedTable.value
+      ? {
+          id: selectedTable.value.id,
+          name: selectedTable.value.name,
+          columns: selectedTable.value.columns,
+          rows: selectedTable.value.rows
+        }
+      : { columns: [], rows: [] },
+    null,
+    2
+  )
+);
+
 onMounted(() => {
   dataTableStore.init();
   store.initialize(dataTableStore.tables);
@@ -115,11 +143,15 @@ function generate() {
   store.generateFromTable(dataTableStore.tables);
 }
 
+function openFile(fileId: string) {
+  store.setActiveFile(fileId);
+  store.setCenterMode('code');
+}
+
 function selectFileByPath(filePath: string) {
   const file = store.files.find((item) => item.path === filePath);
   if (file) {
-    store.setActiveFile(file.id);
-    store.setCenterMode('split');
+    openFile(file.id);
   }
 }
 </script>

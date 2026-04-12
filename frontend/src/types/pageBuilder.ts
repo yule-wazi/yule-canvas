@@ -2,7 +2,7 @@ export type PageBuilderPageType = 'news-list' | 'article-detail' | 'gallery' | '
 
 export type PageBuilderStylePreset = 'nvidia-tech' | 'editorial-dark' | 'clean-catalog';
 
-export type PageBuilderCenterMode = 'preview' | 'code' | 'split';
+export type PageBuilderCenterMode = 'preview' | 'code' | 'data';
 
 export type PageBuilderFileType = 'html' | 'css' | 'js' | 'ts' | 'json' | 'vue';
 

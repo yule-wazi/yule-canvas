@@ -25,7 +25,7 @@
 
     <div class="topbar-right">
       <button class="ghost-btn" type="button" @click="$emit('toggleSetup')">
-        {{ setupOpen ? '隐藏配置' : '打开配置' }}
+        {{ setupOpen ? '收起配置' : '打开配置' }}
       </button>
       <div class="mode-switch">
         <button
@@ -66,7 +66,7 @@ defineEmits<{
 const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   { label: '预览', value: 'preview' },
   { label: '代码', value: 'code' },
-  { label: '分屏', value: 'split' }
+  { label: '数据', value: 'data' }
 ];
 
 const pageTypeLabelMap: Record<PageBuilderPageType, string> = {

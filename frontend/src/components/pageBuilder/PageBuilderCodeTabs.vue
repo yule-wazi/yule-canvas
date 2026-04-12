@@ -23,21 +23,16 @@
         <div class="code-meta-side">
           <span class="code-badge">{{ activeFile.type }}</span>
           <span class="code-badge" :class="{ 'is-editable': activeFile.editable }">
-            {{ activeFile.editable ? 'editable' : 'readonly' }}
+            {{ activeFile.editable ? '可编辑' : '只读' }}
           </span>
         </div>
       </div>
 
-      <div class="code-editor">
-        <div class="code-lines" aria-hidden="true">
-          <span v-for="line in lineNumbers" :key="line">{{ line }}</span>
-        </div>
-        <pre class="code-content">{{ activeFile.content }}</pre>
-      </div>
+      <pre class="code-content" v-html="highlightedContent"></pre>
     </div>
 
     <div v-else class="code-empty">
-      Select a generated file to inspect its source.
+      选择一个生成文件后，这里会显示对应代码。
     </div>
   </div>
 </template>
@@ -45,6 +40,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { PageBuilderFile } from '../../types/pageBuilder';
+
+type HighlightRule = {
+  pattern: RegExp;
+  className: string;
+};
 
 const props = defineProps<{
   files: PageBuilderFile[];
@@ -57,12 +57,110 @@ defineEmits<{
 
 const activeFile = computed(() => props.files.find((file) => file.id === props.activeFileId) || null);
 
-const lineNumbers = computed(() => {
-  if (!activeFile.value) {
-    return [];
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderWithRules(content: string, rules: HighlightRule[]) {
+  const wrappedPatterns = rules.map((rule, index) => `(?<r${index}>${rule.pattern.source})`);
+  const regex = new RegExp(wrappedPatterns.join('|'), 'gm');
+  let result = '';
+  let cursor = 0;
+
+  for (const match of content.matchAll(regex)) {
+    const start = match.index ?? 0;
+    const matched = match[0];
+
+    if (!matched) {
+      continue;
+    }
+
+    result += escapeHtml(content.slice(cursor, start));
+
+    let className = 'token-text';
+    const groups = match.groups || {};
+    for (let i = 0; i < rules.length; i += 1) {
+      if (groups[`r${i}`] !== undefined) {
+        className = rules[i].className;
+        break;
+      }
+    }
+    result += `<span class="token ${className}">${escapeHtml(matched)}</span>`;
+    cursor = start + matched.length;
   }
 
-  return activeFile.value.content.split('\n').map((_, index) => index + 1);
+  result += escapeHtml(content.slice(cursor));
+  return result;
+}
+
+function highlightJson(content: string) {
+  return renderWithRules(content, [
+    { pattern: /"(?:[^"\\]|\\.)*"(?=\s*:)/, className: 'token-key' },
+    { pattern: /"(?:[^"\\]|\\.)*"/, className: 'token-string' },
+    { pattern: /\b(true|false|null)\b/, className: 'token-keyword' },
+    { pattern: /-?\b\d+(?:\.\d+)?\b/, className: 'token-number' }
+  ]);
+}
+
+function highlightScript(content: string) {
+  return renderWithRules(content, [
+    { pattern: /\/\/.*/, className: 'token-comment' },
+    { pattern: /\/\*[\s\S]*?\*\//, className: 'token-comment' },
+    { pattern: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/, className: 'token-string' },
+    { pattern: /\b(import|from|const|let|function|return|if|else|export|defineProps|defineEmits|true|false|null)\b/, className: 'token-keyword' },
+    { pattern: /-?\b\d+(?:\.\d+)?\b/, className: 'token-number' }
+  ]);
+}
+
+function highlightCss(content: string) {
+  return renderWithRules(content, [
+    { pattern: /\/\*[\s\S]*?\*\//, className: 'token-comment' },
+    { pattern: /--[A-Za-z0-9-]+(?=\s*:)/, className: 'token-attr' },
+    { pattern: /[A-Za-z-]+(?=\s*:)/, className: 'token-attr' },
+    { pattern: /#[0-9A-Fa-f]+|rgba?\([^)]+\)|-?\b\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%|deg)?\b/, className: 'token-number' }
+  ]);
+}
+
+function highlightMarkup(content: string) {
+  let rendered = renderWithRules(content, [
+    { pattern: /<!--[\s\S]*?-->/, className: 'token-comment' },
+    { pattern: /<\/?[A-Za-z][A-Za-z0-9-]*/, className: 'token-tag' },
+    { pattern: /[:@A-Za-z0-9_-]+(?==)/, className: 'token-attr' },
+    { pattern: /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/, className: 'token-string' },
+    { pattern: /\b(import|from|const|defineProps|defineEmits)\b/, className: 'token-keyword' }
+  ]);
+
+  rendered = rendered.replace(/(&lt;\/?)([^<>\s]+)(&gt;|\/&gt;)/g, `<span class="token token-tag">$1$2$3</span>`);
+  return rendered;
+}
+
+const highlightedContent = computed(() => {
+  if (!activeFile.value) {
+    return '';
+  }
+
+  const { content, type } = activeFile.value;
+
+  if (type === 'json') {
+    return highlightJson(content);
+  }
+
+  if (type === 'ts' || type === 'js') {
+    return highlightScript(content);
+  }
+
+  if (type === 'css') {
+    return highlightCss(content);
+  }
+
+  if (type === 'vue' || type === 'html') {
+    return highlightMarkup(content);
+  }
+
+  return escapeHtml(content);
 });
 </script>
 
@@ -71,14 +169,18 @@ const lineNumbers = computed(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid #1f1f1f;
+  height: 100%;
   overflow: hidden;
   background: #0f1115;
 }
 
 .code-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
   gap: 1px;
+  flex: none;
   padding: 0 10px;
   border-bottom: 1px solid #1f1f1f;
   background: #111317;
@@ -143,12 +245,15 @@ const lineNumbers = computed(() => {
 
 .code-viewer {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 .code-meta {
   display: flex;
+  flex: none;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -199,40 +304,17 @@ const lineNumbers = computed(() => {
   color: #bddd78;
 }
 
-.code-editor {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  background: #0f1115;
-}
-
-.code-lines {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0;
-  padding: 16px 10px 16px 0;
-  border-right: 1px solid #1b2029;
-  background: #0b0d11;
-  color: #5f6877;
-  font-family: var(--font-family-mono);
-  font-size: 12px;
-  line-height: 1.7;
-  user-select: none;
-}
-
 .code-content {
   margin: 0;
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 16px 18px 24px;
-  overflow: visible;
+  overflow: auto;
   color: #d9dee7;
   font-family: var(--font-family-mono);
   font-size: 13px;
   line-height: 1.7;
-  white-space: pre;
+  white-space: pre-wrap;
 }
 
 .code-empty {
@@ -240,5 +322,30 @@ const lineNumbers = computed(() => {
   place-items: center;
   min-height: 240px;
   color: #9098a8;
+}
+
+:deep(.token-tag) {
+  color: #7ee787;
+}
+
+:deep(.token-attr),
+:deep(.token-key) {
+  color: #79c0ff;
+}
+
+:deep(.token-string) {
+  color: #a5d6ff;
+}
+
+:deep(.token-number) {
+  color: #f2cc60;
+}
+
+:deep(.token-keyword) {
+  color: #ff7b72;
+}
+
+:deep(.token-comment) {
+  color: #8b949e;
 }
 </style>
