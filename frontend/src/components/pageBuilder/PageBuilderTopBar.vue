@@ -25,7 +25,7 @@
 
     <div class="topbar-right">
       <button class="ghost-btn" type="button" @click="$emit('toggleSetup')">
-        {{ setupOpen ? '收起配置' : '打开配置' }}
+        {{ setupOpen ? '收起 AI 面板' : '打开 AI 面板' }}
       </button>
       <div class="mode-switch">
         <button

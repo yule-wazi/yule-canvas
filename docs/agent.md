@@ -1,75 +1,67 @@
-# AIBrowser Agent Context
+# Agent
 
-## 1. Project Summary
+## 1. Scope
 
-This project is building a two-agent product around data-driven web creation.
+This file is the high-level project context for the whole repository.
+
+Use this file to understand:
+
+- what AIBrowser is building overall
+- which product half is mature
+- which product half is currently active
+- which constraints should remain stable across conversations
+
+Do not use this file as the recent task handoff log.
+Recent task state should go into `docs/page-builder-context.md`.
+
+## 2. Project Summary
+
+AIBrowser is evolving toward a two-agent product around data-driven web creation.
 
 Long-term goal:
 
-1. A `data extraction agent`
-   Understand a user's target site and build reusable scraping workflows from user actions, recordings, or later natural-language intent.
+1. `data extraction agent`
+   Understand target sites and build reusable scraping workflows from recordings, user actions, and later natural-language intent.
 
-2. A `page building agent`
-   Generate webpages that are powered by extracted data and, later, by user intent or sketches.
+2. `page building agent`
+   Generate webpages that are powered by extracted data and later by richer user intent.
 
-Current reality:
+## 3. Current Reality
 
-- The crawler side is the mature part of the product.
-- The page-building side has not started implementation yet.
-- The crawler side is now usable enough to act as the data-source foundation for the next phase.
+- The crawler / workflow side is the mature side of the product.
+- The page-builder side is now the active product focus.
+- The crawler side is already usable enough to act as the upstream data source for the page-builder stage.
 
-## 2. Current Stage
+## 4. Current Product Stage
 
 The project already has a working foundation for:
 
 - browser recording
 - field annotation / marking
 - recording event management
-- mapping recordings into workflow JSON
+- recording-to-workflow mapping
 - visual workflow editing
-- executing workflows with Playwright
+- workflow execution with Playwright
 - storing extracted results into local data tables
 
-This means the project is currently a `workflow-based scraping platform` with a usable data layer.
+This means the repo is currently a usable workflow-based data extraction platform, while page building is the active new layer being built on top of it.
 
-## 3. Current Main Task
+## 5. Current Main Focus
 
-The current main task is shifting.
+The current main focus is:
 
-Previous focus:
+1. keep the crawler workflow practical and stable
+2. treat extracted tables as the input source for the next stage
+3. build the first practical `page builder workbench`
+4. move toward `data table -> page spec -> generated page -> AI iteration`
 
-- crawler workflow capability
-- recorder / mapper correctness
-- frontend workbench styling
+Not in scope by default:
 
-Current planning focus:
+- sketch-to-page
+- fully free-form website generation
+- autonomous end-to-end orchestration between crawler agent and page agent
 
-1. Keep the crawler workflow in a practical, usable state.
-2. Treat the current crawler output as the input source for the next stage.
-3. Design the first phase of the `page building agent`.
-4. Prioritize `data table -> page spec -> generated page` over free-form page generation.
-
-Not in scope right now:
-
-- sketch-to-page implementation
-- full free-form autonomous website generation
-- full orchestration between crawler agent and page agent
-
-## 4. Product Direction
-
-The intended future product loop is:
-
-1. User describes a wanted webpage or desired content.
-2. The data agent obtains structured data from target websites.
-3. The page agent builds a webpage using that data.
-4. The two parts combine into a complete generated webpage.
-
-Important:
-
-- The mature code today still belongs mostly to step 2.
-- The next product planning focus is step 3.
-
-## 5. Important Architecture
+## 6. Architecture Overview
 
 ### Backend
 
@@ -82,20 +74,13 @@ Main backend responsibility today:
 
 Important files:
 
-- [server.ts](D:/网页学习/AIBrowser/backend/src/server.ts)
-  Socket.io entry for workflow execution and recording lifecycle.
-- [api.ts](D:/网页学习/AIBrowser/backend/src/routes/api.ts)
-  AI workflow generation, recording normalization, workflow mapping, preview endpoints.
-- [BrowserRecorder.ts](D:/网页学习/AIBrowser/backend/src/services/BrowserRecorder.ts)
-  Core recording logic, action mode, mark mode, loop capture support.
-- [RecordingWorkflowMapper.ts](D:/网页学习/AIBrowser/backend/src/services/RecordingWorkflowMapper.ts)
-  Deterministic mapping from recording payloads to workflow JSON.
-- [WorkflowInterpreter.ts](D:/网页学习/AIBrowser/backend/src/services/WorkflowInterpreter.ts)
-  Actual workflow execution engine.
-- [WorkflowSemanticValidator.ts](D:/网页学习/AIBrowser/backend/src/services/WorkflowSemanticValidator.ts)
-  Prevents generated workflows from exceeding current engine capability.
-- [AIAdapter.ts](D:/网页学习/AIBrowser/backend/src/services/AIAdapter.ts)
-  AI provider abstraction and workflow generation logic.
+- `backend/src/server.ts`
+- `backend/src/routes/api.ts`
+- `backend/src/services/BrowserRecorder.ts`
+- `backend/src/services/RecordingWorkflowMapper.ts`
+- `backend/src/services/WorkflowInterpreter.ts`
+- `backend/src/services/WorkflowSemanticValidator.ts`
+- `backend/src/services/AIAdapter.ts`
 
 ### Frontend
 
@@ -105,81 +90,67 @@ Main frontend responsibility today:
 - recording control
 - data table management
 - execution logs and results
-- current visual style migration
+- page-builder workbench development
 
-Important files:
+Important existing workflow files:
 
-- [WorkflowEditor.vue](D:/网页学习/AIBrowser/frontend/src/components/workflow/WorkflowEditor.vue)
-  The main workflow workbench.
-- [workflow.ts](D:/网页学习/AIBrowser/frontend/src/stores/workflow.ts)
-  Workflow state, block config, history, condition block normalization.
-- [DataTableManager.vue](D:/网页学习/AIBrowser/frontend/src/components/DataTableManager.vue)
-  Local table management UI for extracted content.
-- [Home.vue](D:/网页学习/AIBrowser/frontend/src/views/Home.vue)
-  Landing page and current product-facing overview page.
-- [tokens.css](D:/网页学习/AIBrowser/frontend/src/styles/tokens.css)
-  Shared design tokens used by the frontend.
+- `frontend/src/components/workflow/WorkflowEditor.vue`
+- `frontend/src/stores/workflow.ts`
+- `frontend/src/components/DataTableManager.vue`
+- `frontend/src/views/Home.vue`
+- `frontend/src/styles/tokens.css`
 
-### New Planning Docs
+Important page-builder docs:
 
-- [page-builder-plan.md](D:/网页学习/AIBrowser/docs/page-builder-plan.md)
-  Planning doc for the first page-builder phase.
-- [page-style-guide.md](D:/网页学习/AIBrowser/docs/ai/page-style-guide.md)
-  Visual reference and style constraints.
+- `docs/page-builder-plan.md`
+- `docs/page-builder-workbench.md`
+- `docs/page-builder-context.md`
 
-## 6. Current Constraints
+## 7. Constraints
 
-These constraints matter when continuing work:
+These constraints should remain stable unless the user explicitly changes direction:
 
 1. The crawler side should remain usable and stable.
-2. New work should not assume the page-building agent already exists in code.
-3. The first page-builder version should be data-driven, not fully free-form.
-4. Workflow generation must stay inside current engine capability.
-5. Prefer deterministic mapping when recording evidence is available.
+2. New work should not assume the page-building agent is already complete.
+3. The first page-builder version should stay data-driven, not fully free-form.
+4. Workflow generation must remain inside current engine capability.
+5. Prefer deterministic mapping when recording evidence exists.
 6. AI-generated workflow output must be validated before use.
 7. Avoid replacing working crawler behavior with unstable AI-first behavior.
 
-## 7. Known Gaps
+## 8. Recommended Reading Order
 
-These are the main current gaps in the project:
+When resuming the whole project in a new conversation:
 
-- no real page-building agent yet
-- no page spec pipeline yet
-- no generated page preview pipeline yet
-- data output is usable, but not yet fully shaped as a stable page-builder contract
-- some files contain garbled Chinese text / encoding issues
+1. `docs/agent.md`
+2. `docs/page-builder-context.md`
+3. `docs/page-builder-workbench.md`
+4. `README.md`
+5. if task is crawler-related:
+   - `frontend/src/components/workflow/WorkflowEditor.vue`
+   - `frontend/src/stores/workflow.ts`
+   - `backend/src/server.ts`
+   - `backend/src/services/BrowserRecorder.ts`
+   - `backend/src/services/RecordingWorkflowMapper.ts`
+   - `backend/src/services/WorkflowInterpreter.ts`
+6. if task is page-builder-related:
+   - `frontend/src/views/PageBuilderView.vue`
+   - `frontend/src/stores/pageBuilder.ts`
+   - `frontend/src/services/pageBuilder.ts`
 
-## 8. Recommended Reading Order For A New Conversation
+## 9. Guidance For Future AI
 
-If a new AI conversation needs to resume work quickly, read files in this order:
-
-1. [agent.md](D:/网页学习/AIBrowser/docs/agent.md)
-2. [page-builder-plan.md](D:/网页学习/AIBrowser/docs/page-builder-plan.md)
-3. [README.md](D:/网页学习/AIBrowser/README.md)
-4. [WorkflowEditor.vue](D:/网页学习/AIBrowser/frontend/src/components/workflow/WorkflowEditor.vue)
-5. [DataTableManager.vue](D:/网页学习/AIBrowser/frontend/src/components/DataTableManager.vue)
-6. [workflow.ts](D:/网页学习/AIBrowser/frontend/src/stores/workflow.ts)
-7. [server.ts](D:/网页学习/AIBrowser/backend/src/server.ts)
-8. [BrowserRecorder.ts](D:/网页学习/AIBrowser/backend/src/services/BrowserRecorder.ts)
-9. [RecordingWorkflowMapper.ts](D:/网页学习/AIBrowser/backend/src/services/RecordingWorkflowMapper.ts)
-10. [WorkflowInterpreter.ts](D:/网页学习/AIBrowser/backend/src/services/WorkflowInterpreter.ts)
-
-## 9. How Future AI Should Continue
-
-When continuing this project in a new conversation:
+When continuing this repo:
 
 - first identify whether the task belongs to:
   - workflow engine
   - recorder / mapper
   - data tables
-  - page builder planning / implementation
-- if the task is ambiguous, assume the crawler side should stay stable and usable
-- if the task is ambiguous, prefer moving the product toward `data table -> page generation`
-- treat sketch-to-page and free-form page agent work as later phases unless the user explicitly starts there
-- be careful not to overwrite user changes in already-modified frontend components
+  - page builder / AI generation workbench
+- if ambiguous, assume crawler stability should be preserved
+- if ambiguous, prefer moving the product toward stable page generation from extracted tables
+- treat recent page-builder interaction details as belonging to `docs/page-builder-context.md`, not this file
 
 ## 10. Short Resume Prompt
 
-If needed, this is the shortest accurate project resume:
-
-`AIBrowser is currently a workflow-based browser data extraction platform that is planned to evolve into a dual-agent system: one agent for extracting website data and one for generating webpages from that data. The crawler workflow stack is already usable: recording, marking, mapping, editing, executing, and storing data. The next product planning focus is the first phase of the page builder: generating usable pages from extracted data tables through a page-spec-driven pipeline.`
+`AIBrowser is a workflow-based browser data extraction platform evolving into a dual-agent system: one agent for extracting data and one for generating webpages from that data. The crawler stack is already usable. The current active focus is the page-builder workbench built on top of extracted tables, while the crawler side should stay stable.`
