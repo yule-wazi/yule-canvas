@@ -108,6 +108,7 @@ export interface PageBuilderProject {
   files: PageBuilderFile[];
   tree: PageBuilderTreeNode[];
   bindingContract: PageBindingContract;
+  previewUrl?: string | null;
 }
 
 export interface PageBuilderPreviewSelection {

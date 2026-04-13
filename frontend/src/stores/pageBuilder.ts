@@ -2,10 +2,8 @@ import { defineStore } from 'pinia';
 import type { DataTable } from './dataTable';
 import {
   buildMockPageProject,
-  buildProjectFromGeneratedFiles,
-  generatePageProjectWithAI,
   inferFieldRoles,
-  renderProjectPreview
+  prepareProjectPreview
 } from '../services/pageBuilder';
 import type {
   PageBindingContract,
@@ -36,7 +34,7 @@ interface PageBuilderState {
   selectedPreviewElement: PageBuilderPreviewSelection | null;
   centerMode: PageBuilderCenterMode;
   previewStatus: 'idle' | 'building' | 'ready' | 'error';
-  previewHtml: string;
+  previewUrl: string;
   error: string | null;
   isSetupDrawerOpen: boolean;
   isAIConfigOpen: boolean;
@@ -92,7 +90,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     selectedPreviewElement: null,
     centerMode: 'preview',
     previewStatus: 'idle',
-    previewHtml: '',
+    previewUrl: '',
     error: null,
     isSetupDrawerOpen: true,
     isAIConfigOpen: false,
@@ -125,7 +123,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         this.fieldRoleMap = {};
         this.project = null;
         this.activeFileId = null;
-        this.previewHtml = '';
+        this.previewUrl = '';
         this.error = 'No data table is available yet.';
         return;
       }
@@ -226,6 +224,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
       this.previewStatus = 'building';
       this.error = null;
+      this.previewUrl = '';
       this.selectedPreviewElement = null;
 
       const request: PageBuildRequest = {
@@ -238,57 +237,27 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       };
 
       try {
-        const aiProject = await generatePageProjectWithAI({
-          table,
-          prompt: this.goal || this.pageTitle || `${table.name} page`,
-          provider: this.aiProvider,
-          model: this.aiModel,
-          apiKey: this.aiApiKey || undefined
-        });
-        const output = buildProjectFromGeneratedFiles({
-          table,
-          files: aiProject.files,
-          assistantMessage: aiProject.assistantMessage
+        const fallback = buildMockPageProject(table, request);
+        const previewUrl = await prepareProjectPreview(fallback.project.files, {
+          projectId: 'page-preview'
         });
 
-        const previewHtml = await renderProjectPreview(output.project.files, {
-          entryPath: 'app/PageView.vue',
-          title: output.spec.meta.title
-        });
-
-        this.fieldRoleMap = output.fieldRoleMap;
-        this.spec = output.spec;
-        this.project = output.project;
-        this.activeFileId = output.project.files.find((file) => file.visibility === 'project')?.id || null;
-        this.previewHtml = previewHtml;
-        this.sectionSummaries = output.sectionSummaries;
-        this.assistantMessage = output.assistantMessage;
+        this.fieldRoleMap = fallback.fieldRoleMap;
+        this.spec = fallback.spec;
+        this.project = {
+          ...fallback.project,
+          previewUrl
+        };
+        this.activeFileId = fallback.project.files.find((file) => file.visibility === 'project')?.id || null;
+        this.previewUrl = previewUrl;
+        this.sectionSummaries = fallback.sectionSummaries;
+        this.assistantMessage = '当前先跳过 AI，直接生成真实 Vue 项目文件，并通过本地 Vite 预览服务渲染中间预览。';
         this.previewStatus = 'ready';
-        this.selectedSectionId = output.sectionSummaries[0]?.id || null;
+        this.selectedSectionId = fallback.sectionSummaries[0]?.id || null;
         this.isSetupDrawerOpen = false;
       } catch (error: any) {
-        const fallback = buildMockPageProject(table, request);
-
-        try {
-          const previewHtml = await renderProjectPreview(fallback.project.files, {
-            entryPath: 'app/PageView.vue',
-            title: fallback.spec.meta.title
-          });
-
-          this.fieldRoleMap = fallback.fieldRoleMap;
-          this.spec = fallback.spec;
-          this.project = fallback.project;
-          this.activeFileId = fallback.project.files.find((file) => file.visibility === 'project')?.id || null;
-          this.previewHtml = previewHtml;
-          this.sectionSummaries = fallback.sectionSummaries;
-          this.assistantMessage = `AI 生成失败，当前展示的是本地回退生成结果。${error.message ? ` 原因：${error.message}` : ''}`;
-          this.previewStatus = 'ready';
-          this.selectedSectionId = fallback.sectionSummaries[0]?.id || null;
-          this.error = error.message || 'AI generation failed.';
-        } catch (previewError: any) {
-          this.previewStatus = 'error';
-          this.error = previewError.message || error.message || 'Failed to generate page preview.';
-        }
+        this.previewStatus = 'error';
+        this.error = error.message || 'Failed to generate fallback page preview.';
       }
     }
   }

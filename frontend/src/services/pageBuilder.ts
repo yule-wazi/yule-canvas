@@ -25,27 +25,6 @@ const FIELD_ROLE_RULES: Array<{ pattern: RegExp; role: string }> = [
 
 type FieldRoleMap = Record<string, string>;
 
-interface PreviewSectionDescriptor {
-  sectionId: string;
-  sectionTitle: string;
-  componentPath: string;
-  relatedFilePaths: string[];
-  bindings: PageBindingEntry[];
-}
-
-function escapeHtml(value: unknown): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function toJsonAttribute(value: unknown): string {
-  return escapeHtml(JSON.stringify(value));
-}
-
 function makeBindingEntries(bindings: Record<string, string> | undefined, fieldRoleMap: FieldRoleMap): PageBindingEntry[] {
   return Object.entries(bindings || {}).map(([prop, fieldKey]) => ({
     prop,
@@ -220,6 +199,23 @@ function createBindingContract(spec: PageSpec, fieldRoleMap: FieldRoleMap): Page
   };
 }
 
+function sortTreeNodes(a: PageBuilderTreeNode, b: PageBuilderTreeNode) {
+  if (a.kind !== b.kind) {
+    return a.kind === 'folder' ? -1 : 1;
+  }
+
+  return a.name.localeCompare(b.name);
+}
+
+function buildTreeFromNodes(nodes: PageBuilderTreeNode[]): PageBuilderTreeNode[] {
+  return nodes
+    .map((node) => ({
+      ...node,
+      children: node.children ? buildTreeFromNodes(node.children) : undefined
+    }))
+    .sort(sortTreeNodes);
+}
+
 function buildTree(files: PageBuilderFile[]): PageBuilderTreeNode[] {
   const root: PageBuilderTreeNode[] = [];
 
@@ -271,34 +267,18 @@ function inferFileType(filePath: string): PageBuilderFile['type'] {
 
 function inferFileRole(filePath: string) {
   const roleMap: Record<string, string> = {
-    'app/PageView.vue': 'Generated page entry point.',
-    'components/sections/HeroSection.vue': 'Hero section component.',
-    'components/sections/FeedSection.vue': 'Repeated collection section component.',
-    'components/sections/FooterSection.vue': 'Footer section component.',
-    'data/bindings.ts': 'Binding contract between table fields and page sections.',
-    'data/tableAdapter.ts': 'Stable data access adapter for generated sections.',
-    'spec/page-spec.json': 'Stable page spec used for regeneration.',
-    'styles/page.css': 'Generated page stylesheet.'
+    'src/app/PageView.vue': 'Generated page entry point.',
+    'src/components/sections/HeroSection.vue': 'Hero section component.',
+    'src/components/sections/FeedSection.vue': 'Repeated collection section component.',
+    'src/components/sections/FooterSection.vue': 'Footer section component.',
+    'src/data/bindings.ts': 'Binding contract between table fields and page sections.',
+    'src/data/tableAdapter.ts': 'Stable data access adapter for generated sections.',
+    'src/data/previewRows.ts': 'Preview data derived from the selected table.',
+    'src/spec/page-spec.json': 'Stable page spec used for regeneration.',
+    'src/styles/page.css': 'Generated page stylesheet.'
   };
 
   return roleMap[filePath] || 'Generated project file.';
-}
-
-function buildTreeFromNodes(nodes: PageBuilderTreeNode[]): PageBuilderTreeNode[] {
-  return nodes
-    .map((node) => ({
-      ...node,
-      children: node.children ? buildTreeFromNodes(node.children) : undefined
-    }))
-    .sort(sortTreeNodes);
-}
-
-function sortTreeNodes(a: PageBuilderTreeNode, b: PageBuilderTreeNode) {
-  if (a.kind !== b.kind) {
-    return a.kind === 'folder' ? -1 : 1;
-  }
-
-  return a.name.localeCompare(b.name);
 }
 
 function buildBindingsFileSource(contract: PageBindingContract) {
@@ -331,6 +311,13 @@ export function readField(row: Record<string, unknown>, fieldKey?: string) {
 `;
 }
 
+function buildPreviewRowsSource(rows: Record<string, unknown>[]) {
+  return `const previewRows = ${JSON.stringify(rows, null, 2)} as Array<Record<string, unknown>>;
+
+export default previewRows;
+`;
+}
+
 function buildPageViewSource() {
   return `<template>
   <main class="page-root">
@@ -344,9 +331,8 @@ function buildPageViewSource() {
 import HeroSection from '../components/sections/HeroSection.vue';
 import FeedSection from '../components/sections/FeedSection.vue';
 import FooterSection from '../components/sections/FooterSection.vue';
-import items from '../preview/sample-data.json';
+import items from '../data/previewRows';
 import spec from '../spec/page-spec.json';
-import '../styles/page.css';
 </script>
 `;
 }
@@ -397,14 +383,14 @@ function buildFeedSectionSource(spec: PageSpec) {
     <div v-if="items.length" class="card-grid">
       <a
         v-for="(item, index) in items"
-        :key="item._id || index"
+        :key="String(item._id || index)"
         class="feed-card"
-        :href="read(item, listBindings.href) || '#'"
+        :href="String(read(item, listBindings.href) || '#')"
         target="_blank"
         rel="noreferrer"
       >
         <div v-if="read(item, listBindings.image)" class="card-media">
-          <img :src="read(item, listBindings.image)" alt="" />
+          <img :src="String(read(item, listBindings.image))" alt="" />
         </div>
         <div class="card-body">
           <p class="card-meta">{{ read(item, listBindings.meta) || \`Item \${index + 1}\` }}</p>
@@ -468,6 +454,8 @@ body {
   color: var(--text);
 }
 
+a { color: inherit; }
+
 .page-root { min-height: 100vh; padding: 40px 32px 64px; }
 .hero-section { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); gap: 20px; margin-bottom: 24px; }
 .hero-copy, .hero-panel, .feed-card, .empty-block { border: 1px solid var(--border); border-radius: 2px; box-shadow: rgba(0, 0, 0, 0.3) 0 0 5px 0; }
@@ -498,15 +486,14 @@ body {
 function createProjectFiles(
   spec: PageSpec,
   contract: PageBindingContract,
-  sampleRows: Record<string, unknown>[],
-  previewHtml: string
+  sampleRows: Record<string, unknown>[]
 ): PageBuilderFile[] {
   const repeatedSection = contract.sections.find((section) => section.repeat);
 
   return [
     {
-      id: 'app-page-view',
-      path: 'app/PageView.vue',
+      id: 'page-view',
+      path: 'src/app/PageView.vue',
       name: 'PageView.vue',
       type: 'vue',
       role: 'Generated page entry point.',
@@ -517,7 +504,7 @@ function createProjectFiles(
     },
     {
       id: 'section-hero',
-      path: 'components/sections/HeroSection.vue',
+      path: 'src/components/sections/HeroSection.vue',
       name: 'HeroSection.vue',
       type: 'vue',
       role: 'Hero section component.',
@@ -529,7 +516,7 @@ function createProjectFiles(
     },
     {
       id: 'section-feed',
-      path: 'components/sections/FeedSection.vue',
+      path: 'src/components/sections/FeedSection.vue',
       name: 'FeedSection.vue',
       type: 'vue',
       role: 'Repeated collection section component.',
@@ -541,7 +528,7 @@ function createProjectFiles(
     },
     {
       id: 'section-footer',
-      path: 'components/sections/FooterSection.vue',
+      path: 'src/components/sections/FooterSection.vue',
       name: 'FooterSection.vue',
       type: 'vue',
       role: 'Footer section component.',
@@ -553,7 +540,7 @@ function createProjectFiles(
     },
     {
       id: 'data-bindings',
-      path: 'data/bindings.ts',
+      path: 'src/data/bindings.ts',
       name: 'bindings.ts',
       type: 'ts',
       role: 'Binding contract between table fields and page sections.',
@@ -564,7 +551,7 @@ function createProjectFiles(
     },
     {
       id: 'data-table-adapter',
-      path: 'data/tableAdapter.ts',
+      path: 'src/data/tableAdapter.ts',
       name: 'tableAdapter.ts',
       type: 'ts',
       role: 'Stable data access adapter for generated sections.',
@@ -574,8 +561,19 @@ function createProjectFiles(
       sourceSectionIds: repeatedSection ? [repeatedSection.sectionId] : []
     },
     {
+      id: 'data-preview-rows',
+      path: 'src/data/previewRows.ts',
+      name: 'previewRows.ts',
+      type: 'ts',
+      role: 'Preview data derived from the selected table.',
+      editable: false,
+      visibility: 'project',
+      content: buildPreviewRowsSource(sampleRows),
+      sourceSectionIds: repeatedSection ? [repeatedSection.sectionId] : []
+    },
+    {
       id: 'spec-page-spec',
-      path: 'spec/page-spec.json',
+      path: 'src/spec/page-spec.json',
       name: 'page-spec.json',
       type: 'json',
       role: 'Stable page spec used for regeneration.',
@@ -586,7 +584,7 @@ function createProjectFiles(
     },
     {
       id: 'styles-page',
-      path: 'styles/page.css',
+      path: 'src/styles/page.css',
       name: 'page.css',
       type: 'css',
       role: 'Generated page stylesheet.',
@@ -594,253 +592,8 @@ function createProjectFiles(
       visibility: 'project',
       content: buildStylesSource(),
       sourceSectionIds: spec.layout.sections.map((section) => section.id)
-    },
-    {
-      id: 'preview-sample-data',
-      path: 'preview/sample-data.json',
-      name: 'sample-data.json',
-      type: 'json',
-      role: 'Preview bootstrap data.',
-      editable: false,
-      visibility: 'internal',
-      content: JSON.stringify(sampleRows, null, 2),
-      sourceSectionIds: repeatedSection ? [repeatedSection.sectionId] : []
-    },
-    {
-      id: 'preview-runtime',
-      path: 'preview/runtime.html',
-      name: 'runtime.html',
-      type: 'html',
-      role: 'Iframe preview runtime.',
-      editable: false,
-      visibility: 'internal',
-      content: previewHtml,
-      sourceSectionIds: spec.layout.sections.map((section) => section.id)
     }
   ];
-}
-
-function buildPreviewSectionDescriptors(contract: PageBindingContract): Record<string, PreviewSectionDescriptor> {
-  return contract.sections.reduce<Record<string, PreviewSectionDescriptor>>((result, section) => {
-    const componentPath = section.sectionId === 'hero'
-      ? 'components/sections/HeroSection.vue'
-      : section.sectionId === 'footer'
-        ? 'components/sections/FooterSection.vue'
-        : 'components/sections/FeedSection.vue';
-
-    result[section.sectionId] = {
-      sectionId: section.sectionId,
-      sectionTitle: section.sectionTitle,
-      componentPath,
-      relatedFilePaths: [componentPath, 'data/bindings.ts', 'spec/page-spec.json'],
-      bindings: section.bindings
-    };
-
-    return result;
-  }, {});
-}
-
-function renderSelectable(params: {
-  descriptor: PreviewSectionDescriptor;
-  elementId: string;
-  elementLabel: string;
-  textValue?: unknown;
-  className?: string;
-  tag?: string;
-  body: string;
-}) {
-  const tag = params.tag || 'div';
-
-  return `<${tag}
-  class="${params.className || ''}"
-  data-selectable="true"
-  data-element-id="${escapeHtml(params.elementId)}"
-  data-element-label="${escapeHtml(params.elementLabel)}"
-  data-section-id="${escapeHtml(params.descriptor.sectionId)}"
-  data-section-title="${escapeHtml(params.descriptor.sectionTitle)}"
-  data-component-path="${escapeHtml(params.descriptor.componentPath)}"
-  data-related-files="${toJsonAttribute(params.descriptor.relatedFilePaths)}"
-  data-bindings="${toJsonAttribute(params.descriptor.bindings)}"
-  ${params.textValue !== undefined ? `data-text-value="${escapeHtml(params.textValue)}"` : ''}
->${params.body}</${tag}>`;
-}
-
-function createPreviewHtml(
-  spec: PageSpec,
-  table: DataTable,
-  rows: Record<string, unknown>[],
-  fieldRoleMap: FieldRoleMap,
-  contract: PageBindingContract
-) {
-  const sections = buildPreviewSectionDescriptors(contract);
-  const heroSection = sections.hero;
-  const footerSection = sections.footer;
-  const repeatedSection = contract.sections.find((section) => section.repeat) || contract.sections[0];
-  const listSection = sections[repeatedSection.sectionId];
-
-  const titleField = pickFieldByRole(fieldRoleMap, 'title');
-  const summaryField = pickFieldByRole(fieldRoleMap, 'summary');
-  const mediaField = pickFieldByRole(fieldRoleMap, 'media');
-  const metaField = pickFieldByRole(fieldRoleMap, 'meta');
-  const linkField = pickFieldByRole(fieldRoleMap, 'link');
-
-  const cards = rows.map((row, index) => {
-    const title = titleField ? row[titleField] : `Preview item ${index + 1}`;
-    const summary = summaryField ? row[summaryField] : 'Add a summary-style field to make this card richer.';
-    const media = mediaField ? row[mediaField] : '';
-    const meta = metaField ? row[metaField] : `Item ${index + 1}`;
-    const href = linkField ? row[linkField] : '#';
-
-    return renderSelectable({
-      descriptor: listSection,
-      tag: 'article',
-      className: 'card',
-      elementId: `feed-card-${index + 1}`,
-      elementLabel: 'Feed card',
-      textValue: title,
-      body: `
-${media ? renderSelectable({
-  descriptor: listSection,
-  className: 'card-media',
-  elementId: `feed-card-media-${index + 1}`,
-  elementLabel: 'Card image',
-  textValue: media,
-  body: `<img src="${escapeHtml(media)}" alt="" />`
-}) : ''}
-<a class="card-link" href="${escapeHtml(href)}" target="_blank" rel="noreferrer">
-  <div class="card-body">
-    ${renderSelectable({
-      descriptor: listSection,
-      tag: 'p',
-      className: 'card-meta',
-      elementId: `feed-card-meta-${index + 1}`,
-      elementLabel: 'Card meta',
-      textValue: meta,
-      body: escapeHtml(meta)
-    })}
-    ${renderSelectable({
-      descriptor: listSection,
-      tag: 'h3',
-      elementId: `feed-card-title-${index + 1}`,
-      elementLabel: 'Card title',
-      textValue: title,
-      body: escapeHtml(title)
-    })}
-    ${renderSelectable({
-      descriptor: listSection,
-      tag: 'p',
-      elementId: `feed-card-summary-${index + 1}`,
-      elementLabel: 'Card summary',
-      textValue: summary,
-      body: escapeHtml(summary)
-    })}
-  </div>
-</a>`
-    });
-  }).join('\n');
-
-  return `<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${escapeHtml(spec.meta.title)}</title>
-    <style>
-      :root { color-scheme: dark; --accent: #76b900; --panel: #111111; --border: #5e5e5e; --text: #ffffff; --muted: #a7a7a7; }
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: radial-gradient(circle at top right, rgba(118,185,0,.12), transparent 24%), linear-gradient(180deg, #030303 0%, #0a0a0a 100%); color: var(--text); }
-      .page { min-height: 100vh; padding: 40px 32px 64px; }
-      .hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.8fr); gap: 20px; margin-bottom: 24px; }
-      .hero-copy, .hero-panel, .card { border: 1px solid var(--border); border-radius: 2px; box-shadow: rgba(0,0,0,.3) 0 0 5px 0; }
-      .hero-copy, .hero-panel { position: relative; background: rgba(0,0,0,.86); }
-      .hero-copy::before, .hero-panel::before { content: ''; position: absolute; inset: 0; border-top: 2px solid var(--accent); pointer-events: none; }
-      .hero-copy { padding: 28px; }
-      .hero-panel { padding: 24px; }
-      .hero-stat strong { display: block; font-size: 28px; }
-      .eyebrow { margin: 0 0 12px; color: var(--accent); font-size: 12px; font-weight: 700; text-transform: uppercase; }
-      h1, h2, h3, p { margin-top: 0; }
-      h1 { margin-bottom: 12px; font-size: 36px; }
-      .hero-copy p:last-child, .hero-panel span, .list-header p, .card p, footer { color: var(--muted); }
-      .list-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-      .card { overflow: hidden; background: linear-gradient(180deg, rgba(17,17,17,.94), rgba(7,7,7,.98)); }
-      .card-link { color: inherit; text-decoration: none; }
-      .card-media { height: 160px; background: #050505; border-bottom: 1px solid var(--border); }
-      .card-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
-      .card-body { padding: 16px; }
-      .card-meta { color: var(--accent); text-transform: uppercase; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
-      .card h3 { font-size: 20px; line-height: 1.25; margin-bottom: 10px; }
-      footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; }
-      [data-selectable='true'] { cursor: pointer; }
-      [data-selectable='true']:hover { outline: 1px solid rgba(118,185,0,.55); outline-offset: 2px; }
-    </style>
-  </head>
-  <body>
-    <main class="page">
-      ${renderSelectable({
-        descriptor: heroSection,
-        tag: 'section',
-        className: 'hero',
-        elementId: 'hero-section',
-        elementLabel: 'Hero section',
-        textValue: spec.meta.title,
-        body: `
-${renderSelectable({
-  descriptor: heroSection,
-  className: 'hero-copy',
-  elementId: 'hero-copy',
-  elementLabel: 'Hero copy',
-  textValue: spec.meta.description,
-  body: `<p class="eyebrow">${escapeHtml(spec.meta.pageType)}</p><h1>${escapeHtml(spec.meta.title)}</h1><p>${escapeHtml(spec.meta.description || `Generated from ${table.name}`)}</p>`
-})}
-${renderSelectable({
-  descriptor: heroSection,
-  tag: 'aside',
-  className: 'hero-panel',
-  elementId: 'hero-panel',
-  elementLabel: 'Hero metrics',
-  body: `<p class="eyebrow">Workbench status</p><div class="hero-stat"><strong>${rows.length}</strong><span>preview rows</span></div><div class="hero-stat"><strong>${table.columns.length}</strong><span>available fields</span></div>`
-})}`
-      })}
-      ${renderSelectable({
-        descriptor: listSection,
-        tag: 'section',
-        elementId: 'feed-section',
-        elementLabel: listSection.sectionTitle,
-        body: `<div class="list-header"><div><p class="eyebrow">Generated section</p><h2>${escapeHtml(table.name)} collection</h2></div><p>${escapeHtml(spec.meta.stylePreset)}</p></div><div class="grid">${cards || '<article class="card"><div class="card-body"><h3>No rows yet</h3><p>Add rows to the current table and regenerate the page.</p></div></article>'}</div>`
-      })}
-      ${renderSelectable({
-        descriptor: footerSection,
-        tag: 'footer',
-        elementId: 'footer-section',
-        elementLabel: 'Footer',
-        textValue: table.name,
-        body: `Bound to <strong>${escapeHtml(table.name)}</strong> using the <strong>${escapeHtml(spec.meta.stylePreset)}</strong> preset.`
-      })}
-    </main>
-    <script>
-      document.addEventListener('click', function(event) {
-        const target = event.target instanceof Element ? event.target.closest('[data-selectable="true"]') : null;
-        if (!target) return;
-        event.preventDefault();
-        event.stopPropagation();
-        window.parent.postMessage({
-          source: 'page-builder-preview-select',
-          payload: {
-            elementId: target.getAttribute('data-element-id') || '',
-            elementLabel: target.getAttribute('data-element-label') || 'Selected element',
-            sectionId: target.getAttribute('data-section-id') || '',
-            sectionTitle: target.getAttribute('data-section-title') || '',
-            componentPath: target.getAttribute('data-component-path'),
-            relatedFilePaths: JSON.parse(target.getAttribute('data-related-files') || '[]'),
-            bindings: JSON.parse(target.getAttribute('data-bindings') || '[]'),
-            textValue: target.getAttribute('data-text-value') || ''
-          }
-        }, '*');
-      }, true);
-    </script>
-  </body>
-</html>`;
 }
 
 export function buildMockPageProject(table: DataTable, request: PageBuildRequest) {
@@ -848,8 +601,7 @@ export function buildMockPageProject(table: DataTable, request: PageBuildRequest
   const spec = createPageSpec(table, request, fieldRoleMap);
   const bindingContract = createBindingContract(spec, fieldRoleMap);
   const sampleRows = table.rows.slice(0, 6);
-  const previewHtml = createPreviewHtml(spec, table, sampleRows, fieldRoleMap, bindingContract);
-  const files = createProjectFiles(spec, bindingContract, sampleRows, previewHtml);
+  const files = createProjectFiles(spec, bindingContract, sampleRows);
   const project: PageBuilderProject = {
     rootName: 'Page Project',
     files,
@@ -861,8 +613,7 @@ export function buildMockPageProject(table: DataTable, request: PageBuildRequest
     fieldRoleMap,
     spec,
     project,
-    sectionSummaries: createSectionSummaries(spec.layout.sections),
-    previewHtml
+    sectionSummaries: createSectionSummaries(spec.layout.sections)
   };
 }
 
@@ -871,7 +622,7 @@ export function buildProjectFromGeneratedFiles(params: {
   files: Array<{ path: string; content: string }>;
   assistantMessage?: string;
 }) {
-  const specFile = params.files.find((file) => file.path === 'spec/page-spec.json');
+  const specFile = params.files.find((file) => file.path === 'src/spec/page-spec.json');
   const spec = specFile
     ? JSON.parse(specFile.content) as PageSpec
     : createPageSpec(params.table, {
@@ -888,7 +639,7 @@ export function buildProjectFromGeneratedFiles(params: {
     name: file.path.split('/').pop() || file.path,
     type: inferFileType(file.path),
     role: inferFileRole(file.path),
-    editable: file.path !== 'spec/page-spec.json',
+    editable: file.path !== 'src/spec/page-spec.json' && file.path !== 'src/data/previewRows.ts',
     visibility: 'project',
     content: file.content,
     sourceSectionIds: spec.layout.sections.map((section) => section.id)
@@ -953,24 +704,23 @@ export async function generatePageProjectWithAI(params: {
   return response.project;
 }
 
-export async function renderProjectPreview(files: PageBuilderFile[], options?: { entryPath?: string; title?: string }) {
-  const response = await api.post('/page-builder/render-preview', {
+export async function prepareProjectPreview(files: PageBuilderFile[], options?: { projectId?: string }) {
+  const response = await api.post('/page-builder/prepare-preview', {
+    projectId: options?.projectId || 'page-preview',
     files: files.map((file) => ({
       path: file.path,
       type: file.type,
       content: file.content
-    })),
-    entryPath: options?.entryPath || 'app/PageView.vue',
-    title: options?.title
+    }))
   }) as {
     success: boolean;
-    html: string;
+    previewUrl: string | null;
     error: string | null;
   };
 
-  if (!response.success) {
-    return response.html;
+  if (!response.success || !response.previewUrl) {
+    throw new Error(response.error || 'Failed to prepare real project preview.');
   }
 
-  return response.html;
+  return response.previewUrl;
 }

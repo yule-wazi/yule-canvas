@@ -25,7 +25,7 @@
           :mode="store.centerMode"
           :files="store.files"
           :active-file-id="store.activeFileId"
-          :preview-html="store.previewHtml"
+          :preview-url="store.previewUrl"
           :viewport="viewport"
           :status-label="statusLabel"
           :data-title="dataTitle"
@@ -33,8 +33,6 @@
           :data-content="dataContent"
           @select-file="openFile"
           @change-viewport="viewport = $event"
-          @preview-select="store.selectPreviewElement"
-          @preview-error="store.setError($event)"
         />
 
         <div v-if="store.error" class="error-banner">{{ store.error }}</div>

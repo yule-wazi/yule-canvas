@@ -18,11 +18,10 @@
 
     <div class="preview-stage" :class="`is-${viewport}`">
       <iframe
-        v-if="srcdoc"
-        ref="previewFrameRef"
+        v-if="previewUrl"
         class="preview-frame"
         title="生成页面预览"
-        :srcdoc="srcdoc"
+        :src="previewUrl"
       />
       <div v-else class="preview-placeholder">
         先生成页面工程，预览会显示在这里。
@@ -32,19 +31,14 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
-import type { PageBuilderPreviewSelection } from '../../types/pageBuilder';
-
 defineProps<{
-  srcdoc: string;
+  previewUrl: string;
   viewport: 'desktop' | 'tablet' | 'mobile';
   statusLabel: string;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   changeViewport: [viewport: 'desktop' | 'tablet' | 'mobile'];
-  previewSelect: [selection: PageBuilderPreviewSelection];
-  previewError: [message: string];
 }>();
 
 const options = [
@@ -52,31 +46,6 @@ const options = [
   { label: '平板', value: 'tablet' as const },
   { label: '手机', value: 'mobile' as const }
 ];
-
-const previewFrameRef = ref<HTMLIFrameElement | null>(null);
-
-function handleMessage(event: MessageEvent) {
-  if (event.data?.source !== 'page-builder-preview-select') {
-    if (event.data?.source === 'page-builder-preview-error') {
-      emit('previewError', String(event.data?.payload?.message || 'Preview runtime error.'));
-    }
-    return;
-  }
-
-  if (previewFrameRef.value?.contentWindow && event.source !== previewFrameRef.value.contentWindow) {
-    return;
-  }
-
-  emit('previewSelect', event.data.payload as PageBuilderPreviewSelection);
-}
-
-onMounted(() => {
-  window.addEventListener('message', handleMessage);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('message', handleMessage);
-});
 </script>
 
 <style scoped>

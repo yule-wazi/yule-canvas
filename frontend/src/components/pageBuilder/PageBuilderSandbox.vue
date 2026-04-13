@@ -2,12 +2,10 @@
   <section class="page-builder-sandbox">
     <PageBuilderPreview
       v-if="mode === 'preview'"
-      :srcdoc="previewHtml"
+      :preview-url="previewUrl"
       :viewport="viewport"
       :status-label="statusLabel"
       @change-viewport="$emit('changeViewport', $event)"
-      @preview-select="$emit('previewSelect', $event)"
-      @preview-error="$emit('previewError', $event)"
     />
 
     <PageBuilderCodeTabs
@@ -30,13 +28,13 @@
 import PageBuilderCodeTabs from './PageBuilderCodeTabs.vue';
 import PageBuilderDataPanel from './PageBuilderDataPanel.vue';
 import PageBuilderPreview from './PageBuilderPreview.vue';
-import type { PageBuilderCenterMode, PageBuilderFile, PageBuilderPreviewSelection } from '../../types/pageBuilder';
+import type { PageBuilderCenterMode, PageBuilderFile } from '../../types/pageBuilder';
 
 defineProps<{
   mode: PageBuilderCenterMode;
   files: PageBuilderFile[];
   activeFileId: string | null;
-  previewHtml: string;
+  previewUrl: string;
   viewport: 'desktop' | 'tablet' | 'mobile';
   statusLabel: string;
   dataTitle: string;
@@ -47,8 +45,6 @@ defineProps<{
 defineEmits<{
   selectFile: [fileId: string];
   changeViewport: [viewport: 'desktop' | 'tablet' | 'mobile'];
-  previewSelect: [selection: PageBuilderPreviewSelection];
-  previewError: [message: string];
 }>();
 </script>
 

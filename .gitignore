@@ -13,6 +13,8 @@ pnpm-lock.yaml
 dist/
 build/
 *.log
+frontend/.generated/
+generated-projects/
 
 # IDE
 .vscode/

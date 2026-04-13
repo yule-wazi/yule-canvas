@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { AIAdapterManager, WorkflowGenerationError } from '../services/AIAdapter';
-import { PageBuilderPreviewRenderer } from '../services/PageBuilderPreviewRenderer';
+import { PageBuilderPreviewManager } from '../services/PageBuilderPreviewManager';
 import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
 const aiManager = new AIAdapterManager();
+const pageBuilderPreviewManager = new PageBuilderPreviewManager();
 
 const PAGE_BUILDER_SYSTEM_PROMPT = `You generate page-builder project files for a constrained Vue page workspace.
 Output rules:
@@ -243,26 +244,21 @@ router.post('/ai/generate-default', async (req, res) => {
   }
 });
 
-router.post('/page-builder/render-preview', (req, res) => {
+router.post('/page-builder/prepare-preview', async (req, res) => {
   try {
-    const { files, entryPath, title } = req.body || {};
-
-    const html = PageBuilderPreviewRenderer.render({
-      files: Array.isArray(files) ? files : [],
-      entryPath: typeof entryPath === 'string' ? entryPath : undefined,
-      title: typeof title === 'string' ? title : undefined
-    });
+    const { files } = req.body || {};
+    const prepared = await pageBuilderPreviewManager.preparePreview(Array.isArray(files) ? files : []);
 
     return res.json({
       success: true,
-      html,
+      previewUrl: prepared.previewUrl,
       error: null
     });
   } catch (error: any) {
-    return res.json({
+    return res.status(400).json({
       success: false,
-      html: PageBuilderPreviewRenderer.renderErrorDocument(error.message || 'Failed to render page builder preview.'),
-      error: error.message || 'Failed to render page builder preview.'
+      previewUrl: null,
+      error: error.message || 'Failed to prepare page builder preview.'
     });
   }
 });
