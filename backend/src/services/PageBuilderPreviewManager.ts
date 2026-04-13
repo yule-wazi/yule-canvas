@@ -108,12 +108,22 @@ export class PageBuilderPreviewManager {
 `
       },
       {
-        path: 'vite.config.ts',
-        content: `import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue';
+        path: 'vite.config.mjs',
+        content: `import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from '../../frontend/node_modules/vite/dist/node/index.js';
+import vue from '../../frontend/node_modules/@vitejs/plugin-vue/dist/index.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const frontendRoot = path.resolve(__dirname, '../../frontend');
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      vue: path.resolve(frontendRoot, 'node_modules/vue/dist/vue.runtime.esm-bundler.js')
+    }
+  },
   server: {
     host: '${PREVIEW_HOST}',
     port: ${PREVIEW_PORT},
@@ -129,7 +139,7 @@ export default defineConfig({
     "target": "ES2020",
     "useDefineForClassFields": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "strict": true,
     "jsx": "preserve",
     "resolveJsonModule": true,
