@@ -76,13 +76,16 @@ function createIndexHtml() {
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <title>Workspace Demo</title>
   </head>
   <body>
+    <noscript>
+      <strong>This preview requires JavaScript to run.</strong>
+    </noscript>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
 `;
@@ -131,10 +134,15 @@ const description = ${safeGoal};
 function createHelloWorldVue() {
   return `<template>
   <section class="demo-card">
-    <h2>Hello World</h2>
-    <p>This block is imported from a separate Vue file and rendered into the page.</p>
+    <h2>{{ title }}</h2>
+    <p>{{ description }}</p>
   </section>
 </template>
+
+<script setup>
+const title = 'Hello World';
+const description = 'This block is imported from a separate Vue file and rendered into the page.';
+</script>
 `;
 }
 
@@ -295,7 +303,7 @@ export function createPageBuilderWorkspace(table: DataTable, request: PageBuildR
   const files: PageBuilderFile[] = [
     {
       id: 'index-html',
-      path: 'index.html',
+      path: 'public/index.html',
       name: 'index.html',
       type: 'html',
       role: 'HTML entry file.',
