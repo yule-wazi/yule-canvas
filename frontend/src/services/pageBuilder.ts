@@ -79,7 +79,6 @@ function createIndexHtml() {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Workspace Demo</title>
-    <link rel="stylesheet" href="/src/styles/page.css" />
   </head>
   <body>
     <div id="app"></div>
@@ -90,111 +89,76 @@ function createIndexHtml() {
 }
 
 function createMainJs() {
-  return `import { renderApp } from './app.js';
+  return `import { createApp } from 'vue';
+import App from './App.vue';
+import './styles.css';
 
-renderApp(document.getElementById('app'));
+createApp(App).mount('#app');
 `;
 }
 
-function createAppJs(tableName: string, goal: string) {
-  const safeGoal = JSON.stringify(goal || 'Edit any file in the workspace and the preview will re-render immediately.');
+function createAppVue(tableName: string, goal: string) {
   const safeTableName = JSON.stringify(tableName || 'Selected Table');
+  const safeGoal = JSON.stringify(goal || 'Edit any Vue file in the workspace and the preview will re-render immediately.');
 
-  return `import { createHelloWorld } from './components/HelloWorld.js';
-import { createAdder } from './components/Adder.js';
+  return `<template>
+  <main class="demo-shell">
+    <section class="hero-card">
+      <p class="eyebrow">Workspace Demo</p>
+      <h1>Hello World</h1>
+      <p class="hero-copy">{{ description }}</p>
+      <div class="meta-row">
+        <span>Source table</span>
+        <strong>{{ tableName }}</strong>
+      </div>
+    </section>
 
-export function renderApp(root) {
-  if (!root) {
-    return;
-  }
+    <HelloWorld />
+    <Adder />
+  </main>
+</template>
 
-  root.innerHTML = '';
+<script setup>
+import HelloWorld from './components/HelloWorld.vue';
+import Adder from './components/Adder.vue';
 
-  const shell = document.createElement('main');
-  shell.className = 'demo-shell';
-
-  const hero = document.createElement('section');
-  hero.className = 'hero-card';
-
-  const badge = document.createElement('p');
-  badge.className = 'eyebrow';
-  badge.textContent = 'Workspace Demo';
-
-  const title = document.createElement('h1');
-  title.textContent = 'Hello World';
-
-  const summary = document.createElement('p');
-  summary.className = 'hero-copy';
-  summary.textContent = ${safeGoal};
-
-  const meta = document.createElement('div');
-  meta.className = 'meta-row';
-  meta.innerHTML = '<span>Source table</span><strong>' + ${safeTableName} + '</strong>';
-
-  hero.append(badge, title, summary, meta);
-
-  const helloBlock = createHelloWorld();
-  const adderBlock = createAdder();
-
-  shell.append(hero, helloBlock, adderBlock);
-  root.appendChild(shell);
-}
+const tableName = ${safeTableName};
+const description = ${safeGoal};
+</script>
 `;
 }
 
-function createHelloWorldJs() {
-  return `export function createHelloWorld() {
-  const section = document.createElement('section');
-  section.className = 'demo-card';
-
-  const title = document.createElement('h2');
-  title.textContent = 'Hello World';
-
-  const body = document.createElement('p');
-  body.textContent = 'This block is imported from a separate file and rendered into the page.';
-
-  section.append(title, body);
-  return section;
-}
+function createHelloWorldVue() {
+  return `<template>
+  <section class="demo-card">
+    <h2>Hello World</h2>
+    <p>This block is imported from a separate Vue file and rendered into the page.</p>
+  </section>
+</template>
 `;
 }
 
-function createAdderJs() {
-  return `export function createAdder() {
-  const section = document.createElement('section');
-  section.className = 'demo-card';
+function createAdderVue() {
+  return `<template>
+  <section class="demo-card">
+    <h2>Adder Demo</h2>
 
-  const title = document.createElement('h2');
-  title.textContent = 'Adder Demo';
+    <div class="adder-form">
+      <input v-model.number="left" type="number" />
+      <input v-model.number="right" type="number" />
+      <button type="button" @click="sum = left + right">Add</button>
+      <output class="adder-result">{{ sum }}</output>
+    </div>
+  </section>
+</template>
 
-  const form = document.createElement('div');
-  form.className = 'adder-form';
+<script setup>
+import { ref } from 'vue';
 
-  const first = document.createElement('input');
-  first.type = 'number';
-  first.value = '1';
-
-  const second = document.createElement('input');
-  second.type = 'number';
-  second.value = '2';
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = 'Add';
-
-  const result = document.createElement('output');
-  result.className = 'adder-result';
-  result.textContent = '3';
-
-  button.addEventListener('click', () => {
-    const sum = Number(first.value || 0) + Number(second.value || 0);
-    result.textContent = String(sum);
-  });
-
-  form.append(first, second, button, result);
-  section.append(title, form);
-  return section;
-}
+const left = ref(1);
+const right = ref(2);
+const sum = ref(3);
+</script>
 `;
 }
 
@@ -305,7 +269,7 @@ export function createPageBuilderWorkspace(table: DataTable, request: PageBuildR
     version: 'v1',
     meta: {
       title: request.title || `${table.name} Demo`,
-      description: request.goal || 'Workspace demo',
+      description: request.goal || 'Vue workspace demo',
       pageType: request.pageType,
       stylePreset: request.stylePreset || 'nvidia-tech'
     },
@@ -344,45 +308,45 @@ export function createPageBuilderWorkspace(table: DataTable, request: PageBuildR
       path: 'src/main.js',
       name: 'main.js',
       type: 'js',
-      role: 'App bootstrap.',
+      role: 'Vue app bootstrap.',
       editable: true,
       visibility: 'project',
       content: createMainJs()
     },
     {
-      id: 'app-js',
-      path: 'src/app.js',
-      name: 'app.js',
-      type: 'js',
-      role: 'Main app renderer.',
+      id: 'app-vue',
+      path: 'src/App.vue',
+      name: 'App.vue',
+      type: 'vue',
+      role: 'App root component.',
       editable: true,
       visibility: 'project',
-      content: createAppJs(table.name, request.goal || '')
+      content: createAppVue(table.name, request.goal || '')
     },
     {
-      id: 'hello-js',
-      path: 'src/components/HelloWorld.js',
-      name: 'HelloWorld.js',
-      type: 'js',
+      id: 'hello-vue',
+      path: 'src/components/HelloWorld.vue',
+      name: 'HelloWorld.vue',
+      type: 'vue',
       role: 'Hello World component.',
       editable: true,
       visibility: 'project',
-      content: createHelloWorldJs()
+      content: createHelloWorldVue()
     },
     {
-      id: 'adder-js',
-      path: 'src/components/Adder.js',
-      name: 'Adder.js',
-      type: 'js',
+      id: 'adder-vue',
+      path: 'src/components/Adder.vue',
+      name: 'Adder.vue',
+      type: 'vue',
       role: 'Adder component.',
       editable: true,
       visibility: 'project',
-      content: createAdderJs()
+      content: createAdderVue()
     },
     {
       id: 'page-css',
-      path: 'src/styles/page.css',
-      name: 'page.css',
+      path: 'src/styles.css',
+      name: 'styles.css',
       type: 'css',
       role: 'Shared styles.',
       editable: true,
@@ -404,7 +368,7 @@ export function createPageBuilderWorkspace(table: DataTable, request: PageBuildR
       id: 'hello-world',
       title: 'Hello World',
       type: 'content',
-      description: 'Simple multi-file demo section.',
+      description: 'Simple Vue demo section.',
       bindings: {},
       repeat: false
     },
@@ -412,7 +376,7 @@ export function createPageBuilderWorkspace(table: DataTable, request: PageBuildR
       id: 'adder',
       title: 'Adder',
       type: 'content',
-      description: 'Simple interactive calculator.',
+      description: 'Simple interactive Vue calculator.',
       bindings: {},
       repeat: false
     }

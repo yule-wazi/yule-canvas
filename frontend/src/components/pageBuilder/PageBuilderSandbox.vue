@@ -1,26 +1,29 @@
 <template>
   <section class="page-builder-sandbox">
-    <PageBuilderPreview
-      v-if="mode === 'preview'"
-      :files="files"
-      :viewport="viewport"
-      @change-viewport="$emit('changeViewport', $event)"
-    />
+    <div v-show="mode === 'preview'" class="sandbox-panel">
+      <PageBuilderPreview
+        :files="files"
+        :viewport="viewport"
+        @change-viewport="$emit('changeViewport', $event)"
+      />
+    </div>
 
-    <PageBuilderCodeTabs
-      v-else-if="mode === 'code'"
-      :files="files"
-      :active-file-id="activeFileId"
-      @select-file="$emit('selectFile', $event)"
-      @update-content="$emit('updateContent', $event)"
-    />
+    <div v-show="mode === 'code'" class="sandbox-panel">
+      <PageBuilderCodeTabs
+        :files="files"
+        :active-file-id="activeFileId"
+        @select-file="$emit('selectFile', $event)"
+        @update-content="$emit('updateContent', $event)"
+      />
+    </div>
 
-    <PageBuilderDataPanel
-      v-else
-      :title="dataTitle"
-      :description="dataDescription"
-      :content="dataContent"
-    />
+    <div v-show="mode === 'data'" class="sandbox-panel">
+      <PageBuilderDataPanel
+        :title="dataTitle"
+        :description="dataDescription"
+        :content="dataContent"
+      />
+    </div>
   </section>
 </template>
 
@@ -51,6 +54,11 @@ defineEmits<{
 .page-builder-sandbox {
   display: grid;
   grid-template-columns: 1fr;
+  min-height: 0;
+  height: 100%;
+}
+
+.sandbox-panel {
   min-height: 0;
   height: 100%;
 }

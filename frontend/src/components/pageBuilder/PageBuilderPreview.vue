@@ -68,8 +68,28 @@ const sandpackFiles = computed<SandpackFiles>(() => {
   }, {
     '/package.json': JSON.stringify({
       name: 'page-builder-demo',
-      main: '/src/main.js'
-    }, null, 2)
+      private: true,
+      scripts: {
+        dev: 'vite',
+        build: 'vite build',
+        preview: 'vite preview'
+      },
+      dependencies: {
+        vue: '^3.2.47'
+      },
+      devDependencies: {
+        vite: '4.1.4',
+        '@vitejs/plugin-vue': '^4.0.0',
+        'esbuild-wasm': '^0.17.12'
+      }
+    }, null, 2),
+    '/vite.config.js': `import { defineConfig } from 'vite';
+import vue from '@vitejs/plugin-vue';
+
+export default defineConfig({
+  plugins: [vue()]
+});
+`
   });
 });
 
@@ -87,12 +107,8 @@ async function renderReactPreview() {
   const element = React.createElement(
     SandpackProvider,
     {
-      key: JSON.stringify(props.files.map((file) => [file.path, file.content])),
-      template: 'vanilla',
+      template: 'vite-vue',
       files: sandpackFiles.value,
-      customSetup: {
-        entry: '/src/main.js'
-      },
       options: {
         autorun: true,
         autoReload: true,
