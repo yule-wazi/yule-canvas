@@ -1,9 +1,8 @@
 import { defineStore } from 'pinia';
 import type { DataTable } from './dataTable';
 import {
-  buildMockPageProject,
-  inferFieldRoles,
-  prepareProjectPreview
+  createPageBuilderWorkspace,
+  inferFieldRoles
 } from '../services/pageBuilder';
 import type {
   PageBindingContract,
@@ -33,46 +32,10 @@ interface PageBuilderState {
   selectedSectionId: string | null;
   selectedPreviewElement: PageBuilderPreviewSelection | null;
   centerMode: PageBuilderCenterMode;
-  previewStatus: 'idle' | 'building' | 'ready' | 'error';
-  previewUrl: string;
   error: string | null;
   isSetupDrawerOpen: boolean;
-  isAIConfigOpen: boolean;
   sectionSummaries: PageBuilderSectionSummary[];
-  assistantMessage: string;
-  aiProvider: 'openrouter' | 'qwen' | 'siliconflow';
-  aiModel: string;
-  aiApiKey: string;
 }
-
-const AI_CONFIG_STORAGE_KEY = 'page_builder_ai_config';
-
-function readPersistedAIConfig() {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  try {
-    const raw = window.localStorage.getItem(AI_CONFIG_STORAGE_KEY);
-    return raw ? JSON.parse(raw) as Partial<Pick<PageBuilderState, 'aiProvider' | 'aiModel' | 'aiApiKey'>> : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistAIConfig(config: Partial<Pick<PageBuilderState, 'aiProvider' | 'aiModel' | 'aiApiKey'>>) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(config));
-  } catch {
-    // ignore local storage write failures
-  }
-}
-
-const persistedAIConfig = readPersistedAIConfig();
 
 export const usePageBuilderStore = defineStore('pageBuilder', {
   state: (): PageBuilderState => ({
@@ -89,16 +52,9 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     selectedSectionId: null,
     selectedPreviewElement: null,
     centerMode: 'preview',
-    previewStatus: 'idle',
-    previewUrl: '',
     error: null,
     isSetupDrawerOpen: true,
-    isAIConfigOpen: false,
-    sectionSummaries: [],
-    assistantMessage: '',
-    aiProvider: persistedAIConfig?.aiProvider || 'openrouter',
-    aiModel: persistedAIConfig?.aiModel || 'openai/gpt-4.1-mini',
-    aiApiKey: persistedAIConfig?.aiApiKey || ''
+    sectionSummaries: []
   }),
 
   getters: {
@@ -123,7 +79,6 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         this.fieldRoleMap = {};
         this.project = null;
         this.activeFileId = null;
-        this.previewUrl = '';
         this.error = 'No data table is available yet.';
         return;
       }
@@ -157,6 +112,21 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.activeFileId = fileId;
     },
 
+    updateActiveFileContent(content: string) {
+      const project = this.project;
+      const activeFileId = this.activeFileId;
+
+      if (!project || !activeFileId) {
+        return;
+      }
+
+      project.files = project.files.map((file) => (
+        file.id === activeFileId
+          ? { ...file, content }
+          : file
+      ));
+    },
+
     selectSection(sectionId: string) {
       this.selectedSectionId = sectionId;
     },
@@ -176,56 +146,19 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
     setError(message: string | null) {
       this.error = message;
-      if (message) {
-        this.previewStatus = 'error';
-      }
     },
 
     toggleSetupDrawer(force?: boolean) {
       this.isSetupDrawerOpen = typeof force === 'boolean' ? force : !this.isSetupDrawerOpen;
     },
 
-    toggleAIConfig(force?: boolean) {
-      this.isAIConfigOpen = typeof force === 'boolean' ? force : !this.isAIConfigOpen;
-    },
-
-    updateAIConfig(payload: {
-      provider?: 'openrouter' | 'qwen' | 'siliconflow';
-      model?: string;
-      apiKey?: string;
-    }) {
-      if (payload.provider) {
-        this.aiProvider = payload.provider;
-      }
-
-      if (typeof payload.model === 'string') {
-        this.aiModel = payload.model;
-      }
-
-      if (typeof payload.apiKey === 'string') {
-        this.aiApiKey = payload.apiKey;
-      }
-
-      persistAIConfig({
-        aiProvider: this.aiProvider,
-        aiModel: this.aiModel,
-        aiApiKey: this.aiApiKey
-      });
-    },
-
-    async generateFromTable(tables: DataTable[]) {
+    createWorkspaceFromTable(tables: DataTable[]) {
       const table = tables.find((item) => item.id === this.selectedTableId);
 
       if (!table) {
-        this.error = 'Select a data table before generating the page.';
-        this.previewStatus = 'error';
+        this.error = 'Select a data table before creating the workspace.';
         return;
       }
-
-      this.previewStatus = 'building';
-      this.error = null;
-      this.previewUrl = '';
-      this.selectedPreviewElement = null;
 
       const request: PageBuildRequest = {
         tableId: table.id,
@@ -236,29 +169,18 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         density: this.density
       };
 
-      try {
-        const fallback = buildMockPageProject(table, request);
-        const previewUrl = await prepareProjectPreview(fallback.project.files, {
-          projectId: 'page-preview'
-        });
+      const nextWorkspace = createPageBuilderWorkspace(table, request);
 
-        this.fieldRoleMap = fallback.fieldRoleMap;
-        this.spec = fallback.spec;
-        this.project = {
-          ...fallback.project,
-          previewUrl
-        };
-        this.activeFileId = fallback.project.files.find((file) => file.visibility === 'project')?.id || null;
-        this.previewUrl = previewUrl;
-        this.sectionSummaries = fallback.sectionSummaries;
-        this.assistantMessage = '当前先跳过 AI，直接生成真实 Vue 项目文件，并通过本地 Vite 预览服务渲染中间预览。';
-        this.previewStatus = 'ready';
-        this.selectedSectionId = fallback.sectionSummaries[0]?.id || null;
-        this.isSetupDrawerOpen = false;
-      } catch (error: any) {
-        this.previewStatus = 'error';
-        this.error = error.message || 'Failed to generate fallback page preview.';
-      }
+      this.error = null;
+      this.fieldRoleMap = nextWorkspace.fieldRoleMap;
+      this.spec = nextWorkspace.spec;
+      this.project = nextWorkspace.project;
+      this.activeFileId = nextWorkspace.project.files.find((file) => file.visibility === 'project')?.id || null;
+      this.sectionSummaries = nextWorkspace.sectionSummaries;
+      this.selectedSectionId = nextWorkspace.sectionSummaries[0]?.id || null;
+      this.selectedPreviewElement = null;
+      this.centerMode = 'preview';
+      this.isSetupDrawerOpen = false;
     }
   }
 });

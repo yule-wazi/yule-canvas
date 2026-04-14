@@ -2,9 +2,8 @@
   <section class="page-builder-sandbox">
     <PageBuilderPreview
       v-if="mode === 'preview'"
-      :preview-url="previewUrl"
+      :files="files"
       :viewport="viewport"
-      :status-label="statusLabel"
       @change-viewport="$emit('changeViewport', $event)"
     />
 
@@ -13,6 +12,7 @@
       :files="files"
       :active-file-id="activeFileId"
       @select-file="$emit('selectFile', $event)"
+      @update-content="$emit('updateContent', $event)"
     />
 
     <PageBuilderDataPanel
@@ -34,9 +34,7 @@ defineProps<{
   mode: PageBuilderCenterMode;
   files: PageBuilderFile[];
   activeFileId: string | null;
-  previewUrl: string;
   viewport: 'desktop' | 'tablet' | 'mobile';
-  statusLabel: string;
   dataTitle: string;
   dataDescription: string;
   dataContent: string;
@@ -44,6 +42,7 @@ defineProps<{
 
 defineEmits<{
   selectFile: [fileId: string];
+  updateContent: [value: string];
   changeViewport: [viewport: 'desktop' | 'tablet' | 'mobile'];
 }>();
 </script>

@@ -13,39 +13,142 @@
           {{ option.label }}
         </button>
       </div>
-      <span class="preview-status">{{ statusLabel }}</span>
+
+      <span class="preview-status">{{ files.length ? 'Sandpack preview' : 'No workspace' }}</span>
     </div>
 
     <div class="preview-stage" :class="`is-${viewport}`">
-      <iframe
-        v-if="previewUrl"
-        class="preview-frame"
-        title="生成页面预览"
-        :src="previewUrl"
-      />
-      <div v-else class="preview-placeholder">
-        先生成页面工程，预览会显示在这里。
+      <div v-if="!files.length" class="preview-placeholder">
+        Create a workspace to start the live preview.
       </div>
+
+      <div v-else ref="mountRef" class="preview-mount"></div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  previewUrl: string;
+import React from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import {
+  SandpackLayout,
+  SandpackPreview,
+  SandpackProvider
+} from '@codesandbox/sandpack-react';
+import type { SandpackFiles } from '@codesandbox/sandpack-react';
+import type { PageBuilderFile } from '../../types/pageBuilder';
+
+const props = defineProps<{
+  files: PageBuilderFile[];
   viewport: 'desktop' | 'tablet' | 'mobile';
-  statusLabel: string;
 }>();
 
 defineEmits<{
   changeViewport: [viewport: 'desktop' | 'tablet' | 'mobile'];
 }>();
 
+const mountRef = ref<HTMLDivElement | null>(null);
+let reactRoot: Root | null = null;
+
 const options = [
-  { label: '桌面', value: 'desktop' as const },
-  { label: '平板', value: 'tablet' as const },
-  { label: '手机', value: 'mobile' as const }
+  { label: 'Desktop', value: 'desktop' as const },
+  { label: 'Tablet', value: 'tablet' as const },
+  { label: 'Mobile', value: 'mobile' as const }
 ];
+
+const sandpackFiles = computed<SandpackFiles>(() => {
+  return props.files.reduce<SandpackFiles>((result, file) => {
+    result[`/${file.path}`] = {
+      code: file.content,
+      readOnly: !file.editable,
+      hidden: file.visibility !== 'project'
+    };
+    return result;
+  }, {
+    '/package.json': JSON.stringify({
+      name: 'page-builder-demo',
+      main: '/src/main.js'
+    }, null, 2)
+  });
+});
+
+async function renderReactPreview() {
+  await nextTick();
+
+  if (!mountRef.value) {
+    return;
+  }
+
+  if (!reactRoot) {
+    reactRoot = createRoot(mountRef.value);
+  }
+
+  const element = React.createElement(
+    SandpackProvider,
+    {
+      key: JSON.stringify(props.files.map((file) => [file.path, file.content])),
+      template: 'vanilla',
+      files: sandpackFiles.value,
+      customSetup: {
+        entry: '/src/main.js'
+      },
+      options: {
+        autorun: true,
+        autoReload: true,
+        recompileMode: 'immediate',
+        recompileDelay: 0,
+        showNavigator: false,
+        showRefreshButton: false,
+        showOpenInCodeSandbox: false,
+        showLineNumbers: false,
+        showTabs: false
+      }
+    },
+    React.createElement(
+      SandpackLayout,
+      {
+        style: {
+          width: '100%',
+          height: '100%',
+          border: '0',
+          borderRadius: '0',
+          overflow: 'hidden',
+          background: '#050505'
+        }
+      },
+      React.createElement(SandpackPreview, {
+        showNavigator: false,
+        showOpenInCodeSandbox: false,
+        showRefreshButton: false,
+        showRestartButton: false,
+        style: {
+          width: '100%',
+          height: '100%'
+        }
+      })
+    )
+  );
+
+  reactRoot.render(element);
+}
+
+watch(
+  () => props.files,
+  async () => {
+    await renderReactPreview();
+  },
+  { deep: true, flush: 'post' }
+);
+
+onMounted(() => {
+  void renderReactPreview();
+});
+
+onBeforeUnmount(() => {
+  reactRoot?.unmount();
+  reactRoot = null;
+});
 </script>
 
 <style scoped>
@@ -107,25 +210,24 @@ const options = [
   background: #050505;
 }
 
-.preview-stage.is-desktop .preview-frame {
+.preview-stage.is-desktop .preview-mount {
   width: 100%;
 }
 
-.preview-stage.is-tablet .preview-frame {
+.preview-stage.is-tablet .preview-mount {
   width: 960px;
   max-width: 100%;
 }
 
-.preview-stage.is-mobile .preview-frame {
+.preview-stage.is-mobile .preview-mount {
   width: 440px;
   max-width: 100%;
 }
 
-.preview-frame {
+.preview-mount {
   width: 100%;
   height: 100%;
   min-height: 100%;
-  border: 0;
   background: #050505;
 }
 
@@ -135,5 +237,16 @@ const options = [
   width: 100%;
   min-height: 100%;
   color: var(--color-text-secondary);
+}
+
+:deep(.sp-wrapper),
+:deep(.sp-layout),
+:deep(.sp-stack) {
+  height: 100%;
+}
+
+:deep(.sp-preview-container) {
+  height: 100%;
+  border: 0;
 }
 </style>

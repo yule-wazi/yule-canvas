@@ -1,31 +1,31 @@
 <template>
   <header class="page-builder-topbar">
     <div class="topbar-left">
-      <router-link to="/" class="nav-back" title="返回首页">返回</router-link>
+      <router-link to="/" class="nav-back" title="Back to home">Back</router-link>
       <div class="title-group">
-        <p class="eyebrow">页面生成工作台</p>
+        <p class="eyebrow">Page Builder</p>
         <h1>{{ title }}</h1>
       </div>
     </div>
 
     <div class="topbar-center">
       <div class="meta-chip">
-        <span class="meta-label">数据表</span>
+        <span class="meta-label">Table</span>
         <strong>{{ tableName }}</strong>
       </div>
       <div class="meta-chip">
-        <span class="meta-label">页面类型</span>
+        <span class="meta-label">Page Type</span>
         <strong>{{ pageTypeLabel }}</strong>
       </div>
       <div class="meta-chip">
-        <span class="meta-label">风格预设</span>
+        <span class="meta-label">Style</span>
         <strong>{{ stylePresetLabel }}</strong>
       </div>
     </div>
 
     <div class="topbar-right">
       <button class="ghost-btn" type="button" @click="$emit('toggleSetup')">
-        {{ setupOpen ? '收起 AI 面板' : '打开 AI 面板' }}
+        {{ setupOpen ? 'Hide setup' : 'Show setup' }}
       </button>
       <div class="mode-switch">
         <button
@@ -39,7 +39,7 @@
           {{ mode.label }}
         </button>
       </div>
-      <button class="generate-btn" type="button" @click="$emit('generate')">生成页面</button>
+      <button class="generate-btn" type="button" @click="$emit('generate')">Create workspace</button>
     </div>
   </header>
 </template>
@@ -64,22 +64,22 @@ defineEmits<{
 }>();
 
 const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
-  { label: '预览', value: 'preview' },
-  { label: '代码', value: 'code' },
-  { label: '数据', value: 'data' }
+  { label: 'Preview', value: 'preview' },
+  { label: 'Code', value: 'code' },
+  { label: 'Data', value: 'data' }
 ];
 
 const pageTypeLabelMap: Record<PageBuilderPageType, string> = {
-  'news-list': '新闻列表',
-  'article-detail': '文章详情',
-  gallery: '图片画廊',
-  catalog: '卡片目录'
+  'news-list': 'News List',
+  'article-detail': 'Article Detail',
+  gallery: 'Gallery',
+  catalog: 'Catalog'
 };
 
 const stylePresetLabelMap: Record<PageBuilderStylePreset, string> = {
-  'nvidia-tech': '英伟达科技风',
-  'editorial-dark': '编辑部深色风',
-  'clean-catalog': '清爽目录风'
+  'nvidia-tech': 'Signal Dark',
+  'editorial-dark': 'Editorial',
+  'clean-catalog': 'Clean Catalog'
 };
 
 const pageTypeLabel = computed(() => pageTypeLabelMap[props.pageType]);

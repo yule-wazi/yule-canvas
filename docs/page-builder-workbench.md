@@ -2,524 +2,378 @@
 
 ## 1. Scope
 
-This file is the stable design and implementation direction for the page-builder workbench.
+This file is the stable design and official refactor direction for the page-builder workbench.
 
 Use this file to answer:
 
-- what the workbench should look like
-- what kind of generated project should exist on disk
-- how preview should work in a way that remains compatible with AI-generated Vue files
-- what technical direction should now be treated as the default path
-- what the phased implementation plan is
+- what the page-builder product must become
+- which preview/runtime architecture is now officially chosen
+- how AI-generated Vue files should be supported
+- how crawler data should enter generated pages
+- what the refactor phases are
+- what the implementation checklist is
 
-Do not use this file as the recent task handoff log.
-Use `docs/page-builder-context.md` for recent debugging context.
+Do not use this file as the recent handoff log.
+Use `docs/page-builder-context.md` for current session state.
 
-## 2. Core Product Direction
+## 2. Core Product Goal
 
-The first real page builder should be:
+The page builder must support:
 
-`a full-screen generated-page IDE-like workbench backed by a real runnable Vue project`
+`AI freely generating and editing real Vue project files that render pages from dynamically requested crawler-backed data`
 
-That means:
+This means the product is not a static demo generator.
 
-- the left side behaves like a real project explorer
-- the center is the dominant work surface
-- generated output is a real project, not a fake preview representation
-- AI is allowed to generate and later edit real Vue project files
-- preview must come from the same real project files shown in the left tree
+It is intended to become:
 
-The first real page builder should not be:
+`a data-driven Vue page workspace where generated files, preview, and crawler-backed runtime data are all part of the same editing loop`
 
-- a fake card-based generator
-- a separate hidden runtime that only imitates the shown files
-- a custom mini Vue compiler that tries to emulate Vite
-- a system where preview and file tree can drift apart
+## 3. Official Architecture Decision
 
-## 3. Why The Current Preview Direction Is Being Replaced
+The official current-stage refactor direction is now:
 
-The previous preview direction attempted:
+`workspace files in app state -> Sandpack preview runtime -> generated Vue app -> dynamic data adapter -> crawler-backed API`
 
-`project.files -> backend custom preview compiler -> iframe srcdoc`
+This replaces the old direction:
 
-This direction is no longer the preferred architecture.
+`project.files -> custom preview compiler -> iframe srcdoc`
+
+The old custom preview compiler path should now be treated as abandoned for the main page-builder architecture.
+
+## 4. Why Sandpack Is Now The Chosen Refactor Direction
+
+Sandpack is now the official current-stage preview execution layer because it gives the project the best path to the real product goal while avoiding the fragility of the previous custom preview system.
+
+### 4.1 Why The Old `srcdoc` Direction Was Rejected
+
+The old custom preview path was rejected because:
+
+- it was too fragile even for fallback-generated Vue files
+- it would become much more fragile once AI is allowed to freely generate Vue SFC files
+- it forced the repo to re-implement behavior already solved by real frontend toolchains
+
+### 4.2 Why The Temporary Disk-Based Vite Preview Experiment Is Not The Main Refactor Path
+
+The local `generated-projects/... + spawned Vite` experiment was valuable as a validation step, but it should not remain the current main refactor path.
 
 Reason:
 
-- it is too fragile even for fallback-generated Vue files
-- it becomes much more fragile once AI can freely generate arbitrary Vue SFC structure
-- the system would need to keep re-implementing behavior that Vite and Vue already solve:
-  - SFC compilation
-  - import resolution
-  - CSS handling
-  - TS transpilation details
-  - runtime mounting behavior
-  - asset handling
-  - Vite-specific expectations
+- it introduces local-process and filesystem complexity too early
+- it is awkward for fast iteration inside the current app
+- it complicates the current stage before the workspace model and data contract are stable
+- it is still not the deployed multi-user answer
 
-Conclusion:
+### 4.3 Why Sandpack Fits The Current Stage Better
 
-`if AI is expected to freely generate Vue files, preview must use the real Vue/Vite toolchain, not a custom srcdoc compiler path`
+Sandpack is now preferred for the current stage because:
 
-## 4. New Runtime Strategy
+- it can run a virtual file workspace directly in the browser
+- it supports fast feedback for file changes
+- it is far more suitable than the old custom compiler for iterating on Vue-like app preview
+- it lets the product settle the workspace and file-editing model before server runtime concerns dominate the implementation
 
-The workbench should now move to:
+Important limitation:
 
-`real project files on disk -> real Vite preview server -> iframe loads real preview URL`
+Sandpack is the chosen current-stage refactor path, not the guaranteed final server-side runtime architecture.
 
-This is now the preferred runtime architecture.
+That is acceptable.
 
-### 4.1 Required Contract
+The current stage needs:
 
-The center preview must render from the exact same generated project files shown in the left file tree.
+- a stable workspace editing model
+- a stable preview execution model
+- a stable data adapter contract
+
+Sandpack is now the official tool for that stage.
+
+## 5. Product Contract
+
+The product contract is now:
+
+`the left file tree, code surface, and center preview must all stay aligned to the same workspace files, and those generated Vue files must be written against a stable dynamic data adapter contract`
 
 Accepted behavior:
 
-- AI generates files
-- those files are written to a real project directory
-- those exact files appear in the left tree
-- preview loads the running Vite project from those exact files
+- AI or fallback generates files into the workspace
+- left tree shows those exact files
+- code view edits those exact files
+- Sandpack preview runs those exact files
+- generated Vue code can request data through the stable page-builder data interface
 
 Rejected behavior:
 
-- left tree shows one thing while preview uses hidden synthetic HTML
-- preview depends on a custom simplified Vue interpreter
-- fallback code is displayed as files but preview is produced by unrelated runtime content
+- preview depending on hidden synthetic HTML not represented in the file tree
+- static preview row files being treated as the final data strategy
+- generated code directly depending on crawler internals
 
-## 5. High-Level Architecture
+## 6. Runtime Model
 
-The new page-builder runtime should contain four layers.
+The runtime model should now be split into four explicit layers.
 
-### 5.1 Generation Layer
+### 6.1 Workspace Layer
 
-Input:
+The workspace layer owns:
 
-- selected data table
-- page goal / prompt
-- style preset
-- page type
-- prior generated project if editing
+- `workspaceId`
+- file records
+- active file
+- project metadata
+- page type / style preset / selected table
 
-Output:
+At the current stage, the workspace may still be local and in-app, but the abstraction should already be workspace-first.
 
-- a set of real project files
+### 6.2 Preview Execution Layer
 
-In the first version, AI should not own the whole toolchain boilerplate.
-The system should provide a stable project scaffold and AI should mainly generate editable application files.
+The preview execution layer is now officially:
 
-### 5.2 Project Materialization Layer
+- `Sandpack`
 
-The generated files must be written to a real local directory.
+Responsibilities:
 
-Recommended root:
+- run the current workspace file set
+- re-render when files change
+- surface runtime/compile errors
+- keep preview tightly coupled to the workspace files
+
+### 6.3 Data Access Layer
+
+The generated page must depend on a stable adapter contract, not raw crawler implementation details.
+
+Suggested generated files:
 
 ```text
-generated-projects/
-  <project-id>/
+src/data/
+  bindings.ts
+  tableAdapter.ts
+  apiClient.ts
 ```
 
-This directory should contain the actual runnable Vue page project.
+The generated app should call this layer instead of inventing arbitrary crawler fetch logic.
 
-### 5.3 Preview Server Layer
+### 6.4 Generation Layer
 
-Each generated project should be previewed by a real Vite dev server.
+Generation remains split into:
 
-That means:
+- fallback generation
+- later AI generation
 
-- the backend manages the preview process
-- the backend knows which port belongs to which project
-- the backend can return the preview URL
-- the backend can surface preview startup failure or runtime failure
+Both must output files that follow the same workspace contract.
 
-### 5.4 Frontend Workbench Layer
+## 7. Dynamic Data Requirement
 
-The frontend should:
+Dynamic data is a hard requirement.
 
-- show the real generated files in the left tree
-- show the preview via `iframe src="<real local preview URL>"`
-- keep code and preview tied to the same project id
-- display preview startup and runtime errors visibly
+The generated page must eventually support:
 
-## 6. Generated Project Model
+- latest crawler results being fetched at runtime
+- user-triggered or scheduled crawler runs updating page content
+- page rendering that is not permanently tied to static embedded rows
 
-The generated output should now be understood as a real Vue mini-project, not a synthetic file set for an iframe compiler.
+Static sample data may still exist temporarily for fallback, development, or preview safety, but it is not the final runtime model.
 
-### 6.1 Project Root
+## 8. Generated App Data Contract
+
+The generated Vue app should eventually be guided toward a stable runtime contract such as:
+
+- `getTableRows(tableId)`
+- `getTableSnapshot(tableId)`
+- `getPageBuilderDataSource(config)`
+
+This should be exposed through generated app files, not through direct crawler internals.
+
+### 8.1 AI Contract
+
+AI should generate Vue code against the adapter contract, not against raw crawler service details.
+
+That means AI context should include:
+
+- selected table id
+- available fields
+- sample rows
+- allowed adapter methods
+- binding expectations
+
+### 8.2 Why This Matters
+
+This keeps the product maintainable while still allowing free-form Vue generation.
+
+## 9. File Structure Direction
+
+The workspace should represent a real Vue mini-project shape.
 
 Recommended structure:
 
 ```text
-generated-projects/
-  <project-id>/
-    index.html
-    package.json
-    vite.config.ts
-    tsconfig.json
-    src/
-      main.ts
-      App.vue
-      components/
-      data/
-      styles/
-      spec/
+workspace
+  /src
+    App.vue
+    main.ts
+    /app
+      PageView.vue
+    /components
+      /sections
+    /data
+      bindings.ts
+      tableAdapter.ts
+      apiClient.ts
+    /spec
+      page-spec.json
+    /styles
+      page.css
 ```
 
-### 6.2 Stable System-Owned Files
+### 9.1 Stable System-Owned Files
 
-These should be provided by the system template and remain stable unless there is a deliberate migration:
+These should remain system-owned in the first practical version:
 
-- `index.html`
-- `package.json`
-- `vite.config.ts`
-- `tsconfig.json`
 - `src/main.ts`
+- minimal runtime scaffold files needed by Sandpack
 
-These files should not be regenerated casually by AI in the first implementation.
+### 9.2 AI-Editable Files
 
-### 6.3 AI-Editable Files
-
-In the first practical version, AI should mainly generate and edit:
+AI should mainly generate and edit:
 
 - `src/App.vue`
+- `src/app/PageView.vue`
 - `src/components/**/*.vue`
 - `src/data/*.ts`
 - `src/styles/*.css`
 - `src/spec/*.json`
 
-This still allows AI to create a whole page project while keeping the runtime scaffold stable.
+## 10. Current Stage
 
-## 7. Preview Contract
+The project is now in:
 
-The new preview contract should be:
+`official Sandpack refactor stage`
 
-`the iframe loads a real URL served by the generated project's Vite server`
+Meaning:
 
-Example:
+- the old `srcdoc` custom compiler path is no longer relevant
+- the temporary real-disk Vite preview experiment is not the official current refactor path
+- the codebase should now move toward a Sandpack-backed workspace preview architecture
+- AI remains disabled until fallback + Sandpack + dynamic-data contract are stable
 
-```text
-http://127.0.0.1:5178/
-```
+## 11. Decisions Already Made
 
-The iframe should no longer depend on `srcdoc` for Vue project execution.
+These decisions are now fixed unless explicitly changed.
 
-### 7.1 Why This Is Better
+1. AI must eventually be able to freely generate Vue files.
+2. Dynamic data fetching is a hard requirement.
+3. Sandpack is now the official preview execution layer for the current refactor stage.
+4. The old custom preview compiler path is abandoned.
+5. Static preview rows are not the final data strategy.
+6. Generated pages must consume data through a stable adapter contract.
+7. The product should remain workspace-centered.
 
-Benefits:
+## 12. Official Refactor Plan
 
-- real Vue compilation
-- real import resolution
-- real CSS behavior
-- real runtime errors
-- easier support for arbitrary AI-generated Vue structure
-- preview behavior matches what a user would get in a normal Vue project
+The refactor should now happen in phases.
 
-Tradeoff:
-
-- more infrastructure work in backend process management
-- local project directories must be managed
-- Vite server lifecycle must be managed
-
-This tradeoff is acceptable because it removes the much worse long-term cost of maintaining a custom Vue preview compiler.
-
-## 8. File Explorer Direction
-
-The left side must remain a real IDE-style explorer.
-
-Required qualities:
-
-- collapsible folders
-- nested files
-- active file highlight
-- stable project-root mental model
-- file tree is backed by the real generated project directory
-
-Reference mental model:
-
-- VS Code explorer
-- normal code workspace explorers
-
-Important rule:
-
-`the left tree should reflect the real generated project files, not a derived display-only model`
-
-## 9. Center Surface Direction
-
-The center work area should continue to support:
-
-- `Preview`
-- `Code`
-- `Data`
-
-But the meaning of `Preview` changes:
-
-- old meaning: srcdoc preview from a custom compiler
-- new meaning: iframe pointed at a real local Vite preview URL
-
-The center remains dominant.
-The workbench is not a dashboard.
-
-## 10. Code Surface Direction
-
-The code area should feel like a real editor over real generated files.
-
-Required qualities:
-
-- active file tabs
-- dark editor styling
-- readable code
-- real file contents from disk-backed generated project state
-
-Preferred long-term choice:
-
-- `Monaco Editor`
-
-Short-term custom rendering is acceptable if it reads from the real file model.
-
-## 11. Data Surface Direction
-
-The data panel should continue to show the currently selected table payload.
-
-Purpose:
-
-- keep the generated page grounded in extracted data
-- make crawler -> table -> page explicit
-- help the user inspect what the generated page is expected to bind against
-
-## 12. Setup Drawer Direction
-
-The setup drawer remains the AI and generation entry point.
-
-It should still preserve:
-
-- data table selection
-- page type
-- style preset
-- page title / goal / density
-
-Later it should evolve into:
-
-- multi-turn AI dialogue
-- regeneration requests
-- AI edits against existing project files
-
-## 13. Preview Infrastructure Design
-
-The backend should gain a dedicated preview-project manager.
-
-Suggested responsibility:
-
-- create project directories
-- write generated files
-- ensure template files exist
-- start preview servers
-- reuse running preview servers where possible
-- return preview URL and status
-- stop and clean up preview processes when needed
-
-Suggested service name:
-
-- `PageBuilderProjectManager`
-- or `PageBuilderPreviewManager`
-
-### 13.1 Suggested Backend Capabilities
-
-Core operations:
-
-- `ensureProject(projectId)`
-- `writeProjectFiles(projectId, files)`
-- `startPreview(projectId)`
-- `getPreviewUrl(projectId)`
-- `getPreviewStatus(projectId)`
-- `stopPreview(projectId)`
-
-### 13.2 Suggested Backend State
-
-For each project:
-
-- project id
-- absolute directory path
-- assigned port
-- child process handle
-- status
-- last startup error
-- last known preview URL
-
-## 14. Preview Project Template
-
-The system should provide a stable Vue + Vite template for generated projects.
-
-Recommended template location:
-
-```text
-backend/templates/page-builder-vite/
-```
-
-Example contents:
-
-- `index.html`
-- `package.json`
-- `vite.config.ts`
-- `tsconfig.json`
-- `src/main.ts`
-
-This template should be copied or initialized into each generated project directory.
-
-## 15. AI Generation Boundary
-
-The first production version should not ask AI to invent everything.
-
-Instead:
-
-- system owns scaffold and preview runtime contract
-- AI owns page-level application files
-
-This is the right balance because:
-
-- it gives AI enough freedom to generate a meaningful Vue page
-- it prevents repeated failures from broken scaffold files
-- it keeps preview predictable
-
-Later, broader AI control can be considered if needed.
-
-## 16. Fallback Generation Direction
-
-Fallback generation should still exist.
-
-But fallback generation should now produce:
-
-- real Vue project application files compatible with the stable template
-- files that are written to the real project directory
-- files that the real Vite preview server can run
-
-That means fallback generation is no longer a special preview path.
-
-It becomes:
-
-`a guaranteed valid Vue page project written into the same real runtime environment as AI output`
-
-This is important because it makes fallback a real production-safe baseline, not a separate simulation path.
-
-## 17. Error Surface Requirements
-
-The workbench must no longer allow black-screen-without-explanation behavior.
-
-Required error surfaces:
-
-- project write failure
-- preview server start failure
-- port conflict
-- dependency/template missing
-- Vite compile error
-- browser runtime error inside the generated project
-
-The user should see a visible error state in the preview area or adjacent banner.
-
-## 18. Phased Implementation Plan
-
-Implementation should happen in stages.
-
-### Phase 1: Replace Custom Preview With Real Preview Infrastructure
+### Phase 1: Sandpack Preview Replacement
 
 Goal:
 
-- remove the dependency on the custom srcdoc Vue execution path for the main page-builder preview flow
+- replace the remaining preview-path assumptions with a Sandpack-backed workspace preview
 
 Tasks:
 
-- create generated project root
-- create stable Vite template
-- implement backend preview manager
-- write fallback-generated files into a real project directory
-- start a real Vite preview server
-- load preview via iframe URL
+- introduce a Sandpack preview component into the center preview surface
+- map existing `project.files` / workspace files into Sandpack file objects
+- keep the left file tree as the source-of-truth UI
+- make fallback generation output the file set Sandpack consumes
+- remove dependency on the old disk-preview path from the main page-builder flow
 
 Success criteria:
 
-- fallback-generated Vue project renders in iframe through real Vite
-- left tree matches the real project files used by preview
+- fallback-generated Vue workspace files render through Sandpack in the center preview
+- changing files in state causes preview updates
 
-### Phase 2: Keep AI Disabled, Prove Real Runtime Loop First
+### Phase 2: Workspace Normalization
 
 Goal:
 
-- validate the end-to-end project pipeline without AI instability
+- formalize the workspace model around `workspaceId`
 
 Tasks:
 
-- keep generate action on fallback-only mode
-- verify file write -> Vite refresh -> iframe preview flow
-- surface startup/runtime errors cleanly
+- introduce explicit workspace metadata
+- decouple preview state from one-off generation result state
+- ensure left tree, code view, and preview all read the same workspace data
 
 Success criteria:
 
-- clicking generate reliably produces a visible page or a visible real error
+- the product can clearly refer to a current workspace instead of just a current generated result
 
-### Phase 3: Re-enable AI For App-Level Files Only
+### Phase 3: Dynamic Data Adapter Contract
 
 Goal:
 
-- let AI generate Vue page files inside the stable project scaffold
+- formalize how generated Vue pages request crawler-backed data
 
 Tasks:
 
-- AI outputs editable app files
-- backend writes them into the existing project directory
-- Vite refreshes automatically
-- iframe reflects the updated real project
+- define `tableAdapter.ts` and `apiClient.ts` contract
+- define what methods generated pages are allowed to call
+- ensure fallback generation uses the same contract
+- ensure preview can use a safe development implementation of the contract
 
 Success criteria:
 
-- AI-generated Vue files render through the same real project runtime path
+- generated pages no longer depend on static rows as their long-term model
+- AI later can be instructed to use the stable adapter contract
 
-### Phase 4: Add Incremental AI Editing
+### Phase 4: AI Re-enable
 
 Goal:
 
-- allow AI to modify existing files instead of always replacing the whole project
+- allow AI to generate and edit Vue files against the Sandpack workspace and adapter contract
 
 Tasks:
 
-- pass previous project files into AI context
-- support targeted file updates
-- keep spec / memory files stable
+- pass the workspace file set into AI context
+- constrain AI to the allowed project structure and data contract
+- update workspace files from AI output
+- confirm preview updates after file changes
 
 Success criteria:
 
-- AI can refine a project over multiple turns without replacing everything
+- AI can generate and revise Vue files that run in preview and use the expected data layer
 
-## 19. Immediate MVP To Build Next
+## 13. Official Implementation Checklist
 
-The immediate next MVP should be intentionally narrow.
+The current implementation checklist is:
 
-Build this first:
+1. Add Sandpack dependency and choose the Vue-capable setup path.
+2. Introduce a Sandpack-backed preview component.
+3. Convert the current fallback file model into the Sandpack file format.
+4. Keep the left file tree and code area driven by the same file records.
+5. Remove the main UI dependency on the current disk-preview path.
+6. Define the initial generated data adapter contract.
+7. Make fallback generation produce files that already use that contract.
+8. Verify preview errors are visible and understandable.
+9. Only after the above, re-enable AI generation.
 
-1. A single generated preview project directory
-2. A fixed local Vite port
-3. Stable system template files
-4. Fallback-generated `src/App.vue` and companion files
-5. Backend start/reuse of the Vite preview server
-6. Frontend iframe pointing to the real preview URL
-7. Left file tree reading from the same generated project file model
+## 14. Immediate Next Task List
 
-Do not build multi-project process orchestration first.
-Do not build arbitrary scaffold generation first.
-Do not re-enable AI preview first.
+The next concrete tasks should now be:
 
-## 20. What To Avoid
+1. integrate Sandpack into the preview pane
+2. make fallback-generated Vue files render through Sandpack
+3. define the first stable dynamic data adapter API shape
+4. stop treating static preview rows as the final runtime contract
+5. keep AI disabled until those three pieces are stable
+
+## 15. What To Avoid
 
 The workbench should avoid:
 
-- continuing to invest heavily in the custom srcdoc Vue compiler path as the primary preview architecture
-- asking AI to generate the full Vite scaffold from scratch in the first practical version
-- mixing synthetic preview-only files with user-facing project files
-- building a second editing model that fights with code generation
+- continuing to invest in the abandoned `srcdoc` custom compiler path
+- treating the temporary disk-preview experiment as the final current-stage solution
+- coupling generated Vue files directly to crawler internals
+- designing the generated app around static injected row files as the final runtime path
 
-## 21. Summary
+## 16. Summary
 
 The page-builder workbench should now be understood as:
 
-`a full-screen IDE-like generated page workspace where the left tree shows a real generated Vue project, the center preview loads that same project through a real local Vite runtime, and AI generation is constrained to real application files inside a stable system-owned scaffold`
-
-The key strategic decision is:
-
-`to support AI-generated Vue files reliably, the workbench must stop simulating Vue preview through srcdoc and instead run real generated projects through the actual Vue/Vite toolchain`
+`a workspace-centered Vue page builder where AI will eventually freely generate Vue files, Sandpack is the official current-stage preview engine, and generated pages must be designed from the start to consume crawler-backed data through a stable adapter contract`

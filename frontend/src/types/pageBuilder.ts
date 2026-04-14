@@ -104,11 +104,11 @@ export interface PageBindingContract {
 }
 
 export interface PageBuilderProject {
+  workspaceId: string;
   rootName: string;
   files: PageBuilderFile[];
   tree: PageBuilderTreeNode[];
   bindingContract: PageBindingContract;
-  previewUrl?: string | null;
 }
 
 export interface PageBuilderPreviewSelection {
