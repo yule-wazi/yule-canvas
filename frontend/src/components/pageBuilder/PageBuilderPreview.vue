@@ -114,11 +114,13 @@ async function renderReactPreview() {
         autoReload: true,
         recompileMode: 'immediate',
         recompileDelay: 0,
+        logLevel: 10,
         showNavigator: false,
         showRefreshButton: false,
         showOpenInCodeSandbox: false,
         showLineNumbers: false,
-        showTabs: false
+        showTabs: false,
+        experimental_enableServiceWorker: false
       }
     },
     React.createElement(
