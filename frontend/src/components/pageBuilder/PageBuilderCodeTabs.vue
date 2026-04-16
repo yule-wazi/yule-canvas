@@ -28,13 +28,11 @@
         </div>
       </div>
 
-      <textarea
-        :value="draftContent"
-        class="code-input"
+      <CodeEditor
+        :model-value="draftContent"
+        :language="activeFile.type"
         :readonly="!activeFile.editable"
-        spellcheck="false"
-        @input="handleInput"
-        @blur="flushPendingUpdate"
+        @update:model-value="handleInput"
       />
     </div>
 
@@ -46,6 +44,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import CodeEditor from './CodeEditor.vue';
 import type { PageBuilderFile } from '../../types/pageBuilder';
 
 const props = defineProps<{
@@ -101,8 +100,8 @@ function flushPendingUpdate() {
   lastCommittedContent = draftContent.value;
 }
 
-function handleInput(event: Event) {
-  draftContent.value = (event.target as HTMLTextAreaElement).value;
+function handleInput(value: string) {
+  draftContent.value = value;
   scheduleUpdate();
 }
 
@@ -182,6 +181,10 @@ onBeforeUnmount(() => {
   background: #ff8b61;
 }
 
+.tab-dot--vue {
+  background: #42b883;
+}
+
 .code-editor {
   display: flex;
   flex: 1;
@@ -242,24 +245,12 @@ onBeforeUnmount(() => {
   color: #bddd78;
 }
 
-.code-input {
-  width: 100%;
+.code-editor :deep(.cm-editor) {
   height: 100%;
-  flex: 1;
-  min-height: 0;
-  padding: 16px 18px 24px;
-  border: 0;
-  outline: none;
-  resize: none;
-  background: #0f1115;
-  color: #d9dee7;
-  font-family: var(--font-family-mono);
-  font-size: 13px;
-  line-height: 1.7;
 }
 
-.code-input[readonly] {
-  color: #9ca4b3;
+.code-editor :deep(.cm-scroller) {
+  font-family: var(--font-family-mono);
 }
 
 .code-empty {
