@@ -29,11 +29,12 @@
       </div>
 
       <textarea
-        :value="activeFile.content"
+        :value="draftContent"
         class="code-input"
         :readonly="!activeFile.editable"
         spellcheck="false"
-        @input="$emit('updateContent', ($event.target as HTMLTextAreaElement).value)"
+        @input="handleInput"
+        @blur="flushPendingUpdate"
       />
     </div>
 
@@ -44,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import type { PageBuilderFile } from '../../types/pageBuilder';
 
 const props = defineProps<{
@@ -52,12 +53,62 @@ const props = defineProps<{
   activeFileId: string | null;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   selectFile: [fileId: string];
   updateContent: [value: string];
 }>();
 
 const activeFile = computed(() => props.files.find((file) => file.id === props.activeFileId) || null);
+const draftContent = ref('');
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let lastCommittedContent = '';
+
+watch(
+  activeFile,
+  (file) => {
+    flushPendingUpdate();
+    draftContent.value = file?.content || '';
+    lastCommittedContent = file?.content || '';
+  },
+  { immediate: true }
+);
+
+function scheduleUpdate() {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+  }
+
+  debounceTimer = setTimeout(() => {
+    flushPendingUpdate();
+  }, 500);
+}
+
+function flushPendingUpdate() {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
+  if (!activeFile.value?.editable) {
+    return;
+  }
+
+  if (draftContent.value === lastCommittedContent) {
+    return;
+  }
+
+  emit('updateContent', draftContent.value);
+  lastCommittedContent = draftContent.value;
+}
+
+function handleInput(event: Event) {
+  draftContent.value = (event.target as HTMLTextAreaElement).value;
+  scheduleUpdate();
+}
+
+onBeforeUnmount(() => {
+  flushPendingUpdate();
+});
 </script>
 
 <style scoped>
