@@ -5,6 +5,9 @@
         <p class="eyebrow">Workspace Setup</p>
         <strong>Build the first editable workspace</strong>
       </div>
+      <button class="config-trigger" type="button" @click="isAIConfigOpen = true">
+        AI Config
+      </button>
     </div>
 
     <div class="drawer-body">
@@ -44,20 +47,81 @@
         />
 
         <p class="helper-text">
-          This MVP creates one editable workspace. Files update the preview in real time.
+          This MVP can create a local draft or ask AI to generate a multi-file workspace that appears directly in the file tree.
         </p>
       </section>
     </div>
 
     <div class="drawer-footer">
-      <button class="submit-btn" type="button" @click="$emit('generate')">Create workspace</button>
+      <div class="action-row">
+        <button class="secondary-btn" type="button" :disabled="isGenerating" @click="$emit('generate-local')">
+          Local Draft
+        </button>
+        <button class="submit-btn" type="button" :disabled="isGenerating" @click="$emit('generate-ai')">
+          {{ isGenerating ? 'Generating...' : 'Generate with AI' }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="isAIConfigOpen" class="config-modal-backdrop" @click.self="isAIConfigOpen = false">
+      <div class="config-modal">
+        <div class="config-header">
+          <div class="config-header-meta">
+            <span>AI Provider</span>
+            <strong>{{ providerLabel }}</strong>
+          </div>
+          <button class="config-close" type="button" @click="isAIConfigOpen = false">Close</button>
+        </div>
+
+        <div class="config-body">
+          <label class="field">
+            <span>Provider</span>
+            <select :value="aiProvider" @change="$emit('update:aiProvider', ($event.target as HTMLSelectElement).value)">
+              <option value="siliconflow">SiliconFlow</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="qwen">Qwen</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>API Key</span>
+            <input
+              :value="aiApiKey"
+              type="password"
+              class="text-input"
+              placeholder="Paste your provider API key"
+              @input="$emit('update:aiApiKey', ($event.target as HTMLInputElement).value)"
+            />
+          </label>
+
+          <label class="field">
+            <span>Model</span>
+            <input
+              :value="aiModel"
+              type="text"
+              class="text-input"
+              placeholder="Optional model override"
+              @input="$emit('update:aiModel', ($event.target as HTMLInputElement).value)"
+            />
+          </label>
+
+          <p class="helper-text">
+            These values are saved locally on this browser, so refreshes will not clear them.
+          </p>
+        </div>
+
+        <div class="config-footer">
+          <button class="submit-btn" type="button" @click="isAIConfigOpen = false">Done</button>
+        </div>
+      </div>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { DataTable } from '../../stores/dataTable';
+import type { PageBuilderAIProvider } from '../../types/pageBuilder';
 
 const props = defineProps<{
   open: boolean;
@@ -65,16 +129,38 @@ const props = defineProps<{
   selectedTableId: string | null;
   goal: string;
   fieldRoleMap: Record<string, string>;
+  isGenerating: boolean;
+  aiProvider: PageBuilderAIProvider;
+  aiApiKey: string;
+  aiModel: string;
 }>();
 
 defineEmits<{
-  generate: [];
+  'generate-local': [];
+  'generate-ai': [];
   'update:selectedTableId': [value: string];
   'update:goal': [value: string];
+  'update:aiProvider': [value: string];
+  'update:aiApiKey': [value: string];
+  'update:aiModel': [value: string];
 }>();
 
 const selectedTableLabel = computed(() => {
   return props.tables.find((item) => item.id === props.selectedTableId)?.name || 'No table selected';
+});
+
+const isAIConfigOpen = ref(false);
+
+const providerLabel = computed(() => {
+  if (props.aiProvider === 'openrouter') {
+    return 'OpenRouter';
+  }
+
+  if (props.aiProvider === 'qwen') {
+    return 'Qwen';
+  }
+
+  return 'SiliconFlow';
 });
 </script>
 
@@ -100,6 +186,10 @@ const selectedTableLabel = computed(() => {
 }
 
 .drawer-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   padding: 18px 18px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -121,6 +211,17 @@ const selectedTableLabel = computed(() => {
 .topbar-meta strong {
   color: #f5f7fb;
   font-size: 18px;
+}
+
+.config-trigger,
+.config-close {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #f5f7fb;
+  cursor: pointer;
 }
 
 .drawer-body {
@@ -154,7 +255,8 @@ const selectedTableLabel = computed(() => {
 
 .field select,
 .composer-input,
-.submit-btn {
+.submit-btn,
+.text-input {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
   color: #f5f7fb;
@@ -162,6 +264,12 @@ const selectedTableLabel = computed(() => {
 }
 
 .field select {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 14px;
+}
+
+.text-input {
   min-height: 44px;
   padding: 0 14px;
   border-radius: 14px;
@@ -217,12 +325,91 @@ const selectedTableLabel = computed(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 10px;
+}
+
+.secondary-btn,
 .submit-btn {
-  width: 100%;
   min-height: 48px;
   border-radius: 16px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.secondary-btn {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  color: #f5f7fb;
+}
+
+.secondary-btn:disabled,
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.config-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(6px);
+}
+
+.config-modal {
+  width: min(640px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(14, 14, 14, 0.99) 0%, rgba(9, 9, 9, 0.99) 100%);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+  overflow: hidden;
+}
+
+.config-header,
+.config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+}
+
+.config-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.config-header-meta {
+  display: grid;
+  gap: 6px;
+}
+
+.config-header-meta span {
+  color: #97a1b2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.config-header-meta strong {
+  color: #f5f7fb;
+  font-size: 16px;
+}
+
+.config-body {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.config-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 @media (max-width: 980px) {

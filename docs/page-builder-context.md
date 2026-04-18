@@ -7,148 +7,341 @@ This file is the current handoff log for the page-builder workbench.
 It should capture:
 
 - what was changed in the latest session
-- what the user now expects to remain fixed
+- what is now working in practice
+- which recent product decisions are now fixed
 - which blockers are still unresolved
-- what the next session must debug first
+- what the next session should continue from first
 
 This file can be fully rewritten when the active context changes.
 
-## 2. Current User Requirement
+## 2. Current Product Reality
 
-The user requirement is now explicit and should not drift:
+The page builder is no longer just in preview stabilization mode.
 
-`the page builder must eventually support AI freely generating Vue files, and those generated pages must dynamically request crawler-backed data rather than rely on permanently baked-in static rows`
+It has now entered the first practical AI generation stage described in `docs/page-builder-workbench.md`.
 
-This immediately implies:
+That current stage is:
 
-- the preview path must be compatible with free-form Vue files
-- the generated app must be designed around a stable data adapter contract
-- static sample rows are temporary fallback/development aids, not the final data strategy
+`Phase A: direct multi-file workspace generation`
 
-## 3. Current Architectural Decision
+Meaning:
 
-The official current-stage refactor direction has now been decided:
+- the user provides a page goal
+- the user chooses a data table
+- AI directly generates a multi-file Vue workspace response
+- the system parses that output into workspace files
+- the left file tree, code panel, and Sandpack preview all use those exact generated files
 
-`Sandpack is the official preview execution layer for the current refactor stage`
+The system is **not** yet doing:
+
+- AI reading the existing workspace first
+- AI selectively editing existing files
+- AI fixing preview/runtime errors autonomously
+- true agentic tool use inside the product
+
+## 3. What Was Completed In The Latest Session
+
+### 3.1 Page Builder AI Route Was Added
+
+A new backend route now exists for page-builder generation:
+
+- `POST /api/ai/generate-page-workspace`
+
+This route now accepts:
+
+- selected table metadata
+- sample rows only
+- page-builder request context
+- provider/model/apiKey options
+
+And returns:
+
+- `summary`
+- `files[]`
+
+Important file:
+
+- `backend/src/routes/api.ts`
+
+### 3.2 Dedicated Page Builder AI Service Was Added
+
+The backend now has a dedicated page-builder AI service that:
+
+- builds the page-builder generation prompt
+- asks the provider for structured JSON output
+- parses `summary + files[]`
+- allow-lists generated file paths
+- ensures required core files exist
+
+Important file:
+
+- `backend/src/services/PageBuilderAI.ts`
+
+### 3.3 AI Output Now Enters The Real Workspace
+
+The frontend page-builder flow now:
+
+- sends the request to the backend AI route
+- receives structured generated files
+- normalizes those files into workspace file records
+- renders them in the left file tree
+- opens them in the code editor
+- runs them in Sandpack preview
+
+Important files:
+
+- `frontend/src/services/pageBuilder.ts`
+- `frontend/src/stores/pageBuilder.ts`
+
+### 3.4 AI Controls Were Added To The Page Builder UI
+
+The page builder now includes:
+
+- `Local Draft` button
+- `Generate with AI` button
+- AI summary display in the top bar
+
+This lets the user compare local fallback generation and AI generation.
+
+Important files:
+
+- `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
+- `frontend/src/views/PageBuilderView.vue`
+
+### 3.5 AI Provider Configuration Was Added As A Modal
+
+AI configuration is no longer assumed to come only from backend `.env`.
+
+The page builder now has an `AI Config` modal in the setup drawer header.
+
+Current configurable fields:
+
+- provider
+- apiKey
+- model
+
+These values are saved locally in browser storage and survive refresh.
+
+Important files:
+
+- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
+- `frontend/src/stores/pageBuilder.ts`
+
+### 3.6 Code Editor Integration From Earlier Work Remains Active
+
+The code panel is already using CodeMirror rather than a plain textarea.
+
+This is important because AI-generated files are now intended to be inspected directly in the code panel.
+
+Relevant files:
+
+- `frontend/src/components/pageBuilder/CodeEditor.vue`
+- `frontend/src/components/pageBuilder/PageBuilderCodeTabs.vue`
+
+## 4. Important Corrections Made During This Session
+
+### 4.1 AI Request No Longer Sends Full Table Rows
+
+This was an important correction.
+
+The initial page-builder AI request incorrectly passed the full `rows` array to the model.
+
+This was explicitly rejected because:
+
+- some tables are very large
+- this does not scale
+- this is not the long-term product direction
+
+The request now passes:
+
+- `columns`
+- `rowCount`
+- `sampleRows`
+
+And `sampleRows` is currently capped to a small sample on the frontend.
+
+Current practical behavior:
+
+- send first 5 rows only
+
+Relevant files:
+
+- `frontend/src/services/pageBuilder.ts`
+- `backend/src/services/PageBuilderAI.ts`
+
+### 4.2 Frontend Timeout Was Too Short And Was Fixed
+
+Another important correction:
+
+The frontend API client default timeout was 30 seconds, while the backend/provider path for AI generation allowed much longer execution.
+
+This caused a misleading failure mode:
+
+- backend/provider might still be working
+- but the frontend timed out first
+- making it look like the backend did not respond correctly
+
+The page-builder AI request now overrides timeout to a much longer value for this specific route.
+
+Relevant file:
+
+- `frontend/src/services/pageBuilder.ts`
+
+### 4.3 OpenRouter Request Context Was Improved
+
+For OpenRouter usage, the frontend now sends additional request metadata:
+
+- `httpReferer`
+- `appTitle`
+
+This makes the OpenRouter request path more correct and easier to diagnose.
+
+Relevant file:
+
+- `frontend/src/services/pageBuilder.ts`
+
+### 4.4 Provider Errors Are Now More Visible
+
+Provider errors were initially too opaque.
+
+The backend now tries to forward more useful provider information, including upstream provider metadata when available.
+
+This helped reveal real issues such as:
+
+- provider rate limiting
+- upstream model restrictions
+
+Relevant file:
+
+- `backend/src/services/AIAdapter.ts`
+
+## 5. Current Practical Working State
+
+At the moment, the following is true:
+
+- Sandpack preview is working for generated Vue workspace files
+- the page builder can still create a local fallback draft
+- the page builder can now also generate via AI
+- AI-generated files appear in the file tree and code editor
+- AI provider configuration can be edited in-product
+- AI configuration persists across refresh through local storage
+- the request no longer sends full table rows
+
+In short:
+
+`Phase A direct AI workspace generation is now working in practice`
+
+## 6. Known Issues Already Encountered
+
+The following issues were hit and are now known:
+
+### 6.1 OpenRouter Free Models Can Fail Due To Upstream Limits
+
+One observed real error was:
+
+- `Provider returned error | provider=Venice | ... temporarily rate-limited upstream`
 
 This means:
 
-- the old custom `srcdoc` preview compiler path is abandoned
-- the temporary local disk + spawned Vite preview path is not the official main refactor direction
-- the workbench should now be refactored around:
-  - workspace files
-  - Sandpack preview
-  - future AI file edits
-  - stable dynamic data adapter files
+- request wiring was functioning
+- the failure was upstream provider/model availability
+- this is not the same as product-side request wiring failure
 
-## 4. What Was Clarified In The Latest Discussion
+### 6.2 AI Can Still Return Invalid Or Fragile Code
 
-### 4.1 Dynamic Data Is Hard Requirement
+This remains a core expected failure mode of the current stage.
 
-The user explicitly clarified that the actual product goal is:
+Likely failure categories:
 
-- crawler runs daily or on demand
-- latest data is fetched
-- generated pages render that latest data dynamically
+- invalid JSON output
+- valid JSON but invalid Vue code
+- valid Vue files but broken imports
+- structurally valid code that still fails in Sandpack
 
-So the product cannot be designed around permanently static injected rows.
+This is normal for the current stage and is part of what the product is now testing.
 
-### 4.2 AI Free Vue Generation Remains Non-Negotiable
+## 7. What Is Fixed For Now
 
-The user explicitly reconfirmed:
+These points should now be treated as fixed unless explicitly changed.
 
-`free-form Vue generation is a hard goal`
-
-That means architecture choices must preserve this future capability.
-
-### 4.3 Sandpack Was Elevated From Candidate To Official Refactor Direction
-
-Sandpack had previously only been discussed as a candidate preview engine.
-
-It is now the official current-stage refactor choice because it is a better fit than:
-
-- the old custom preview compiler
-- the currently awkward disk-preview experiment
-
-for the immediate goal of stabilizing:
-
-- file workspace behavior
-- preview behavior
-- future AI file edits
-
-## 5. Current Practical State
-
-At the moment:
-
-- fallback generation is still the only active generation path
-- AI is still disabled
-- the repo has already moved away from the old `srcdoc` custom-preview architecture
-- some local runtime experimentation has already happened
-
-But the next major implementation step is now different:
-
-`the main page-builder preview should be refactored to Sandpack`
-
-## 6. Current Main Blockers
-
-### 6.1 Sandpack Refactor Has Not Been Implemented Yet
-
-The decision has been made, but the codebase has not yet been fully migrated to Sandpack as the preview execution layer.
-
-### 6.2 Dynamic Data Adapter Contract Is Still Not Formalized
-
-The generated app still needs a clear contract such as:
-
-- `src/data/tableAdapter.ts`
-- `src/data/apiClient.ts`
-- methods for fetching latest table data
-
-Until this is defined, AI generation would remain unstable even if preview is improved.
-
-### 6.3 Workspace Model Still Needs To Be Tightened
-
-The codebase still needs to continue moving toward:
-
-`workspaceId -> files -> preview -> data interface`
-
-This is the product-level shape that should survive future backend/server changes.
-
-## 7. What Has Been Decided
-
-These decisions should now be treated as fixed.
-
-1. AI must eventually be able to freely generate Vue files.
-2. Dynamic data is a hard requirement.
-3. Sandpack is the official current-stage preview solution.
-4. The old custom `srcdoc` preview compiler path is abandoned.
-5. Static injected rows are not the final runtime strategy.
-6. The generated app should consume data through a stable adapter contract.
-7. AI should remain disabled until fallback + Sandpack + data contract are stable.
+1. The page builder has entered Phase A direct AI workspace generation.
+2. AI direct generation is now enabled in practice.
+3. The page builder remains workspace-centered.
+4. Sandpack remains the active preview runtime.
+5. The current practical preview path still prefers Sandpack `vue`.
+6. AI config should be editable from inside the page builder, not only through backend env.
+7. AI config should persist locally across refresh.
+8. Full table rows should not be sent to the model.
+9. Current AI context should use schema + rowCount + small sampleRows.
+10. The current stage is still about direct generation, not workspace editing or autonomous repair.
 
 ## 8. Files Most Relevant For The Next Session
 
 Open these first:
 
-- `docs/page-builder-context.md`
 - `docs/page-builder-workbench.md`
+- `docs/page-builder-context.md`
 - `frontend/src/services/pageBuilder.ts`
 - `frontend/src/stores/pageBuilder.ts`
-- `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
-- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
+- `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
 - `frontend/src/views/PageBuilderView.vue`
-- any new Sandpack integration files once added
+- `backend/src/services/PageBuilderAI.ts`
+- `backend/src/services/AIAdapter.ts`
+- `backend/src/routes/api.ts`
 
-## 9. Recommended Next Step
+## 9. Main Remaining Gaps
 
-Do not re-enable AI yet.
+The following are still unresolved:
 
-The next implementation step should focus only on:
+### 9.1 AI Direct Generation Quality Is Not Yet Stabilized
 
-1. integrating Sandpack into the preview pane
-2. making fallback-generated Vue files render through Sandpack
-3. defining the first stable dynamic data adapter contract
-4. keeping the left file tree and code area tied to the same workspace file records
+The system can now generate through AI, but generated code quality is not yet stabilized.
 
-## 10. Short Resume Prompt
+This includes:
 
-`The page builder has moved off the old srcdoc custom-preview direction. The user has now explicitly confirmed two hard requirements: (1) AI must eventually freely generate Vue files, and (2) generated pages must dynamically request crawler-backed data rather than rely on static injected rows. Sandpack is now the official current-stage preview execution layer. The next priority is to refactor the preview pane to Sandpack and define the generated app's stable dynamic data adapter contract before re-enabling AI.`
+- file structure quality
+- component structure quality
+- import correctness
+- Sandpack compatibility quality
+- output JSON consistency
+
+### 9.2 There Is Still No AI Workspace Editing Stage
+
+The current implementation is direct generation only.
+
+The next larger product milestone after stabilizing output quality is still:
+
+`AI reads current workspace and selectively updates or adds files`
+
+That work has not started yet.
+
+### 9.3 The Long-Term Dynamic Data Contract Is Still Not Final
+
+Even though the AI request now uses sample rows and generated projects get a small data adapter file, the final runtime data contract is still not formally complete.
+
+The long-term goal still requires:
+
+- stable generated data access boundary
+- later non-sample runtime data behavior
+- eventual crawler-backed live data path
+
+## 10. Recommended Next Step
+
+The next session should continue from here:
+
+1. exercise more AI generations across different prompts and providers
+2. inspect what kinds of invalid files the model most often returns
+3. tighten prompt/output constraints based on real failures
+4. decide whether certain foundation files should remain system-owned rather than AI-authored
+5. only after direct generation quality becomes predictable, move toward workspace editing
+
+Do **not** jump straight to agentic file editing yet.
+
+The current correct focus is still:
+
+`make direct AI workspace generation reliable enough to learn from real outputs`
+
+## 11. Short Resume Prompt
+
+`The page builder is now in Phase A direct AI workspace generation. The product can already ask AI to generate a structured multi-file Vue workspace, parse those files into the visible file tree, inspect them in the CodeMirror editor, and run them in Sandpack preview. AI configuration is now handled inside the page builder through a modal and persists in local storage. The system no longer sends full table rows to the model; it sends schema, rowCount, and a very small sampleRows set. A major recent bug was that the frontend timed out before the backend/provider request finished; that page-builder AI request now uses a much longer timeout. The next priority is not tool use yet, but improving the reliability and quality of direct AI-generated workspace files.`  

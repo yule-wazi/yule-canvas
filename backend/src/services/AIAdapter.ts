@@ -460,7 +460,20 @@ export class AIAdapterManager {
         throw new Error('AI provider request timed out.');
       }
 
-      throw new Error(error.response?.data?.error?.message || error.response?.data?.message || error.message || 'AI provider request failed.');
+      const providerMessage = error.response?.data?.error?.message || error.response?.data?.message || error.message || 'AI provider request failed.';
+      const providerName = error.response?.data?.error?.metadata?.provider_name;
+      const providerRaw = error.response?.data?.error?.metadata?.raw;
+      const providerRawText = typeof providerRaw === 'string'
+        ? providerRaw
+        : providerRaw
+          ? JSON.stringify(providerRaw)
+          : '';
+
+      throw new Error(
+        [providerMessage, providerName ? `provider=${providerName}` : '', providerRawText]
+          .filter(Boolean)
+          .join(' | ')
+      );
     }
   }
 

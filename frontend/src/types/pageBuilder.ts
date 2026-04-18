@@ -6,6 +6,8 @@ export type PageBuilderCenterMode = 'preview' | 'code' | 'data';
 
 export type PageBuilderFileType = 'html' | 'css' | 'js' | 'ts' | 'json' | 'vue';
 
+export type PageBuilderAIProvider = 'siliconflow' | 'openrouter' | 'qwen';
+
 export interface PageBuildRequest {
   tableId: string;
   pageType: PageBuilderPageType;
@@ -15,6 +17,23 @@ export interface PageBuildRequest {
   density?: 'compact' | 'comfortable';
   sectionHints?: string[];
   fieldHints?: Record<string, string>;
+}
+
+export interface PageBuilderGeneratedFile {
+  path: string;
+  role: string;
+  content: string;
+}
+
+export interface PageBuilderAIResponse {
+  summary: string;
+  files: PageBuilderGeneratedFile[];
+}
+
+export interface PageBuilderAIConfig {
+  provider: PageBuilderAIProvider;
+  apiKey: string;
+  model: string;
 }
 
 export interface PageSpecField {

@@ -1,8 +1,13 @@
+import api from './api';
 import type { DataTable } from '../stores/dataTable';
 import type {
+  PageBuilderAIConfig,
   PageBindingContract,
   PageBuildRequest,
+  PageBuilderAIResponse,
   PageBuilderFile,
+  PageBuilderFileType,
+  PageBuilderGeneratedFile,
   PageBuilderProject,
   PageBuilderSectionSummary,
   PageBuilderTreeNode,
@@ -72,14 +77,14 @@ function buildTree(files: PageBuilderFile[]): PageBuilderTreeNode[] {
   return buildTreeFromNodes(root);
 }
 
-function createIndexHtml() {
+function createIndexHtml(title = 'Workspace Demo') {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-    <title>Workspace Demo</title>
+    <title>${escapeHtml(title)}</title>
   </head>
   <body>
     <noscript>
@@ -272,8 +277,39 @@ body {
 `;
 }
 
-export function createPageBuilderWorkspace(table: DataTable, request: PageBuildRequest) {
-  const spec: PageSpec = {
+function normalizeFileType(path: string): PageBuilderFileType {
+  const normalized = path.toLowerCase();
+
+  if (normalized.endsWith('.vue')) {
+    return 'vue';
+  }
+  if (normalized.endsWith('.css')) {
+    return 'css';
+  }
+  if (normalized.endsWith('.json')) {
+    return 'json';
+  }
+  if (normalized.endsWith('.ts')) {
+    return 'ts';
+  }
+  if (normalized.endsWith('.html')) {
+    return 'html';
+  }
+
+  return 'js';
+}
+
+function createBindingContract(table: DataTable, spec: PageSpec): PageBindingContract {
+  return {
+    tableId: table.id,
+    mode: 'collection',
+    fields: spec.dataSource.fields,
+    sections: []
+  };
+}
+
+function createBaseSpec(table: DataTable, request: PageBuildRequest): PageSpec {
+  return {
     version: 'v1',
     meta: {
       title: request.title || `${table.name} Demo`,
@@ -292,108 +328,142 @@ export function createPageBuilderWorkspace(table: DataTable, request: PageBuildR
       sections: []
     }
   };
+}
 
-  const bindingContract: PageBindingContract = {
-    tableId: table.id,
-    mode: 'collection',
-    fields: spec.dataSource.fields,
-    sections: []
-  };
+function mapGeneratedFilesToProjectFiles(generatedFiles: PageBuilderGeneratedFile[]): PageBuilderFile[] {
+  return generatedFiles.map((file, index) => {
+    const path = file.path.replace(/^\/+/, '');
+    const name = path.split('/').pop() || path;
 
-  const files: PageBuilderFile[] = [
-    {
-      id: 'index-html',
-      path: 'public/index.html',
-      name: 'index.html',
-      type: 'html',
-      role: 'HTML entry file.',
+    return {
+      id: `generated-${index}-${path}`,
+      path,
+      name,
+      type: normalizeFileType(path),
+      role: file.role || 'Generated file.',
       editable: true,
       visibility: 'project',
-      content: createIndexHtml()
-    },
-    {
-      id: 'main-js',
-      path: 'src/main.js',
-      name: 'main.js',
-      type: 'js',
-      role: 'Vue app bootstrap.',
-      editable: true,
-      visibility: 'project',
-      content: createMainJs()
-    },
-    {
-      id: 'app-vue',
-      path: 'src/App.vue',
-      name: 'App.vue',
-      type: 'vue',
-      role: 'App root component.',
-      editable: true,
-      visibility: 'project',
-      content: createAppVue(table.name, request.goal || '')
-    },
-    {
-      id: 'hello-vue',
-      path: 'src/components/HelloWorld.vue',
-      name: 'HelloWorld.vue',
-      type: 'vue',
-      role: 'Hello World component.',
-      editable: true,
-      visibility: 'project',
-      content: createHelloWorldVue()
-    },
-    {
-      id: 'adder-vue',
-      path: 'src/components/Adder.vue',
-      name: 'Adder.vue',
-      type: 'vue',
-      role: 'Adder component.',
-      editable: true,
-      visibility: 'project',
-      content: createAdderVue()
-    },
-    {
-      id: 'page-css',
-      path: 'src/styles.css',
-      name: 'styles.css',
-      type: 'css',
-      role: 'Shared styles.',
-      editable: true,
-      visibility: 'project',
-      content: createPageCss()
-    }
-  ];
+      content: file.content
+    };
+  });
+}
+
+export function createProjectFromGeneratedFiles(
+  table: DataTable,
+  request: PageBuildRequest,
+  generatedFiles: PageBuilderGeneratedFile[]
+) {
+  const spec = createBaseSpec(table, request);
+  const bindingContract = createBindingContract(table, spec);
+  const files = mapGeneratedFilesToProjectFiles(generatedFiles);
 
   const project: PageBuilderProject = {
-    workspaceId: `demo-${table.id}`,
+    workspaceId: `workspace-${table.id}-${Date.now()}`,
     rootName: 'Page Workspace',
     files,
     tree: buildTree(files),
     bindingContract
   };
 
-  const sectionSummaries: PageBuilderSectionSummary[] = [
-    {
-      id: 'hello-world',
-      title: 'Hello World',
-      type: 'content',
-      description: 'Simple Vue demo section.',
-      bindings: {},
-      repeat: false
-    },
-    {
-      id: 'adder',
-      title: 'Adder',
-      type: 'content',
-      description: 'Simple interactive Vue calculator.',
-      bindings: {},
-      repeat: false
-    }
-  ];
-
   return {
     fieldRoleMap: inferFieldRoles(table),
     spec,
     project,
-    sectionSummaries
+    sectionSummaries: [] as PageBuilderSectionSummary[]
   };
+}
+
+export async function requestAIPageBuilderWorkspace(
+  table: DataTable,
+  request: PageBuildRequest,
+  aiConfig: PageBuilderAIConfig
+): Promise<PageBuilderAIResponse> {
+  const sampleRows = table.rows.slice(0, 5);
+  const openRouterOptions = aiConfig.provider === 'openrouter'
+    ? {
+        httpReferer: window.location.origin,
+        appTitle: 'AIBrowser Page Builder'
+      }
+    : {};
+
+  const response = await api.post('/ai/generate-page-workspace', {
+    table: {
+      id: table.id,
+      name: table.name,
+      columns: table.columns,
+      rowCount: table.rows.length,
+      sampleRows
+    },
+    request,
+    model: aiConfig.provider,
+    options: {
+      apiKey: aiConfig.apiKey,
+      model: aiConfig.model || undefined,
+      timeoutMs: 180000,
+      ...openRouterOptions
+    }
+  }, {
+    timeout: 185000
+  }) as {
+    success: boolean;
+    summary: string;
+    files: PageBuilderGeneratedFile[];
+    error?: string | null;
+  };
+
+  if (!response?.success) {
+    throw new Error(response?.error || 'AI page generation failed.');
+  }
+
+  return {
+    summary: response.summary || '',
+    files: Array.isArray(response.files) ? response.files : []
+  };
+}
+
+function createFallbackGeneratedFiles(table: DataTable, request: PageBuildRequest): PageBuilderGeneratedFile[] {
+  return [
+    {
+      path: 'public/index.html',
+      role: 'HTML entry file.',
+      content: createIndexHtml(request.title || `${table.name} Demo`)
+    },
+    {
+      path: 'src/main.js',
+      role: 'Vue app bootstrap.',
+      content: createMainJs()
+    },
+    {
+      path: 'src/App.vue',
+      role: 'App root component.',
+      content: createAppVue(table.name, request.goal || '')
+    },
+    {
+      path: 'src/components/HelloWorld.vue',
+      role: 'Hello World component.',
+      content: createHelloWorldVue()
+    },
+    {
+      path: 'src/components/Adder.vue',
+      role: 'Adder component.',
+      content: createAdderVue()
+    },
+    {
+      path: 'src/styles.css',
+      role: 'Shared styles.',
+      content: createPageCss()
+    }
+  ];
+}
+
+export function createPageBuilderWorkspace(table: DataTable, request: PageBuildRequest) {
+  return createProjectFromGeneratedFiles(table, request, createFallbackGeneratedFiles(table, request));
+}
+
+function escapeHtml(value: string) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

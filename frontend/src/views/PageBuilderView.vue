@@ -7,8 +7,11 @@
       :style-preset="store.stylePreset"
       :center-mode="store.centerMode"
       :setup-open="store.isSetupDrawerOpen"
+      :is-generating="store.isGenerating"
+      :generation-summary="store.lastGenerationSummary"
       @change-mode="store.setCenterMode"
-      @generate="createWorkspace"
+      @generate-local="createWorkspace"
+      @generate-ai="createAIWorkspace"
       @toggle-setup="store.toggleSetupDrawer"
     />
 
@@ -43,9 +46,17 @@
         :selected-table-id="store.selectedTableId"
         :goal="store.goal"
         :field-role-map="store.fieldRoleMap"
-        @generate="createWorkspace"
+        :is-generating="store.isGenerating"
+        :ai-provider="store.aiProvider"
+        :ai-api-key="store.aiApiKey"
+        :ai-model="store.aiModel"
+        @generate-local="createWorkspace"
+        @generate-ai="createAIWorkspace"
         @update:selected-table-id="store.setSelectedTable($event, dataTableStore.tables)"
         @update:goal="store.goal = $event"
+        @update:ai-provider="store.setAIProvider($event as any)"
+        @update:ai-api-key="store.setAIApiKey($event)"
+        @update:ai-model="store.setAIModel($event)"
       />
     </div>
   </div>
@@ -108,6 +119,10 @@ watch(
 
 function createWorkspace() {
   store.createWorkspaceFromTable(dataTableStore.tables);
+}
+
+function createAIWorkspace() {
+  void store.createWorkspaceFromAI(dataTableStore.tables);
 }
 
 function openFile(fileId: string) {

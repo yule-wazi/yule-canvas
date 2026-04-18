@@ -21,10 +21,14 @@
         <span class="meta-label">Style</span>
         <strong>{{ stylePresetLabel }}</strong>
       </div>
+      <div v-if="generationSummary" class="meta-chip meta-chip--wide">
+        <span class="meta-label">AI Summary</span>
+        <strong>{{ generationSummary }}</strong>
+      </div>
     </div>
 
     <div class="topbar-right">
-      <button class="ghost-btn" type="button" @click="$emit('toggleSetup')">
+      <button class="ghost-btn" type="button" @click="$emit('toggle-setup')">
         {{ setupOpen ? 'Hide setup' : 'Show setup' }}
       </button>
       <div class="mode-switch">
@@ -34,12 +38,17 @@
           class="mode-btn"
           :class="{ 'is-active': mode.value === centerMode }"
           type="button"
-          @click="$emit('changeMode', mode.value)"
+          @click="$emit('change-mode', mode.value)"
         >
           {{ mode.label }}
         </button>
       </div>
-      <button class="generate-btn" type="button" @click="$emit('generate')">Create workspace</button>
+      <button class="ghost-btn" type="button" :disabled="isGenerating" @click="$emit('generate-local')">
+        Local Draft
+      </button>
+      <button class="generate-btn" type="button" :disabled="isGenerating" @click="$emit('generate-ai')">
+        {{ isGenerating ? 'Generating...' : 'Generate with AI' }}
+      </button>
     </div>
   </header>
 </template>
@@ -55,12 +64,15 @@ const props = defineProps<{
   stylePreset: PageBuilderStylePreset;
   centerMode: PageBuilderCenterMode;
   setupOpen: boolean;
+  isGenerating: boolean;
+  generationSummary?: string;
 }>();
 
 defineEmits<{
-  changeMode: [mode: PageBuilderCenterMode];
-  generate: [];
-  toggleSetup: [];
+  'change-mode': [mode: PageBuilderCenterMode];
+  'generate-local': [];
+  'generate-ai': [];
+  'toggle-setup': [];
 }>();
 
 const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
@@ -167,6 +179,10 @@ const stylePresetLabel = computed(() => stylePresetLabelMap[props.stylePreset]);
   background: rgba(255, 255, 255, 0.02);
 }
 
+.meta-chip--wide {
+  max-width: 280px;
+}
+
 .meta-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -199,6 +215,12 @@ const stylePresetLabel = computed(() => stylePresetLabelMap[props.stylePreset]);
   background: transparent;
   color: var(--color-text-primary);
   cursor: pointer;
+}
+
+.ghost-btn:disabled,
+.generate-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .generate-btn:hover,

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { AIAdapterManager, WorkflowGenerationError } from '../services/AIAdapter';
+import { generatePageWorkspace } from '../services/PageBuilderAI';
 import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
@@ -185,6 +186,42 @@ router.post('/ai/generate-default', async (req, res) => {
       success: false,
       workflow: null,
       error: error.message
+    });
+  }
+});
+
+router.post('/ai/generate-page-workspace', async (req, res) => {
+  try {
+    const { table, request, model = 'openrouter', options = {} } = req.body;
+
+    if (!table || !request) {
+      return res.status(400).json({
+        success: false,
+        summary: '',
+        files: [],
+        error: 'table and request are required.'
+      });
+    }
+
+    const result = await generatePageWorkspace(aiManager, {
+      table,
+      request,
+      model,
+      options
+    });
+
+    return res.json({
+      success: true,
+      summary: result.summary,
+      files: result.files,
+      error: null
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      summary: '',
+      files: [],
+      error: error.message || 'AI page workspace generation failed.'
     });
   }
 });
