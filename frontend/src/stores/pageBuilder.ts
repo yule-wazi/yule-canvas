@@ -11,9 +11,11 @@ import type {
   PageBindingContract,
   PageBuildRequest,
   PageBuilderCenterMode,
+  PageBuilderConversationItem,
   PageBuilderConversationMessage,
   PageBuilderDrawerMode,
   PageBuilderFile,
+  PageBuilderFileOperationAction,
   PageBuilderPreviewSelection,
   PageBuilderProject,
   PageBuilderSectionSummary,
@@ -45,7 +47,8 @@ interface PageBuilderState {
   isSetupDrawerOpen: boolean;
   drawerMode: PageBuilderDrawerMode;
   conversationDraft: string;
-  conversationMessages: PageBuilderConversationMessage[];
+  conversationMessages: PageBuilderConversationItem[];
+  activeOperationGroupId: string | null;
   sectionSummaries: PageBuilderSectionSummary[];
   savedWorkspaces: PageBuilderWorkspaceMeta[];
   hasUnsavedChanges: boolean;
@@ -69,10 +72,67 @@ function createWorkspaceId() {
 function createConversationMessage(role: 'user' | 'assistant', content: string): PageBuilderConversationMessage {
   return {
     id: `message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'message',
     role,
     content: content.trim(),
     createdAt: Date.now()
   };
+}
+
+function createOperationGroup() {
+  return {
+    id: `operation-group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'file_operation_group' as const,
+    status: 'running' as const,
+    createdAt: Date.now(),
+    items: []
+  };
+}
+
+function normalizeConversationItems(items: unknown): PageBuilderConversationItem[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+
+    const candidate = item as Record<string, any>;
+
+    if (candidate.kind === 'file_operation_group') {
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : createOperationGroup().id,
+        kind: 'file_operation_group' as const,
+        status: candidate.status === 'done' ? 'done' : 'running',
+        createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now(),
+        items: Array.isArray(candidate.items)
+          ? candidate.items
+              .filter((entry) => entry && typeof entry === 'object')
+              .map((entry: any, index: number) => ({
+                id: typeof entry.id === 'string' ? entry.id : `operation-${Date.now()}-${index}`,
+                action: entry.action === 'read' || entry.action === 'update' ? entry.action : 'create',
+                path: typeof entry.path === 'string' ? entry.path : '',
+                createdAt: typeof entry.createdAt === 'number' ? entry.createdAt : Date.now()
+              }))
+              .filter((entry: { path: string }) => entry.path)
+          : []
+      }];
+    }
+
+    if (typeof candidate.role === 'string' && typeof candidate.content === 'string') {
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : `message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        kind: 'message' as const,
+        role: candidate.role === 'assistant' ? 'assistant' : 'user',
+        content: candidate.content.trim(),
+        createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now()
+      }];
+    }
+
+    return [];
+  });
 }
 
 function normalizeWorkspaceName(name: string) {
@@ -136,6 +196,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     drawerMode: 'setup',
     conversationDraft: '',
     conversationMessages: [],
+    activeOperationGroupId: null,
     sectionSummaries: [],
     savedWorkspaces: [],
     hasUnsavedChanges: false,
@@ -224,9 +285,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.lastGenerationSummary = snapshot.lastGenerationSummary || '';
       this.drawerMode = snapshot.drawerMode || (snapshot.project ? 'conversation' : 'setup');
       this.conversationDraft = snapshot.conversationDraft || '';
-      this.conversationMessages = Array.isArray(snapshot.conversationMessages)
-        ? snapshot.conversationMessages
-        : [];
+      this.conversationMessages = normalizeConversationItems(snapshot.conversationMessages);
+      this.activeOperationGroupId = null;
       this.sectionSummaries = snapshot.sectionSummaries || [];
       this.error = null;
       this.hasUnsavedChanges = false;
@@ -429,9 +489,68 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.schedulePersist(false);
     },
 
+    startFileOperationGroup() {
+      const group = createOperationGroup();
+      this.activeOperationGroupId = group.id;
+      this.conversationMessages = [
+        ...this.conversationMessages,
+        group
+      ];
+      this.schedulePersist(false);
+    },
+
+    appendFileOperation(action: PageBuilderFileOperationAction, path: string) {
+      const normalizedPath = path.trim();
+
+      if (!this.activeOperationGroupId || !normalizedPath) {
+        return;
+      }
+
+      this.conversationMessages = this.conversationMessages.map((item) => {
+        if (item.kind !== 'file_operation_group' || item.id !== this.activeOperationGroupId) {
+          return item;
+        }
+
+        return {
+          ...item,
+          items: [
+            ...item.items,
+            {
+              id: `operation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              action,
+              path: normalizedPath,
+              createdAt: Date.now()
+            }
+          ]
+        };
+      });
+      this.schedulePersist(false);
+    },
+
+    finishFileOperationGroup() {
+      if (!this.activeOperationGroupId) {
+        return;
+      }
+
+      this.conversationMessages = this.conversationMessages.map((item) => {
+        if (item.kind !== 'file_operation_group' || item.id !== this.activeOperationGroupId) {
+          return item;
+        }
+
+        return {
+          ...item,
+          status: 'done'
+        };
+      });
+      this.activeOperationGroupId = null;
+      this.schedulePersist(false);
+    },
+
     buildConversationGoal() {
       const messages = this.conversationMessages
-        .filter((message) => message.role === 'user')
+        .filter((message): message is PageBuilderConversationMessage => (
+          message.kind === 'message' && message.role === 'user'
+        ))
         .map((message) => message.content.trim())
         .filter(Boolean);
 
@@ -573,6 +692,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.drawerMode = 'setup';
       this.conversationDraft = '';
       this.conversationMessages = [];
+      this.activeOperationGroupId = null;
       this.sectionSummaries = [];
       this.hasUnsavedChanges = false;
 
@@ -630,6 +750,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.drawerMode = 'conversation';
       this.isSetupDrawerOpen = true;
       this.conversationMessages = [];
+      this.activeOperationGroupId = null;
       this.conversationDraft = '';
 
       if (userGoal) {
@@ -644,17 +765,25 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
           return;
         }
 
+        const existingPaths = new Set(this.files.map((file) => file.path));
+        this.startFileOperationGroup();
+
         await streamAIPageBuilderWorkspace(table, request, aiConfig, {
           onFileDone: ({ file }) => {
-            this.pushConversationMessage('assistant', `已生成 ${file.path}`);
+            const normalizedPath = file.path.replace(/^\/+/, '');
+            const action: PageBuilderFileOperationAction = existingPaths.has(normalizedPath) ? 'update' : 'create';
+            this.appendFileOperation(action, normalizedPath);
+            existingPaths.add(normalizedPath);
           },
           onDone: ({ summary, files }) => {
+            this.finishFileOperationGroup();
             const nextWorkspace = createProjectFromGeneratedFiles(table, request, files);
             this.applyWorkspaceResult(nextWorkspace, summary);
           }
         });
       } catch (error: any) {
         this.error = error?.message || 'AI page generation failed.';
+        this.finishFileOperationGroup();
       } finally {
         this.isGenerating = false;
       }
@@ -680,6 +809,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.error = null;
       this.drawerMode = 'conversation';
       this.isSetupDrawerOpen = true;
+      this.activeOperationGroupId = null;
 
       const request: PageBuildRequest = {
         tableId: table.id,
@@ -695,20 +825,29 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
           return;
         }
 
+        const existingPaths = new Set(this.files.map((file) => file.path));
+        this.startFileOperationGroup();
+
         await streamAIPageBuilderWorkspace(table, request, aiConfig, {
           onFileDone: ({ file }) => {
-            this.pushConversationMessage('assistant', `已生成 ${file.path}`);
+            const normalizedPath = file.path.replace(/^\/+/, '');
+            const action: PageBuilderFileOperationAction = existingPaths.has(normalizedPath) ? 'update' : 'create';
+            this.appendFileOperation(action, normalizedPath);
+            existingPaths.add(normalizedPath);
           },
           onDone: ({ summary, files }) => {
+            this.finishFileOperationGroup();
             const nextWorkspace = createProjectFromGeneratedFiles(table, request, files);
             this.applyWorkspaceResult(nextWorkspace, summary);
           }
         });
       } catch (error: any) {
         this.error = error?.message || 'AI page generation failed.';
+        this.finishFileOperationGroup();
       } finally {
         this.isGenerating = false;
       }
     }
   }
 });
+

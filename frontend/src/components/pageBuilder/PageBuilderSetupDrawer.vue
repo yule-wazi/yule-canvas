@@ -72,28 +72,24 @@
       </div>
 
       <div class="drawer-body conversation-body">
-        <article
-          v-for="message in conversationMessages"
-          :key="message.id"
-          class="message-card"
-          :class="message.role === 'user' ? 'is-user' : 'is-assistant is-file-item'"
-        >
-          <div class="message-meta">
-            <strong>{{ message.role === 'user' ? 'You' : 'AI' }}</strong>
-            <span>{{ formatTime(message.createdAt) }}</span>
-          </div>
-          <p class="message-content">
-            <span v-if="message.role === 'assistant'" class="file-item-icon">✎</span>
-            {{ message.content }}
-          </p>
-        </article>
+        <template v-for="message in conversationMessages" :key="message.id">
+          <article
+            v-if="message.kind === 'message'"
+            class="message-card"
+            :class="message.role === 'user' ? 'is-user' : 'is-assistant'"
+          >
+            <div class="message-meta">
+              <strong>{{ message.role === 'user' ? 'You' : 'Assistant' }}</strong>
+              <span>{{ formatTime(message.createdAt) }}</span>
+            </div>
+            <p class="message-content">{{ message.content }}</p>
+          </article>
 
-        <div v-if="isGenerating" class="message-card is-thinking">
-          <div class="message-meta">
-            <strong>AI</strong>
-          </div>
-          <p class="message-content">正在生成文件...</p>
-        </div>
+          <AIFileOperationGroup
+            v-else
+            :group="message"
+          />
+        </template>
       </div>
 
       <div class="drawer-footer conversation-footer">
@@ -171,10 +167,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import AIFileOperationGroup from './AIFileOperationGroup.vue';
 import type { DataTable } from '../../stores/dataTable';
 import type {
   PageBuilderAIProvider,
-  PageBuilderConversationMessage,
+  PageBuilderConversationItem,
   PageBuilderDrawerMode
 } from '../../types/pageBuilder';
 
@@ -191,7 +188,7 @@ const props = defineProps<{
   aiApiKey: string;
   aiModel: string;
   conversationDraft: string;
-  conversationMessages: PageBuilderConversationMessage[];
+  conversationMessages: PageBuilderConversationItem[];
 }>();
 
 defineEmits<{
@@ -413,15 +410,6 @@ function formatTime(value: number) {
 }
 
 .message-card.is-assistant {
-  background: rgba(118, 185, 0, 0.07);
-  border-color: rgba(118, 185, 0, 0.18);
-}
-
-.message-card.is-file-item {
-  gap: 10px;
-}
-
-.message-card.is-thinking {
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -447,12 +435,6 @@ function formatTime(value: number) {
   white-space: pre-wrap;
   line-height: 1.7;
   font-size: 14px;
-}
-
-.file-item-icon {
-  display: inline-block;
-  margin-right: 10px;
-  color: #b8d98a;
 }
 
 .submit-btn {

@@ -6,12 +6,34 @@ export type PageBuilderAIProvider = 'siliconflow' | 'openrouter' | 'qwen';
 
 export type PageBuilderDrawerMode = 'setup' | 'conversation';
 
+export type PageBuilderFileOperationAction = 'create' | 'read' | 'update';
+
 export interface PageBuilderConversationMessage {
   id: string;
+  kind: 'message';
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
 }
+
+export interface PageBuilderFileOperationItem {
+  id: string;
+  action: PageBuilderFileOperationAction;
+  path: string;
+  createdAt: number;
+}
+
+export interface PageBuilderConversationOperationGroup {
+  id: string;
+  kind: 'file_operation_group';
+  status: 'running' | 'done';
+  createdAt: number;
+  items: PageBuilderFileOperationItem[];
+}
+
+export type PageBuilderConversationItem =
+  | PageBuilderConversationMessage
+  | PageBuilderConversationOperationGroup;
 
 export interface PageBuilderStreamFileDoneEvent {
   type: 'file_done';
@@ -151,7 +173,7 @@ export interface SavedPageBuilderWorkspace {
   goal: string;
   drawerMode?: PageBuilderDrawerMode;
   conversationDraft?: string;
-  conversationMessages?: PageBuilderConversationMessage[];
+  conversationMessages?: PageBuilderConversationItem[];
   fieldRoleMap: Record<string, string>;
   spec: PageSpec | null;
   project: PageBuilderProject | null;
