@@ -60,6 +60,17 @@ export interface PageBuilderGeneratedFile {
   content: string;
 }
 
+export interface PageBuilderPreviewTableSnapshot {
+  table: {
+    id: string;
+    name: string;
+    columns: Array<{ key: string; type: string }>;
+    rowCount: number;
+    updatedAt?: number;
+  };
+  rows: Record<string, any>[];
+}
+
 export interface PageBuilderAIResponse {
   summary: string;
   files: PageBuilderGeneratedFile[];

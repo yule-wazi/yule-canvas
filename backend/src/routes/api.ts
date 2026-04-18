@@ -6,6 +6,17 @@ import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
 const aiManager = new AIAdapterManager();
+const pageBuilderTableSnapshots = new Map<string, {
+  table: {
+    id: string;
+    name: string;
+    columns: Array<{ key: string; type: string }>;
+    rowCount: number;
+    updatedAt?: number;
+  };
+  rows: Record<string, unknown>[];
+  updatedAt: number;
+}>();
 
 router.get('/ai/models', (_req, res) => {
   const models = aiManager.getAllAdapters().map(adapter => ({
@@ -275,6 +286,66 @@ router.post('/ai/generate-page-workspace-stream', async (req, res) => {
     })}\n`);
     return res.end();
   }
+});
+
+router.post('/page-builder/table-snapshots', (req, res) => {
+  try {
+    const { tableId, snapshot } = req.body || {};
+
+    if (!tableId || typeof tableId !== 'string' || !snapshot || typeof snapshot !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'tableId and snapshot are required.'
+      });
+    }
+
+    const table = (snapshot as any).table || {};
+    const rows = Array.isArray((snapshot as any).rows) ? (snapshot as any).rows : [];
+
+    pageBuilderTableSnapshots.set(tableId, {
+      table: {
+        id: typeof table.id === 'string' ? table.id : tableId,
+        name: typeof table.name === 'string' ? table.name : 'Selected Table',
+        columns: Array.isArray(table.columns) ? table.columns : [],
+        rowCount: typeof table.rowCount === 'number' ? table.rowCount : rows.length,
+        updatedAt: typeof table.updatedAt === 'number' ? table.updatedAt : Date.now()
+      },
+      rows,
+      updatedAt: Date.now()
+    });
+
+    return res.json({
+      success: true,
+      updatedAt: Date.now(),
+      error: null
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to cache table snapshot.'
+    });
+  }
+});
+
+router.get('/page-builder/table-snapshots/:tableId', (req, res) => {
+  const snapshot = pageBuilderTableSnapshots.get(req.params.tableId);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+
+  if (!snapshot) {
+    return res.status(404).json({
+      success: false,
+      error: 'Table snapshot not found.'
+    });
+  }
+
+  return res.json({
+    table: snapshot.table,
+    rows: snapshot.rows,
+    updatedAt: snapshot.updatedAt
+  });
 });
 
 router.get('/proxy/video', async (req, res) => {

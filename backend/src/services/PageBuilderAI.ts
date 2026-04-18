@@ -55,9 +55,15 @@ Output rules:
 Data access contract:
 - src/data/tableData.js must export:
   - tableMeta
+  - fetchTableRows()
+  - fetchTableSnapshot()
   - getTableRows()
   - getTableSnapshot()
 - Generated code should import from that file instead of inventing backend calls.
+- src/data/tableData.js reads runtime data from the hidden internal bridge file src/data/__runtimeTableData.js.
+- fetchTableRows() and fetchTableSnapshot() are async and must be used for runtime data loading.
+- Do not hardcode sample rows into Vue components.
+- Do not treat sampleRows as the real runtime dataset. They are only shape examples for field understanding.
 `;
 
 function buildPrompt(input: PageBuilderAIInput) {
@@ -84,6 +90,10 @@ Additional requirements:
 - Use the selected data table in the UI.
 - Keep the file set practical and inspectable.
 - Favor valid runnable code over ambitious but fragile code.
+- Load table rows at runtime via the shared data adapter.
+- Do not call fetch() directly for table data inside Vue components.
+- In Vue components, prefer onMounted plus ref/reactive state for fetched rows.
+- Keep loading and error states simple but real.
 - Finish one whole file before starting the next file block.
 - Output only the file blocks and final summary block.`;
 }
@@ -143,13 +153,11 @@ function ensureCoreFiles(input: PageBuilderAIInput, files: PageBuilderAIGenerate
     });
   }
 
-  if (!result.has('src/data/tableData.js')) {
-    result.set('src/data/tableData.js', {
-      path: 'src/data/tableData.js',
-      role: 'Table data adapter.',
-      content: createTableDataJs(input.table)
-    });
-  }
+  result.set('src/data/tableData.js', {
+    path: 'src/data/tableData.js',
+    role: 'Table data adapter.',
+    content: createTableDataJs(input)
+  });
 
   return Array.from(result.values());
 }
@@ -179,27 +187,41 @@ createApp(App).mount('#app');
 `;
 }
 
-function createTableDataJs(table: PageBuilderAITable) {
+function createTableDataJs(input: PageBuilderAIInput) {
+  const table = input.table;
   const tableMeta = {
     id: table.id,
     name: table.name,
     columns: table.columns,
     rowCount: table.rowCount
   };
-  const rows = table.sampleRows;
+  return `import { readRuntimeTableSnapshot } from './__runtimeTableData.js';
 
-  return `export const tableMeta = ${JSON.stringify(tableMeta, null, 2)};
+export const tableMeta = ${JSON.stringify(tableMeta, null, 2)};
 
-const tableRows = ${JSON.stringify(rows, null, 2)};
-
-export function getTableRows() {
-  return tableRows;
+export async function fetchTableSnapshot() {
+  return readRuntimeTableSnapshot();
 }
 
-export function getTableSnapshot() {
+export async function fetchTableRows() {
+  const snapshot = await fetchTableSnapshot();
+  return Array.isArray(snapshot?.rows) ? snapshot.rows : [];
+}
+
+export async function getTableRows() {
+  return await fetchTableRows();
+}
+
+export async function getTableSnapshot() {
+  const snapshot = await fetchTableSnapshot();
   return {
     table: tableMeta,
-    rows: tableRows
+    ...snapshot,
+    rows: Array.isArray(snapshot?.rows) ? snapshot.rows : [],
+    table: {
+      ...tableMeta,
+      ...(snapshot?.table || {})
+    }
   };
 }
 `;

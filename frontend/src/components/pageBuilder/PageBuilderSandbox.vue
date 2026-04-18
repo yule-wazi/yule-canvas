@@ -33,6 +33,7 @@
     <div v-show="mode === 'preview'" class="sandbox-panel">
       <PageBuilderPreview
         :files="files"
+        :table-snapshot="tableSnapshot"
         :viewport="viewport"
         @change-viewport="$emit('changeViewport', $event)"
       />
@@ -61,11 +62,12 @@
 import PageBuilderCodeTabs from './PageBuilderCodeTabs.vue';
 import PageBuilderDataPanel from './PageBuilderDataPanel.vue';
 import PageBuilderPreview from './PageBuilderPreview.vue';
-import type { PageBuilderCenterMode, PageBuilderFile } from '../../types/pageBuilder';
+import type { PageBuilderCenterMode, PageBuilderFile, PageBuilderPreviewTableSnapshot } from '../../types/pageBuilder';
 
 defineProps<{
   mode: PageBuilderCenterMode;
   files: PageBuilderFile[];
+  tableSnapshot: PageBuilderPreviewTableSnapshot | null;
   activeFileId: string | null;
   viewport: 'desktop' | 'tablet' | 'mobile';
   dataTitle: string;

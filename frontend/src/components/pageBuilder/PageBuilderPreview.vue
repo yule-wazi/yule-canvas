@@ -20,10 +20,11 @@ import {
   SandpackProvider
 } from '@codesandbox/sandpack-react';
 import type { SandpackFiles } from '@codesandbox/sandpack-react';
-import type { PageBuilderFile } from '../../types/pageBuilder';
+import type { PageBuilderFile, PageBuilderPreviewTableSnapshot } from '../../types/pageBuilder';
 
 const props = defineProps<{
   files: PageBuilderFile[];
+  tableSnapshot: PageBuilderPreviewTableSnapshot | null;
   viewport: 'desktop' | 'tablet' | 'mobile';
 }>();
 
@@ -35,13 +36,13 @@ const mountRef = ref<HTMLDivElement | null>(null);
 let reactRoot: Root | null = null;
 
 const sandpackFiles = computed<SandpackFiles>(() => {
-  return props.files.reduce<SandpackFiles>((result, file) => {
-    result[`/${file.path}`] = {
+  const result = props.files.reduce<SandpackFiles>((files, file) => {
+    files[`/${file.path}`] = {
       code: file.content,
       readOnly: !file.editable,
       hidden: file.visibility !== 'project'
     };
-    return result;
+    return files;
   }, {
     '/package.json': JSON.stringify({
       name: 'page-builder-demo',
@@ -61,7 +62,34 @@ const sandpackFiles = computed<SandpackFiles>(() => {
       }
     }, null, 2)
   });
+
+  result['/src/data/__runtimeTableData.js'] = {
+    code: createRuntimeTableDataModule(props.tableSnapshot),
+    readOnly: true,
+    hidden: true
+  };
+
+  return result;
 });
+
+function createRuntimeTableDataModule(snapshot: PageBuilderPreviewTableSnapshot | null) {
+  const payload = JSON.stringify(snapshot || {
+    table: {
+      id: '',
+      name: 'Selected Table',
+      columns: [],
+      rowCount: 0
+    },
+    rows: []
+  }, null, 2);
+
+  return `const RAW_TABLE_SNAPSHOT_JSON = ${JSON.stringify(payload)};
+
+export function readRuntimeTableSnapshot() {
+  return JSON.parse(RAW_TABLE_SNAPSHOT_JSON);
+}
+`;
+}
 
 async function renderReactPreview() {
   await nextTick();
@@ -121,7 +149,7 @@ async function renderReactPreview() {
 }
 
 watch(
-  () => props.files,
+  () => [props.files, props.tableSnapshot],
   async () => {
     await renderReactPreview();
   },

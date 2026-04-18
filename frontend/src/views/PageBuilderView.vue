@@ -21,6 +21,7 @@
         <PageBuilderSandbox
           :mode="store.centerMode"
           :files="store.files"
+          :table-snapshot="tableSnapshot"
           :active-file-id="store.activeFileId"
           :viewport="viewport"
           :data-title="dataTitle"
@@ -84,6 +85,7 @@ import PageBuilderTopBar from '../components/pageBuilder/PageBuilderTopBar.vue';
 import PageBuilderWorkspaceManager from '../components/pageBuilder/PageBuilderWorkspaceManager.vue';
 import { useDataTableStore } from '../stores/dataTable';
 import { usePageBuilderStore } from '../stores/pageBuilder';
+import type { PageBuilderPreviewTableSnapshot } from '../types/pageBuilder';
 
 const dataTableStore = useDataTableStore();
 const store = usePageBuilderStore();
@@ -118,6 +120,23 @@ const dataContent = computed(() =>
     2
   )
 );
+
+const tableSnapshot = computed<PageBuilderPreviewTableSnapshot | null>(() => {
+  if (!selectedTable.value) {
+    return null;
+  }
+
+  return {
+    table: {
+      id: selectedTable.value.id,
+      name: selectedTable.value.name,
+      columns: selectedTable.value.columns,
+      rowCount: selectedTable.value.rows.length,
+      updatedAt: selectedTable.value.updatedAt
+    },
+    rows: selectedTable.value.rows
+  };
+});
 
 onMounted(() => {
   dataTableStore.init();
