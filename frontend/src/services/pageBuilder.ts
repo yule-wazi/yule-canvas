@@ -313,9 +313,7 @@ function createBaseSpec(table: DataTable, request: PageBuildRequest): PageSpec {
     version: 'v1',
     meta: {
       title: request.title || `${table.name} Demo`,
-      description: request.goal || 'Vue workspace demo',
-      pageType: request.pageType,
-      stylePreset: request.stylePreset || 'nvidia-tech'
+      description: request.goal || 'Vue workspace demo'
     },
     dataSource: {
       tableId: table.id,

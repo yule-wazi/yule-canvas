@@ -12,11 +12,9 @@ import type {
   PageBuildRequest,
   PageBuilderCenterMode,
   PageBuilderFile,
-  PageBuilderPageType,
   PageBuilderPreviewSelection,
   PageBuilderProject,
   PageBuilderSectionSummary,
-  PageBuilderStylePreset,
   PageBuilderTreeNode,
   PageBuilderWorkspaceMeta,
   PageSpec,
@@ -27,11 +25,8 @@ interface PageBuilderState {
   currentWorkspaceId: string | null;
   workspaceName: string;
   selectedTableId: string | null;
-  pageType: PageBuilderPageType;
-  stylePreset: PageBuilderStylePreset;
   pageTitle: string;
   goal: string;
-  density: 'compact' | 'comfortable';
   fieldRoleMap: Record<string, string>;
   spec: PageSpec | null;
   project: PageBuilderProject | null;
@@ -108,11 +103,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     currentWorkspaceId: null,
     workspaceName: DEFAULT_WORKSPACE_NAME,
     selectedTableId: null,
-    pageType: 'news-list',
-    stylePreset: 'nvidia-tech',
     pageTitle: '',
     goal: DEFAULT_PAGE_BUILDER_GOAL,
-    density: 'comfortable',
     fieldRoleMap: {},
     spec: null,
     project: null,
@@ -203,11 +195,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.currentWorkspaceId = snapshot.id;
       this.workspaceName = normalizeWorkspaceName(snapshot.name);
       this.selectedTableId = snapshot.selectedTableId;
-      this.pageType = snapshot.pageType;
-      this.stylePreset = snapshot.stylePreset;
       this.pageTitle = snapshot.pageTitle;
       this.goal = snapshot.goal || DEFAULT_PAGE_BUILDER_GOAL;
-      this.density = snapshot.density;
       this.fieldRoleMap = snapshot.fieldRoleMap || {};
       this.spec = snapshot.spec;
       this.project = snapshot.project;
@@ -238,11 +227,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         id: this.currentWorkspaceId,
         name: normalizeWorkspaceName(this.workspaceName),
         selectedTableId: this.selectedTableId,
-        pageType: this.pageType,
-        stylePreset: this.stylePreset,
         pageTitle: this.pageTitle,
         goal: this.goal,
-        density: this.density,
         fieldRoleMap: this.fieldRoleMap,
         spec: this.spec,
         project: this.project,
@@ -506,11 +492,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.currentWorkspaceId = createWorkspaceId();
       this.workspaceName = workspaceName;
       this.selectedTableId = table?.id || null;
-      this.pageType = 'news-list';
-      this.stylePreset = 'nvidia-tech';
       this.pageTitle = table ? `${table.name} Page` : workspaceName;
       this.goal = DEFAULT_PAGE_BUILDER_GOAL;
-      this.density = 'comfortable';
       this.fieldRoleMap = inferFieldRoles(table);
       this.spec = null;
       this.project = null;
@@ -569,11 +552,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
       const request: PageBuildRequest = {
         tableId: table.id,
-        pageType: this.pageType,
         title: this.pageTitle || this.workspaceName || `${table.name} Page`,
-        goal: this.goal || undefined,
-        stylePreset: this.stylePreset,
-        density: this.density
+        goal: this.goal || undefined
       };
 
       this.isGenerating = true;

@@ -16,41 +16,38 @@ This file can be fully rewritten when the active context changes.
 
 ## 2. Current Product Reality
 
-The page builder is no longer just in preview stabilization mode.
-
-It has now entered the first practical AI generation stage described in `docs/page-builder-workbench.md`.
-
-That current stage is:
+The page builder is in:
 
 `Phase A: direct multi-file workspace generation`
 
 Meaning:
 
-- the user provides a page goal
+- the user provides a goal in natural language
 - the user chooses a data table
 - AI directly generates a multi-file Vue workspace response
 - the system parses that output into workspace files
 - the left file tree, code panel, and Sandpack preview all use those exact generated files
 
-The system is **not** yet doing:
+The system is still **not** doing:
 
 - AI reading the existing workspace first
 - AI selectively editing existing files
 - AI fixing preview/runtime errors autonomously
 - true agentic tool use inside the product
 
-## 3. What Was Completed In The Latest Session
+## 3. What Was Completed In The Latest Sessions
 
-### 3.1 Page Builder AI Route Was Added
+### 3.1 Page Builder AI Route And Service Are In Place
 
-A new backend route now exists for page-builder generation:
+The backend page-builder generation route is active:
 
 - `POST /api/ai/generate-page-workspace`
 
-This route now accepts:
+It accepts:
 
 - selected table metadata
-- sample rows only
+- `rowCount`
+- small `sampleRows`
 - page-builder request context
 - provider/model/apiKey options
 
@@ -59,25 +56,13 @@ And returns:
 - `summary`
 - `files[]`
 
-Important file:
+Important files:
 
 - `backend/src/routes/api.ts`
-
-### 3.2 Dedicated Page Builder AI Service Was Added
-
-The backend now has a dedicated page-builder AI service that:
-
-- builds the page-builder generation prompt
-- asks the provider for structured JSON output
-- parses `summary + files[]`
-- allow-lists generated file paths
-- ensures required core files exist
-
-Important file:
-
 - `backend/src/services/PageBuilderAI.ts`
+- `backend/src/services/AIAdapter.ts`
 
-### 3.3 AI Output Now Enters The Real Workspace
+### 3.2 AI Output Enters The Real Workspace
 
 The frontend page-builder flow now:
 
@@ -92,73 +77,70 @@ Important files:
 
 - `frontend/src/services/pageBuilder.ts`
 - `frontend/src/stores/pageBuilder.ts`
+- `frontend/src/views/PageBuilderView.vue`
 
-### 3.4 AI Controls Were Added To The Page Builder UI
+### 3.3 Local Page Builder Workspaces Now Exist
 
-The page builder now includes:
+The page builder now has a real local workspace concept.
 
-- `Local Draft` button
-- `Generate with AI` button
-- AI summary display in the top bar
+Current behavior:
 
-This lets the user compare local fallback generation and AI generation.
+- workspaces are saved locally in browser storage
+- refresh no longer clears the current generated workspace
+- the user can create, switch, rename, and delete local workspaces
+- the current workspace is restored on reload
+- file edits inside the code area are persisted to the current local workspace
+
+Important files:
+
+- `frontend/src/stores/pageBuilder.ts`
+- `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
+- `frontend/src/components/pageBuilder/PageBuilderWorkspaceManager.vue`
+
+### 3.4 The UI Was Reshaped Around Workspace-First Usage
+
+Recent UI changes:
+
+- top-left now centers on workspace switching rather than one-shot generation controls
+- the workspace manager now follows the workflow-manager interaction pattern
+- hover actions exist for rename and delete in the workspace manager
+- the center workspace toolbar now owns the `Preview / Code / Data` switch
+- the old `Sandpack preview` text label was removed
+- top-right no longer includes the AI submit arrow button
 
 Important files:
 
 - `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
-- `frontend/src/views/PageBuilderView.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
+- `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
+- `frontend/src/components/pageBuilder/PageBuilderWorkspaceManager.vue`
 
-### 3.5 AI Provider Configuration Was Added As A Modal
+### 3.5 AI Triggering Is Now AI-Only
 
-AI configuration is no longer assumed to come only from backend `.env`.
+The old local fallback generation path has been removed from the page-builder UI flow.
 
-The page builder now has an `AI Config` modal in the setup drawer header.
+Current behavior:
 
-Current configurable fields:
-
-- provider
-- apiKey
-- model
-
-These values are saved locally in browser storage and survive refresh.
-
-Important files:
-
-- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
-- `frontend/src/stores/pageBuilder.ts`
-
-### 3.6 Code Editor Integration From Earlier Work Remains Active
-
-The code panel is already using CodeMirror rather than a plain textarea.
-
-This is important because AI-generated files are now intended to be inspected directly in the code panel.
+- the setup drawer keeps the AI submit arrow button
+- the top bar no longer exposes fallback or AI submit buttons
+- the page builder is now treated as AI-first for generation
 
 Relevant files:
 
-- `frontend/src/components/pageBuilder/CodeEditor.vue`
-- `frontend/src/components/pageBuilder/PageBuilderCodeTabs.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
+- `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
+- `frontend/src/views/PageBuilderView.vue`
+- `frontend/src/stores/pageBuilder.ts`
 
 ## 4. Important Corrections Made During This Session
 
 ### 4.1 AI Request No Longer Sends Full Table Rows
 
-This was an important correction.
-
-The initial page-builder AI request incorrectly passed the full `rows` array to the model.
-
-This was explicitly rejected because:
-
-- some tables are very large
-- this does not scale
-- this is not the long-term product direction
-
-The request now passes:
+The request still sends:
 
 - `columns`
 - `rowCount`
 - `sampleRows`
-
-And `sampleRows` is currently capped to a small sample on the frontend.
 
 Current practical behavior:
 
@@ -169,71 +151,63 @@ Relevant files:
 - `frontend/src/services/pageBuilder.ts`
 - `backend/src/services/PageBuilderAI.ts`
 
-### 4.2 Frontend Timeout Was Too Short And Was Fixed
+### 4.2 AI Request No Longer Injects Default Type/Style/Density Hints
 
-Another important correction:
+This is now an important fixed product decision.
 
-The frontend API client default timeout was 30 seconds, while the backend/provider path for AI generation allowed much longer execution.
+The page-builder AI request no longer sends default:
 
-This caused a misleading failure mode:
+- `pageType`
+- `stylePreset`
+- `density`
 
-- backend/provider might still be working
-- but the frontend timed out first
-- making it look like the backend did not respond correctly
+These were removed so that:
 
-The page-builder AI request now overrides timeout to a much longer value for this specific route.
+- page type should be inferred from the user's `goal`
+- style direction should be inferred from the user's `goal`
+- the system no longer silently biases output toward `news-list` or `nvidia-tech`
 
-Relevant file:
+This means the AI request context is now more minimal and user-driven.
 
+Relevant files:
+
+- `frontend/src/types/pageBuilder.ts`
+- `frontend/src/stores/pageBuilder.ts`
 - `frontend/src/services/pageBuilder.ts`
+- `backend/src/services/PageBuilderAI.ts`
 
-### 4.3 OpenRouter Request Context Was Improved
+### 4.3 AI Provider Configuration Still Persists Locally
 
-For OpenRouter usage, the frontend now sends additional request metadata:
+AI provider configuration remains editable in-product and persists in local browser storage:
 
-- `httpReferer`
-- `appTitle`
+- provider
+- apiKey
+- model
 
-This makes the OpenRouter request path more correct and easier to diagnose.
+Relevant files:
 
-Relevant file:
-
-- `frontend/src/services/pageBuilder.ts`
-
-### 4.4 Provider Errors Are Now More Visible
-
-Provider errors were initially too opaque.
-
-The backend now tries to forward more useful provider information, including upstream provider metadata when available.
-
-This helped reveal real issues such as:
-
-- provider rate limiting
-- upstream model restrictions
-
-Relevant file:
-
-- `backend/src/services/AIAdapter.ts`
+- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
+- `frontend/src/stores/pageBuilder.ts`
 
 ## 5. Current Practical Working State
 
 At the moment, the following is true:
 
 - Sandpack preview is working for generated Vue workspace files
-- the page builder can still create a local fallback draft
-- the page builder can now also generate via AI
 - AI-generated files appear in the file tree and code editor
+- the current workspace persists across refresh
+- local workspace switching is working in product
 - AI provider configuration can be edited in-product
-- AI configuration persists across refresh through local storage
+- AI configuration persists across refresh
 - the request no longer sends full table rows
+- the request no longer sends default `pageType`, `stylePreset`, or `density`
+- generation is now AI-only in the page builder flow
 
 In short:
 
-`Phase A direct AI workspace generation is now working in practice`
+`Phase A direct AI workspace generation is working, and the workbench is now workspace-persistent rather than refresh-ephemeral`
 
 ## 6. Known Issues Already Encountered
-
-The following issues were hit and are now known:
 
 ### 6.1 OpenRouter Free Models Can Fail Due To Upstream Limits
 
@@ -258,22 +232,32 @@ Likely failure categories:
 - valid Vue files but broken imports
 - structurally valid code that still fails in Sandpack
 
-This is normal for the current stage and is part of what the product is now testing.
+This is still normal for the current stage and remains one of the main areas to improve.
+
+### 6.3 The Prompt Contract Is Now Leaner, So Goal Quality Matters More
+
+Because the system no longer injects default `pageType` or `stylePreset`, weak user goals are now more likely to produce:
+
+- ambiguous layout choices
+- inconsistent styling
+- under-specified page structure
+
+This is a deliberate tradeoff, but it means prompt quality matters more than before.
 
 ## 7. What Is Fixed For Now
 
 These points should now be treated as fixed unless explicitly changed.
 
-1. The page builder has entered Phase A direct AI workspace generation.
-2. AI direct generation is now enabled in practice.
-3. The page builder remains workspace-centered.
-4. Sandpack remains the active preview runtime.
-5. The current practical preview path still prefers Sandpack `vue`.
-6. AI config should be editable from inside the page builder, not only through backend env.
-7. AI config should persist locally across refresh.
-8. Full table rows should not be sent to the model.
-9. Current AI context should use schema + rowCount + small sampleRows.
-10. The current stage is still about direct generation, not workspace editing or autonomous repair.
+1. The page builder remains in Phase A direct AI workspace generation.
+2. The page builder remains workspace-centered.
+3. Sandpack remains the active preview runtime.
+4. AI config is editable from inside the page builder and persists locally.
+5. Full table rows should not be sent to the model.
+6. Current AI context should use schema + rowCount + small sampleRows.
+7. Page-builder workspaces should persist locally across refresh.
+8. The user should be able to create, switch, rename, and delete local page-builder workspaces.
+9. The page-builder UI should be AI-first rather than fallback-first.
+10. Default `pageType`, `stylePreset`, and `density` should not be silently injected into the AI request.
 
 ## 8. Files Most Relevant For The Next Session
 
@@ -285,14 +269,14 @@ Open these first:
 - `frontend/src/stores/pageBuilder.ts`
 - `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
 - `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
+- `frontend/src/components/pageBuilder/PageBuilderWorkspaceManager.vue`
 - `frontend/src/views/PageBuilderView.vue`
 - `backend/src/services/PageBuilderAI.ts`
 - `backend/src/services/AIAdapter.ts`
 - `backend/src/routes/api.ts`
 
 ## 9. Main Remaining Gaps
-
-The following are still unresolved:
 
 ### 9.1 AI Direct Generation Quality Is Not Yet Stabilized
 
@@ -340,8 +324,8 @@ Do **not** jump straight to agentic file editing yet.
 
 The current correct focus is still:
 
-`make direct AI workspace generation reliable enough to learn from real outputs`
+`make direct AI workspace generation reliable enough to learn from real outputs, while keeping the workspace model persistent and user-driven`
 
 ## 11. Short Resume Prompt
 
-`The page builder is now in Phase A direct AI workspace generation. The product can already ask AI to generate a structured multi-file Vue workspace, parse those files into the visible file tree, inspect them in the CodeMirror editor, and run them in Sandpack preview. AI configuration is now handled inside the page builder through a modal and persists in local storage. The system no longer sends full table rows to the model; it sends schema, rowCount, and a very small sampleRows set. A major recent bug was that the frontend timed out before the backend/provider request finished; that page-builder AI request now uses a much longer timeout. The next priority is not tool use yet, but improving the reliability and quality of direct AI-generated workspace files.`  
+`The page builder is in Phase A direct AI workspace generation. It can ask AI to generate a structured multi-file Vue workspace, parse those files into the visible file tree, inspect them in the editor, and run them in Sandpack preview. The page builder now has persistent local workspaces, so refresh no longer clears the current generated project, and the user can create, switch, rename, and delete workspaces locally. AI provider configuration is handled in-product and persists in local storage. The AI request sends schema, rowCount, and a very small sampleRows set, but no longer injects default pageType, stylePreset, or density; those choices are now expected to come from the user's goal. The next priority is still improving the reliability and quality of direct AI-generated workspace files rather than moving to tool-using workspace editing.`  

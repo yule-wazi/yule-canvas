@@ -12,11 +12,8 @@ export interface PageBuilderAIInput {
   table: PageBuilderAITable;
   request: {
     tableId: string;
-    pageType: string;
     goal?: string;
     title?: string;
-    stylePreset?: string;
-    density?: 'compact' | 'comfortable';
     sectionHints?: string[];
     fieldHints?: Record<string, string>;
   };

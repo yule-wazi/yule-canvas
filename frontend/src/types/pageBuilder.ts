@@ -1,7 +1,3 @@
-export type PageBuilderPageType = 'news-list' | 'article-detail' | 'gallery' | 'catalog';
-
-export type PageBuilderStylePreset = 'nvidia-tech' | 'editorial-dark' | 'clean-catalog';
-
 export type PageBuilderCenterMode = 'preview' | 'code' | 'data';
 
 export type PageBuilderFileType = 'html' | 'css' | 'js' | 'ts' | 'json' | 'vue';
@@ -10,11 +6,8 @@ export type PageBuilderAIProvider = 'siliconflow' | 'openrouter' | 'qwen';
 
 export interface PageBuildRequest {
   tableId: string;
-  pageType: PageBuilderPageType;
   goal?: string;
   title?: string;
-  stylePreset?: PageBuilderStylePreset;
-  density?: 'compact' | 'comfortable';
   sectionHints?: string[];
   fieldHints?: Record<string, string>;
 }
@@ -57,8 +50,8 @@ export interface PageSpec {
   meta: {
     title: string;
     description?: string;
-    pageType: PageBuilderPageType;
-    stylePreset: PageBuilderStylePreset;
+    pageType?: string;
+    stylePreset?: string;
   };
   dataSource: {
     tableId: string;
@@ -134,11 +127,8 @@ export interface SavedPageBuilderWorkspace {
   id: string;
   name: string;
   selectedTableId: string | null;
-  pageType: PageBuilderPageType;
-  stylePreset: PageBuilderStylePreset;
   pageTitle: string;
   goal: string;
-  density: 'compact' | 'comfortable';
   fieldRoleMap: Record<string, string>;
   spec: PageSpec | null;
   project: PageBuilderProject | null;
