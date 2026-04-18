@@ -130,6 +130,35 @@ export interface PageBuilderProject {
   bindingContract: PageBindingContract;
 }
 
+export interface SavedPageBuilderWorkspace {
+  id: string;
+  name: string;
+  selectedTableId: string | null;
+  pageType: PageBuilderPageType;
+  stylePreset: PageBuilderStylePreset;
+  pageTitle: string;
+  goal: string;
+  density: 'compact' | 'comfortable';
+  fieldRoleMap: Record<string, string>;
+  spec: PageSpec | null;
+  project: PageBuilderProject | null;
+  activeFileId: string | null;
+  selectedSectionId: string | null;
+  centerMode: PageBuilderCenterMode;
+  lastGenerationSummary: string;
+  sectionSummaries: PageBuilderSectionSummary[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PageBuilderWorkspaceMeta {
+  id: string;
+  name: string;
+  selectedTableId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface PageBuilderPreviewSelection {
   elementId: string;
   sectionId: string;

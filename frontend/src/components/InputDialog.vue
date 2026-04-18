@@ -132,29 +132,35 @@ defineExpose({ show });
 
 .btn-primary,
 .btn-secondary {
-  padding: 8px 16px;
-  border: none;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: var(--radius-sm);
   border-radius: var(--radius-sm);
   font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-primary {
-  background: var(--color-brand-link-hover);
-  color: var(--color-text-primary);
+  border: 2px solid #76b900;
+  background: rgba(118, 185, 0, 0.12);
+  color: #f5f7fb;
 }
 
 .btn-primary:hover {
-  background: #4a8fd8;
+  background: rgba(118, 185, 0, 0.2);
+  border-color: #bff230;
 }
 
 .btn-secondary {
+  border: 1px solid var(--color-border-default);
   background: var(--color-bg-panel);
   color: var(--color-text-primary);
 }
 
 .btn-secondary:hover {
-  background: #555;
+  background: #252525;
+  border-color: rgba(255, 255, 255, 0.18);
 }
 </style>

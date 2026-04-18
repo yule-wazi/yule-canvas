@@ -14,15 +14,19 @@ import type {
   PageBuilderCenterMode,
   PageBuilderFile,
   PageBuilderPageType,
-  PageBuilderProject,
   PageBuilderPreviewSelection,
+  PageBuilderProject,
   PageBuilderSectionSummary,
   PageBuilderStylePreset,
   PageBuilderTreeNode,
-  PageSpec
+  PageBuilderWorkspaceMeta,
+  PageSpec,
+  SavedPageBuilderWorkspace
 } from '../types/pageBuilder';
 
 interface PageBuilderState {
+  currentWorkspaceId: string | null;
+  workspaceName: string;
   selectedTableId: string | null;
   pageType: PageBuilderPageType;
   stylePreset: PageBuilderStylePreset;
@@ -44,13 +48,66 @@ interface PageBuilderState {
   aiModel: string;
   isSetupDrawerOpen: boolean;
   sectionSummaries: PageBuilderSectionSummary[];
+  savedWorkspaces: PageBuilderWorkspaceMeta[];
+  hasUnsavedChanges: boolean;
+  lastSavedAt: number | null;
+  hasHydratedWorkspace: boolean;
 }
 
 const PAGE_BUILDER_AI_STORAGE_KEY = 'page_builder_ai_config';
-const DEFAULT_PAGE_BUILDER_GOAL = '帮我生成一个可滚动的展示图片的卡片类的网站';
+const PAGE_BUILDER_WORKSPACES_KEY = 'page_builder_workspaces';
+const CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY = 'current_page_builder_workspace_id';
+const DEFAULT_PAGE_BUILDER_GOAL = '帮我生成一个可滚动展示图片卡片的网站';
+const DEFAULT_WORKSPACE_NAME = 'Untitled Workspace';
+const DEFAULT_PAGE_BUILDER_MODEL = 'Qwen/Qwen2.5-7B-Instruct';
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+function createWorkspaceId() {
+  return `page-builder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeWorkspaceName(name: string) {
+  return name.trim() || DEFAULT_WORKSPACE_NAME;
+}
+
+function readSavedWorkspaces(): SavedPageBuilderWorkspace[] {
+  const raw = localStorage.getItem(PAGE_BUILDER_WORKSPACES_KEY);
+
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedWorkspaces(workspaces: SavedPageBuilderWorkspace[]) {
+  localStorage.setItem(PAGE_BUILDER_WORKSPACES_KEY, JSON.stringify(workspaces));
+}
+
+function toWorkspaceMeta(workspace: SavedPageBuilderWorkspace): PageBuilderWorkspaceMeta {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    selectedTableId: workspace.selectedTableId,
+    createdAt: workspace.createdAt,
+    updatedAt: workspace.updatedAt
+  };
+}
+
+function sortWorkspaceMeta(workspaces: PageBuilderWorkspaceMeta[]) {
+  return [...workspaces].sort((a, b) => b.updatedAt - a.updatedAt);
+}
 
 export const usePageBuilderStore = defineStore('pageBuilder', {
   state: (): PageBuilderState => ({
+    currentWorkspaceId: null,
+    workspaceName: DEFAULT_WORKSPACE_NAME,
     selectedTableId: null,
     pageType: 'news-list',
     stylePreset: 'nvidia-tech',
@@ -71,7 +128,11 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     aiApiKey: '',
     aiModel: '',
     isSetupDrawerOpen: true,
-    sectionSummaries: []
+    sectionSummaries: [],
+    savedWorkspaces: [],
+    hasUnsavedChanges: false,
+    lastSavedAt: null,
+    hasHydratedWorkspace: false
   }),
 
   getters: {
@@ -93,12 +154,19 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     initialize(tables: DataTable[]) {
       this.loadAIConfig();
 
+      if (!this.hasHydratedWorkspace) {
+        this.hydrateWorkspaceState(tables);
+        this.hasHydratedWorkspace = true;
+        return;
+      }
+
+      this.syncWithTables(tables);
+    },
+
+    syncWithTables(tables: DataTable[]) {
       if (!tables.length) {
         this.selectedTableId = null;
         this.fieldRoleMap = {};
-        this.project = null;
-        this.activeFileId = null;
-        this.error = 'No data table is available yet.';
         return;
       }
 
@@ -106,33 +174,187 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         this.selectedTableId = tables[0].id;
       }
 
-      this.refreshFieldRoles(tables);
-    },
-
-    refreshFieldRoles(tables: DataTable[]) {
       const table = tables.find((item) => item.id === this.selectedTableId) || null;
       this.fieldRoleMap = inferFieldRoles(table);
 
-      if (table && !this.pageTitle) {
-        this.pageTitle = `${table.name} Page`;
+      if (!this.pageTitle) {
+        this.pageTitle = this.workspaceName !== DEFAULT_WORKSPACE_NAME
+          ? this.workspaceName
+          : `${table?.name || 'Page'} Page`;
+      }
+    },
+
+    hydrateWorkspaceState(tables: DataTable[]) {
+      const savedWorkspaces = readSavedWorkspaces();
+      this.savedWorkspaces = sortWorkspaceMeta(savedWorkspaces.map(toWorkspaceMeta));
+
+      const currentWorkspaceId = localStorage.getItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY);
+      const currentWorkspace = savedWorkspaces.find((workspace) => workspace.id === currentWorkspaceId)
+        || savedWorkspaces[0];
+
+      if (currentWorkspace) {
+        this.loadWorkspaceSnapshot(currentWorkspace, tables);
+        return;
       }
 
-      if (!this.goal.trim()) {
-        this.goal = DEFAULT_PAGE_BUILDER_GOAL;
+      this.createWorkspace(tables);
+    },
+
+    loadWorkspaceSnapshot(snapshot: SavedPageBuilderWorkspace, tables: DataTable[]) {
+      this.currentWorkspaceId = snapshot.id;
+      this.workspaceName = normalizeWorkspaceName(snapshot.name);
+      this.selectedTableId = snapshot.selectedTableId;
+      this.pageType = snapshot.pageType;
+      this.stylePreset = snapshot.stylePreset;
+      this.pageTitle = snapshot.pageTitle;
+      this.goal = snapshot.goal || DEFAULT_PAGE_BUILDER_GOAL;
+      this.density = snapshot.density;
+      this.fieldRoleMap = snapshot.fieldRoleMap || {};
+      this.spec = snapshot.spec;
+      this.project = snapshot.project;
+      this.activeFileId = snapshot.activeFileId;
+      this.selectedSectionId = snapshot.selectedSectionId;
+      this.selectedPreviewElement = null;
+      this.centerMode = snapshot.centerMode || 'preview';
+      this.lastGenerationSummary = snapshot.lastGenerationSummary || '';
+      this.sectionSummaries = snapshot.sectionSummaries || [];
+      this.error = null;
+      this.hasUnsavedChanges = false;
+      this.lastSavedAt = snapshot.updatedAt;
+      this.isSetupDrawerOpen = !snapshot.project;
+
+      localStorage.setItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY, snapshot.id);
+      this.syncWithTables(tables);
+    },
+
+    createSnapshot(): SavedPageBuilderWorkspace | null {
+      if (!this.currentWorkspaceId) {
+        return null;
       }
+
+      const now = Date.now();
+      const previous = readSavedWorkspaces().find((workspace) => workspace.id === this.currentWorkspaceId);
+
+      return {
+        id: this.currentWorkspaceId,
+        name: normalizeWorkspaceName(this.workspaceName),
+        selectedTableId: this.selectedTableId,
+        pageType: this.pageType,
+        stylePreset: this.stylePreset,
+        pageTitle: this.pageTitle,
+        goal: this.goal,
+        density: this.density,
+        fieldRoleMap: this.fieldRoleMap,
+        spec: this.spec,
+        project: this.project,
+        activeFileId: this.activeFileId,
+        selectedSectionId: this.selectedSectionId,
+        centerMode: this.centerMode,
+        lastGenerationSummary: this.lastGenerationSummary,
+        sectionSummaries: this.sectionSummaries,
+        createdAt: previous?.createdAt || now,
+        updatedAt: now
+      };
+    },
+
+    persistCurrentWorkspace() {
+      const snapshot = this.createSnapshot();
+
+      if (!snapshot) {
+        return;
+      }
+
+      const savedWorkspaces = readSavedWorkspaces();
+      const nextWorkspaces = savedWorkspaces.filter((workspace) => workspace.id !== snapshot.id);
+      nextWorkspaces.unshift(snapshot);
+
+      writeSavedWorkspaces(nextWorkspaces);
+      localStorage.setItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY, snapshot.id);
+
+      this.savedWorkspaces = sortWorkspaceMeta(nextWorkspaces.map(toWorkspaceMeta));
+      this.hasUnsavedChanges = false;
+      this.lastSavedAt = snapshot.updatedAt;
+    },
+
+    schedulePersist(markDirty = true) {
+      if (!this.currentWorkspaceId) {
+        return;
+      }
+
+      if (markDirty) {
+        this.hasUnsavedChanges = true;
+      }
+
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+      }
+
+      persistTimer = setTimeout(() => {
+        this.persistCurrentWorkspace();
+        persistTimer = null;
+      }, markDirty ? 450 : 120);
     },
 
     setSelectedTable(tableId: string, tables: DataTable[]) {
       this.selectedTableId = tableId;
-      this.refreshFieldRoles(tables);
+      const table = tables.find((item) => item.id === tableId) || null;
+      this.fieldRoleMap = inferFieldRoles(table);
+
+      if (!this.pageTitle || this.pageTitle === `${table?.name || 'Page'} Page`) {
+        this.pageTitle = `${table?.name || 'Page'} Page`;
+      }
+
+      this.schedulePersist(true);
+    },
+
+    setWorkspaceName(value: string) {
+      const previousName = this.workspaceName;
+      const nextName = normalizeWorkspaceName(value);
+      this.workspaceName = nextName;
+
+      if (!this.pageTitle || this.pageTitle === previousName) {
+        this.pageTitle = nextName;
+      }
+
+      this.schedulePersist(true);
+    },
+
+    renameWorkspace(workspaceId: string, value: string) {
+      const nextName = normalizeWorkspaceName(value);
+
+      if (this.currentWorkspaceId === workspaceId) {
+        this.setWorkspaceName(nextName);
+        return;
+      }
+
+      const savedWorkspaces = readSavedWorkspaces();
+      const target = savedWorkspaces.find((workspace) => workspace.id === workspaceId);
+
+      if (!target) {
+        this.error = 'Workspace not found in local storage.';
+        return;
+      }
+
+      target.name = nextName;
+      target.updatedAt = Date.now();
+
+      writeSavedWorkspaces(savedWorkspaces);
+      this.savedWorkspaces = sortWorkspaceMeta(savedWorkspaces.map(toWorkspaceMeta));
+    },
+
+    setGoal(value: string) {
+      this.goal = value;
+      this.schedulePersist(true);
     },
 
     setCenterMode(mode: PageBuilderCenterMode) {
       this.centerMode = mode;
+      this.schedulePersist(false);
     },
 
     setActiveFile(fileId: string) {
       this.activeFileId = fileId;
+      this.schedulePersist(false);
     },
 
     updateActiveFileContent(content: string) {
@@ -148,10 +370,13 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
           ? { ...file, content }
           : file
       ));
+
+      this.schedulePersist(true);
     },
 
     selectSection(sectionId: string) {
       this.selectedSectionId = sectionId;
+      this.schedulePersist(false);
     },
 
     selectPreviewElement(selection: PageBuilderPreviewSelection) {
@@ -161,10 +386,12 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       if (relatedFile) {
         this.activeFileId = relatedFile.id;
       }
+      this.schedulePersist(false);
     },
 
     clearPreviewSelection() {
       this.selectedPreviewElement = null;
+      this.schedulePersist(false);
     },
 
     setError(message: string | null) {
@@ -183,7 +410,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const saved = localStorage.getItem(PAGE_BUILDER_AI_STORAGE_KEY);
       if (!saved) {
         if (!this.aiModel) {
-          this.aiModel = 'Qwen/Qwen2.5-7B-Instruct';
+          this.aiModel = DEFAULT_PAGE_BUILDER_MODEL;
         }
         return;
       }
@@ -225,7 +452,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
           return 'qwen-turbo';
         case 'siliconflow':
         default:
-          return 'Qwen/Qwen2.5-7B-Instruct';
+          return DEFAULT_PAGE_BUILDER_MODEL;
       }
     },
 
@@ -261,10 +488,76 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.centerMode = 'preview';
       this.isSetupDrawerOpen = false;
       this.lastGenerationSummary = summary;
+
+      if (!this.workspaceName || this.workspaceName === DEFAULT_WORKSPACE_NAME) {
+        this.workspaceName = this.pageTitle || DEFAULT_WORKSPACE_NAME;
+      }
+
+      this.persistCurrentWorkspace();
     },
 
     toggleSetupDrawer(force?: boolean) {
       this.isSetupDrawerOpen = typeof force === 'boolean' ? force : !this.isSetupDrawerOpen;
+    },
+
+    createWorkspace(tables: DataTable[], name?: string) {
+      const table = tables.find((item) => item.id === this.selectedTableId) || tables[0] || null;
+      const workspaceName = normalizeWorkspaceName(name || (table ? `${table.name} Workspace` : DEFAULT_WORKSPACE_NAME));
+
+      this.currentWorkspaceId = createWorkspaceId();
+      this.workspaceName = workspaceName;
+      this.selectedTableId = table?.id || null;
+      this.pageType = 'news-list';
+      this.stylePreset = 'nvidia-tech';
+      this.pageTitle = table ? `${table.name} Page` : workspaceName;
+      this.goal = DEFAULT_PAGE_BUILDER_GOAL;
+      this.density = 'comfortable';
+      this.fieldRoleMap = inferFieldRoles(table);
+      this.spec = null;
+      this.project = null;
+      this.activeFileId = null;
+      this.selectedSectionId = null;
+      this.selectedPreviewElement = null;
+      this.centerMode = 'preview';
+      this.error = null;
+      this.isGenerating = false;
+      this.lastGenerationSummary = '';
+      this.isSetupDrawerOpen = true;
+      this.sectionSummaries = [];
+      this.hasUnsavedChanges = false;
+
+      this.persistCurrentWorkspace();
+    },
+
+    switchWorkspace(workspaceId: string, tables: DataTable[]) {
+      const snapshot = readSavedWorkspaces().find((workspace) => workspace.id === workspaceId);
+
+      if (!snapshot) {
+        this.error = 'Workspace not found in local storage.';
+        return;
+      }
+
+      this.loadWorkspaceSnapshot(snapshot, tables);
+    },
+
+    deleteWorkspace(workspaceId: string, tables: DataTable[]) {
+      const savedWorkspaces = readSavedWorkspaces().filter((workspace) => workspace.id !== workspaceId);
+      writeSavedWorkspaces(savedWorkspaces);
+      this.savedWorkspaces = sortWorkspaceMeta(savedWorkspaces.map(toWorkspaceMeta));
+
+      if (this.currentWorkspaceId !== workspaceId) {
+        return;
+      }
+
+      const nextWorkspace = savedWorkspaces[0];
+
+      if (nextWorkspace) {
+        this.loadWorkspaceSnapshot(nextWorkspace, tables);
+        return;
+      }
+
+      localStorage.removeItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY);
+      this.createWorkspace(tables);
     },
 
     createWorkspaceFromTable(tables: DataTable[]) {
@@ -278,7 +571,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const request: PageBuildRequest = {
         tableId: table.id,
         pageType: this.pageType,
-        title: this.pageTitle || `${table.name} Page`,
+        title: this.pageTitle || this.workspaceName || `${table.name} Page`,
         goal: this.goal || undefined,
         stylePreset: this.stylePreset,
         density: this.density
@@ -299,7 +592,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const request: PageBuildRequest = {
         tableId: table.id,
         pageType: this.pageType,
-        title: this.pageTitle || `${table.name} Page`,
+        title: this.pageTitle || this.workspaceName || `${table.name} Page`,
         goal: this.goal || undefined,
         stylePreset: this.stylePreset,
         density: this.density

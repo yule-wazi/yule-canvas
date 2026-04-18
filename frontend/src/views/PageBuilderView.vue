@@ -1,18 +1,17 @@
 <template>
   <div class="page-builder-view">
     <PageBuilderTopBar
-      :title="store.pageTitle || 'Untitled Workspace'"
-      :table-name="selectedTable?.name || 'No table selected'"
-      :page-type="store.pageType"
-      :style-preset="store.stylePreset"
+      :workspace-name="store.workspaceName"
       :center-mode="store.centerMode"
       :setup-open="store.isSetupDrawerOpen"
       :is-generating="store.isGenerating"
+      :has-unsaved-changes="store.hasUnsavedChanges"
       :generation-summary="store.lastGenerationSummary"
       @change-mode="store.setCenterMode"
       @generate-local="createWorkspace"
       @generate-ai="createAIWorkspace"
       @toggle-setup="store.toggleSetupDrawer"
+      @open-workspaces="isWorkspaceManagerOpen = true"
     />
 
     <div class="page-builder-body">
@@ -53,12 +52,25 @@
         @generate-local="createWorkspace"
         @generate-ai="createAIWorkspace"
         @update:selected-table-id="store.setSelectedTable($event, dataTableStore.tables)"
-        @update:goal="store.goal = $event"
+        @update:goal="store.setGoal($event)"
         @update:ai-provider="store.setAIProvider($event as any)"
         @update:ai-api-key="store.setAIApiKey($event)"
         @update:ai-model="store.setAIModel($event)"
       />
     </div>
+
+    <PageBuilderWorkspaceManager
+      :show="isWorkspaceManagerOpen"
+      :current-workspace-id="store.currentWorkspaceId"
+      :current-workspace-name="store.workspaceName"
+      :workspaces="store.savedWorkspaces"
+      :tables="dataTableStore.tables"
+      @close="isWorkspaceManagerOpen = false"
+      @create="createNamedWorkspace"
+      @select="switchWorkspace"
+      @delete="deleteWorkspace"
+      @rename="renameWorkspace"
+    />
   </div>
 </template>
 
@@ -68,12 +80,14 @@ import PageBuilderFileTree from '../components/pageBuilder/PageBuilderFileTree.v
 import PageBuilderSandbox from '../components/pageBuilder/PageBuilderSandbox.vue';
 import PageBuilderSetupDrawer from '../components/pageBuilder/PageBuilderSetupDrawer.vue';
 import PageBuilderTopBar from '../components/pageBuilder/PageBuilderTopBar.vue';
+import PageBuilderWorkspaceManager from '../components/pageBuilder/PageBuilderWorkspaceManager.vue';
 import { useDataTableStore } from '../stores/dataTable';
 import { usePageBuilderStore } from '../stores/pageBuilder';
 
 const dataTableStore = useDataTableStore();
 const store = usePageBuilderStore();
 const viewport = ref<'desktop' | 'tablet' | 'mobile'>('desktop');
+const isWorkspaceManagerOpen = ref(false);
 
 const selectedTable = computed(() =>
   dataTableStore.tables.find((table) => table.id === store.selectedTableId) || null
@@ -123,6 +137,22 @@ function createWorkspace() {
 
 function createAIWorkspace() {
   void store.createWorkspaceFromAI(dataTableStore.tables);
+}
+
+function createNamedWorkspace(name: string) {
+  store.createWorkspace(dataTableStore.tables, name);
+}
+
+function switchWorkspace(workspaceId: string) {
+  store.switchWorkspace(workspaceId, dataTableStore.tables);
+}
+
+function deleteWorkspace(workspaceId: string) {
+  store.deleteWorkspace(workspaceId, dataTableStore.tables);
+}
+
+function renameWorkspace(payload: { workspaceId: string; name: string }) {
+  store.renameWorkspace(payload.workspaceId, payload.name);
 }
 
 function openFile(fileId: string) {
