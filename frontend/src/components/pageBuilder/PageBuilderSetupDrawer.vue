@@ -47,20 +47,18 @@
         />
 
         <p class="helper-text">
-          This MVP can create a local draft or ask AI to generate a multi-file workspace that appears directly in the file tree.
+          Ask AI to generate a multi-file workspace that appears directly in the file tree.
         </p>
       </section>
     </div>
 
     <div class="drawer-footer">
-      <div class="action-row">
-        <button class="secondary-btn" type="button" :disabled="isGenerating" @click="$emit('generate-local')">
-          Local Draft
-        </button>
-        <button class="submit-btn" type="button" :disabled="isGenerating" @click="$emit('generate-ai')">
-          {{ isGenerating ? 'Generating...' : 'Generate with AI' }}
-        </button>
-      </div>
+      <button class="submit-btn submit-btn--icon" type="button" :disabled="isGenerating" @click="$emit('generate-ai')" :title="isGenerating ? 'Generating...' : 'Generate with AI'">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5V19" />
+          <path d="M5 12L12 5L19 12" />
+        </svg>
+      </button>
     </div>
 
     <div v-if="isAIConfigOpen" class="config-modal-backdrop" @click.self="isAIConfigOpen = false">
@@ -136,7 +134,6 @@ const props = defineProps<{
 }>();
 
 defineEmits<{
-  'generate-local': [];
   'generate-ai': [];
   'update:selectedTableId': [value: string];
   'update:goal': [value: string];
@@ -323,15 +320,10 @@ const providerLabel = computed(() => {
 .drawer-footer {
   padding: 16px 18px 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  justify-content: flex-end;
 }
 
-.action-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-  gap: 10px;
-}
-
-.secondary-btn,
 .submit-btn {
   min-height: 48px;
   border-radius: 16px;
@@ -339,16 +331,28 @@ const providerLabel = computed(() => {
   cursor: pointer;
 }
 
-.secondary-btn {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.02);
-  color: #f5f7fb;
-}
-
-.secondary-btn:disabled,
 .submit-btn:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+.submit-btn--icon {
+  width: 48px;
+  min-width: 48px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.submit-btn--icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .config-modal-backdrop {

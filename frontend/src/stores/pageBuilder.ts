@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import type { DataTable } from './dataTable';
 import {
   createProjectFromGeneratedFiles,
-  createPageBuilderWorkspace,
   inferFieldRoles,
   requestAIPageBuilderWorkspace
 } from '../services/pageBuilder';
@@ -476,7 +475,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.saveAIConfig();
     },
 
-    applyWorkspaceResult(nextWorkspace: ReturnType<typeof createPageBuilderWorkspace>, summary = '') {
+    applyWorkspaceResult(nextWorkspace: { fieldRoleMap: Record<string, string>; spec: PageSpec; project: PageBuilderProject; sectionSummaries: PageBuilderSectionSummary[] }, summary = '') {
       this.error = null;
       this.fieldRoleMap = nextWorkspace.fieldRoleMap;
       this.spec = nextWorkspace.spec;
@@ -558,27 +557,6 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
       localStorage.removeItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY);
       this.createWorkspace(tables);
-    },
-
-    createWorkspaceFromTable(tables: DataTable[]) {
-      const table = tables.find((item) => item.id === this.selectedTableId);
-
-      if (!table) {
-        this.error = 'Select a data table before creating the workspace.';
-        return;
-      }
-
-      const request: PageBuildRequest = {
-        tableId: table.id,
-        pageType: this.pageType,
-        title: this.pageTitle || this.workspaceName || `${table.name} Page`,
-        goal: this.goal || undefined,
-        stylePreset: this.stylePreset,
-        density: this.density
-      };
-
-      const nextWorkspace = createPageBuilderWorkspace(table, request);
-      this.applyWorkspaceResult(nextWorkspace, 'Created local fallback workspace.');
     },
 
     async createWorkspaceFromAI(tables: DataTable[]) {

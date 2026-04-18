@@ -14,64 +14,24 @@
     </div>
 
     <div class="topbar-right">
-      <div v-if="generationSummary" class="summary-chip">
-        <span class="summary-label">AI Summary</span>
-        <strong>{{ generationSummary }}</strong>
-      </div>
-
       <button class="ghost-btn" type="button" @click="$emit('toggle-setup')">
         {{ setupOpen ? 'Hide setup' : 'Show setup' }}
-      </button>
-
-      <div class="mode-switch">
-        <button
-          v-for="mode in modes"
-          :key="mode.value"
-          class="mode-btn"
-          :class="{ 'is-active': mode.value === centerMode }"
-          type="button"
-          @click="$emit('change-mode', mode.value)"
-        >
-          {{ mode.label }}
-        </button>
-      </div>
-
-      <button class="ghost-btn" type="button" :disabled="isGenerating" @click="$emit('generate-local')">
-        Local Draft
-      </button>
-
-      <button class="generate-btn" type="button" :disabled="isGenerating" @click="$emit('generate-ai')">
-        {{ isGenerating ? 'Generating...' : 'Generate with AI' }}
       </button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import type { PageBuilderCenterMode } from '../../types/pageBuilder';
-
 defineProps<{
   workspaceName: string;
-  centerMode: PageBuilderCenterMode;
   setupOpen: boolean;
-  isGenerating: boolean;
   hasUnsavedChanges: boolean;
-  generationSummary?: string;
 }>();
 
 defineEmits<{
-  'change-mode': [mode: PageBuilderCenterMode];
-  'generate-local': [];
-  'generate-ai': [];
   'toggle-setup': [];
   'open-workspaces': [];
 }>();
-
-const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
-  { label: 'Preview', value: 'preview' },
-  { label: 'Code', value: 'code' },
-  { label: 'Data', value: 'data' }
-];
 </script>
 
 <style scoped>
@@ -100,9 +60,7 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
 
 .nav-back,
 .workspace-switcher,
-.ghost-btn,
-.generate-btn,
-.mode-btn {
+.ghost-btn {
   min-height: 42px;
   border-radius: 2px;
   font-size: var(--text-link);
@@ -111,8 +69,7 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
 
 .nav-back,
 .workspace-switcher,
-.ghost-btn,
-.mode-btn {
+.ghost-btn {
   border: 1px solid var(--color-border-default);
   background: transparent;
   color: var(--color-text-primary);
@@ -183,66 +140,12 @@ const modes: Array<{ label: string; value: PageBuilderCenterMode }> = [
   font-size: 14px;
 }
 
-.summary-chip {
-  display: grid;
-  gap: 2px;
-  max-width: 320px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.summary-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.summary-chip strong {
-  font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ghost-btn,
-.mode-btn {
+.ghost-btn {
   padding: 10px 14px;
   cursor: pointer;
 }
 
-.generate-btn {
-  padding: 10px 16px;
-  border: 2px solid var(--color-brand-accent);
-  background: transparent;
-  color: var(--color-text-primary);
-  cursor: pointer;
-}
-
-.ghost-btn:disabled,
-.generate-btn:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.mode-switch {
-  display: inline-flex;
-  padding: 3px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.mode-btn {
-  min-width: 72px;
-  border-color: transparent;
-}
-
-.generate-btn:hover,
 .ghost-btn:hover,
-.mode-btn:hover,
-.mode-btn.is-active,
 .nav-back:hover,
 .workspace-switcher:hover {
   border-color: var(--color-brand-accent);

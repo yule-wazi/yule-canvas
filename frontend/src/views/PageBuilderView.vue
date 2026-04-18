@@ -2,14 +2,8 @@
   <div class="page-builder-view">
     <PageBuilderTopBar
       :workspace-name="store.workspaceName"
-      :center-mode="store.centerMode"
       :setup-open="store.isSetupDrawerOpen"
-      :is-generating="store.isGenerating"
       :has-unsaved-changes="store.hasUnsavedChanges"
-      :generation-summary="store.lastGenerationSummary"
-      @change-mode="store.setCenterMode"
-      @generate-local="createWorkspace"
-      @generate-ai="createAIWorkspace"
       @toggle-setup="store.toggleSetupDrawer"
       @open-workspaces="isWorkspaceManagerOpen = true"
     />
@@ -31,6 +25,7 @@
           :data-title="dataTitle"
           :data-description="dataDescription"
           :data-content="dataContent"
+          @change-mode="store.setCenterMode"
           @select-file="openFile"
           @update-content="store.updateActiveFileContent"
           @change-viewport="viewport = $event"
@@ -49,7 +44,6 @@
         :ai-provider="store.aiProvider"
         :ai-api-key="store.aiApiKey"
         :ai-model="store.aiModel"
-        @generate-local="createWorkspace"
         @generate-ai="createAIWorkspace"
         @update:selected-table-id="store.setSelectedTable($event, dataTableStore.tables)"
         @update:goal="store.setGoal($event)"
@@ -130,10 +124,6 @@ watch(
   },
   { deep: true }
 );
-
-function createWorkspace() {
-  store.createWorkspaceFromTable(dataTableStore.tables);
-}
 
 function createAIWorkspace() {
   void store.createWorkspaceFromAI(dataTableStore.tables);
