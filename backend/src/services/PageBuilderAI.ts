@@ -1,4 +1,5 @@
-import { AIAdapterManager } from './AIAdapter';
+import axios from 'axios';
+import type { AIAdapterManager, AIModelAdapter } from './AIAdapter';
 
 export interface PageBuilderAITable {
   id: string;
@@ -34,16 +35,22 @@ export interface PageBuilderAIResult {
 
 const PAGE_BUILDER_SYSTEM_PROMPT = `You generate files for a Vue page-builder workspace.
 Output rules:
-1. Output JSON only. No markdown or explanation.
-2. Return shape: {"summary": string, "files": Array<{ "path": string, "role": string, "content": string }>}
-3. Every file path must be inside public/ or src/.
-4. Required files that should always exist in the result: public/index.html, src/main.js, src/App.vue, src/styles.css.
-5. Additional files may be created under src/components/, src/data/, or src/spec/.
-6. All Vue files must use standard SFC structure with <template> and <script setup>.
-7. Use only Vue. Do not add third-party dependencies.
-8. The output must be runnable inside a Sandpack Vue environment.
-9. Keep imports explicit and local.
-10. The generated page should visibly use the provided table data.
+1. Do not output JSON.
+2. Output only file blocks and one final summary block.
+3. For each completed file, use exactly this shape:
+<file path="src/App.vue" role="App root component">
+...full file content...
+</file>
+4. After all files, output exactly one summary block:
+<summary>One short summary sentence.</summary>
+5. Every file path must be inside public/ or src/.
+6. Required files that should always exist in the result: public/index.html, src/main.js, src/App.vue, src/styles.css.
+7. Additional files may be created under src/components/, src/data/, or src/spec/.
+8. All Vue files must use standard SFC structure with <template> and <script setup>.
+9. Use only Vue. Do not add third-party dependencies.
+10. Keep imports explicit and local.
+11. The generated page should visibly use the provided table data.
+12. Never wrap the whole answer in markdown fences.
 
 Data access contract:
 - src/data/tableData.js must export:
@@ -77,49 +84,29 @@ Additional requirements:
 - Use the selected data table in the UI.
 - Keep the file set practical and inspectable.
 - Favor valid runnable code over ambitious but fragile code.
-- Output JSON only.`;
+- Finish one whole file before starting the next file block.
+- Output only the file blocks and final summary block.`;
 }
 
-function sanitizeJsonBlock(content: string) {
-  return String(content || '')
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
+function isAllowedPath(path: string) {
+  return path === 'public/index.html'
+    || path === 'src/main.js'
+    || path === 'src/App.vue'
+    || path === 'src/styles.css'
+    || path.startsWith('src/components/')
+    || path.startsWith('src/data/')
+    || path.startsWith('src/spec/');
 }
 
-function parseGeneratedPayload(content: string): PageBuilderAIResult {
-  const parsed = JSON.parse(sanitizeJsonBlock(content));
-  const files = normalizeFiles(parsed?.files);
-
-  if (!files.length) {
-    throw new Error('AI returned no usable files.');
-  }
-
-  return {
-    summary: typeof parsed?.summary === 'string' ? parsed.summary.trim() : '',
-    files
-  };
-}
-
-function normalizeFiles(files: any): PageBuilderAIGeneratedFile[] {
-  if (!Array.isArray(files)) {
-    return [];
-  }
-
+function normalizeFiles(files: PageBuilderAIGeneratedFile[]): PageBuilderAIGeneratedFile[] {
   const deduped = new Map<string, PageBuilderAIGeneratedFile>();
 
   for (const file of files) {
-    const path = typeof file?.path === 'string' ? file.path.trim().replace(/^\/+/, '') : '';
-    const role = typeof file?.role === 'string' ? file.role.trim() : 'Generated file.';
-    const content = typeof file?.content === 'string' ? file.content : '';
+    const path = typeof file.path === 'string' ? file.path.trim().replace(/^\/+/, '') : '';
+    const role = typeof file.role === 'string' ? file.role.trim() : 'Generated file.';
+    const content = typeof file.content === 'string' ? file.content : '';
 
-    if (!path || !content) {
-      continue;
-    }
-
-    if (!isAllowedPath(path)) {
+    if (!path || !content || !isAllowedPath(path)) {
       continue;
     }
 
@@ -131,16 +118,6 @@ function normalizeFiles(files: any): PageBuilderAIGeneratedFile[] {
   }
 
   return Array.from(deduped.values());
-}
-
-function isAllowedPath(path: string) {
-  return path === 'public/index.html'
-    || path === 'src/main.js'
-    || path === 'src/App.vue'
-    || path === 'src/styles.css'
-    || path.startsWith('src/components/')
-    || path.startsWith('src/data/')
-    || path.startsWith('src/spec/');
 }
 
 function ensureCoreFiles(input: PageBuilderAIInput, files: PageBuilderAIGeneratedFile[]) {
@@ -236,27 +213,228 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;');
 }
 
-export async function generatePageWorkspace(
-  aiManager: AIAdapterManager,
-  input: PageBuilderAIInput
-): Promise<PageBuilderAIResult> {
-  const model = input.model || 'openrouter';
-  const content = await aiManager.generateText(
-    model,
+function extractTextDelta(adapterId: string, payload: any): string {
+  if (adapterId === 'qwen') {
+    return '';
+  }
+
+  return String(payload?.choices?.[0]?.delta?.content || '');
+}
+
+async function streamProviderText(
+  adapter: AIModelAdapter,
+  input: PageBuilderAIInput,
+  onTextChunk: (chunk: string) => void
+) {
+  if (adapter.id === 'qwen') {
+    throw new Error('Qwen streaming is not supported for page builder yet.');
+  }
+
+  const apiKey = adapter.getApiKey(input.options || {});
+
+  if (!apiKey) {
+    throw new Error(`${adapter.name} API key is not configured.`);
+  }
+
+  const endpoint = adapter.getApiEndpoint();
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    ...(adapter.getHeaders?.(input.options || {}) || {})
+  };
+  const body = adapter.formatChatRequest(
     PAGE_BUILDER_SYSTEM_PROMPT,
     buildPrompt(input),
     {
       ...(input.options || {}),
       temperature: input.options?.temperature ?? 0.3,
       maxTokens: input.options?.maxTokens ?? 7000,
-      timeoutMs: input.options?.timeoutMs ?? 120000
+      timeoutMs: input.options?.timeoutMs ?? 120000,
+      stream: true
     }
   );
 
-  const result = parseGeneratedPayload(content);
+  const response = await axios.post(endpoint, body, {
+    headers,
+    responseType: 'stream',
+    timeout: input.options?.timeoutMs ?? 120000
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    let buffer = '';
+
+    response.data.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString('utf8');
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+
+      for (const part of parts) {
+        const lines = part.split('\n');
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+
+          if (!trimmed.startsWith('data:')) {
+            continue;
+          }
+
+          const data = trimmed.slice(5).trim();
+
+          if (!data || data === '[DONE]') {
+            continue;
+          }
+
+          try {
+            const payload = JSON.parse(data);
+            const text = extractTextDelta(adapter.id, payload);
+
+            if (text) {
+              onTextChunk(text);
+            }
+          } catch {
+            // Ignore malformed provider chunks and continue consuming the stream.
+          }
+        }
+      }
+    });
+
+    response.data.on('end', () => resolve());
+    response.data.on('error', (error: Error) => reject(error));
+  });
+}
+
+function parseFileAttributes(attributeText: string) {
+  const pathMatch = attributeText.match(/path="([^"]+)"/i);
+  const roleMatch = attributeText.match(/role="([^"]*)"/i);
 
   return {
-    summary: result.summary || 'AI generated a workspace draft.',
-    files: ensureCoreFiles(input, result.files)
+    path: pathMatch?.[1]?.trim() || '',
+    role: roleMatch?.[1]?.trim() || 'Generated file.'
+  };
+}
+
+function extractCompletedFileBlocks(buffer: string) {
+  const files: PageBuilderAIGeneratedFile[] = [];
+  const fileRegex = /<file\s+([^>]+)>([\s\S]*?)<\/file>/i;
+  let remaining = buffer;
+
+  while (true) {
+    const match = remaining.match(fileRegex);
+
+    if (!match || match.index == null) {
+      break;
+    }
+
+    const [fullMatch, attrs, content] = match;
+    const { path, role } = parseFileAttributes(attrs);
+
+    if (path && content.trim()) {
+      files.push({
+        path,
+        role,
+        content: content.trim()
+      });
+    }
+
+    remaining = remaining.slice(match.index + fullMatch.length);
+  }
+
+  return {
+    files,
+    remaining
+  };
+}
+
+function extractSummary(buffer: string) {
+  const match = buffer.match(/<summary>([\s\S]*?)<\/summary>/i);
+  return match?.[1]?.trim() || '';
+}
+
+function parseFinalFileBlocks(content: string) {
+  const { files } = extractCompletedFileBlocks(content);
+  const normalizedFiles = normalizeFiles(files);
+
+  if (!normalizedFiles.length) {
+    throw new Error('AI returned no usable files.');
+  }
+
+  return {
+    summary: extractSummary(content) || 'AI generated a workspace draft.',
+    files: normalizedFiles
+  };
+}
+
+export async function generatePageWorkspace(
+  aiManager: AIAdapterManager,
+  input: PageBuilderAIInput
+): Promise<PageBuilderAIResult> {
+  const model = input.model || 'openrouter';
+  const adapter = aiManager.getAdapter(model);
+
+  if (!adapter) {
+    throw new Error(`Unsupported model: ${model}`);
+  }
+
+  let streamedText = '';
+
+  await streamProviderText(adapter, input, (chunk) => {
+    streamedText += chunk;
+  });
+
+  const parsed = parseFinalFileBlocks(streamedText);
+
+  return {
+    summary: parsed.summary,
+    files: ensureCoreFiles(input, parsed.files)
+  };
+}
+
+export async function generatePageWorkspaceStream(
+  aiManager: AIAdapterManager,
+  input: PageBuilderAIInput,
+  callbacks: {
+    onFileDone?: (file: PageBuilderAIGeneratedFile) => void;
+  } = {}
+): Promise<PageBuilderAIResult> {
+  const model = input.model || 'openrouter';
+  const adapter = aiManager.getAdapter(model);
+
+  if (!adapter) {
+    throw new Error(`Unsupported model: ${model}`);
+  }
+
+  let rawText = '';
+  let pendingBuffer = '';
+  const streamedFiles = new Map<string, PageBuilderAIGeneratedFile>();
+
+  await streamProviderText(adapter, input, (chunk) => {
+    rawText += chunk;
+    pendingBuffer += chunk;
+
+    const extracted = extractCompletedFileBlocks(pendingBuffer);
+    pendingBuffer = extracted.remaining;
+
+    for (const file of normalizeFiles(extracted.files)) {
+      if (streamedFiles.has(file.path)) {
+        continue;
+      }
+
+      streamedFiles.set(file.path, file);
+      callbacks.onFileDone?.(file);
+    }
+  });
+
+  const parsed = parseFinalFileBlocks(rawText);
+  const files = ensureCoreFiles(input, parsed.files);
+
+  for (const file of files) {
+    if (!streamedFiles.has(file.path)) {
+      callbacks.onFileDone?.(file);
+    }
+  }
+
+  return {
+    summary: parsed.summary,
+    files
   };
 }

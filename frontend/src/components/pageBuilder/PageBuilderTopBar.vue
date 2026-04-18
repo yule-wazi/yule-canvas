@@ -8,23 +8,27 @@
       </button>
 
       <div class="save-status-chip" :class="{ 'is-unsaved': hasUnsavedChanges }">
-        <span class="save-status-dot">{{ hasUnsavedChanges ? '•' : '✓' }}</span>
-        <span class="save-status-text">{{ hasUnsavedChanges ? '保存中' : '已保存' }}</span>
+        <span class="save-status-dot">{{ hasUnsavedChanges ? '!' : 'OK' }}</span>
+        <span class="save-status-text">{{ hasUnsavedChanges ? 'Unsaved' : 'Saved' }}</span>
       </div>
     </div>
 
     <div class="topbar-right">
       <button class="ghost-btn" type="button" @click="$emit('toggle-setup')">
-        {{ setupOpen ? 'Hide setup' : 'Show setup' }}
+        {{ setupOpen ? hideLabel : showLabel }}
       </button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import type { PageBuilderDrawerMode } from '../../types/pageBuilder';
+
+const props = defineProps<{
   workspaceName: string;
   setupOpen: boolean;
+  drawerMode: PageBuilderDrawerMode;
   hasUnsavedChanges: boolean;
 }>();
 
@@ -32,6 +36,9 @@ defineEmits<{
   'toggle-setup': [];
   'open-workspaces': [];
 }>();
+
+const showLabel = computed(() => props.drawerMode === 'setup' ? 'Show setup' : 'Show chat');
+const hideLabel = computed(() => props.drawerMode === 'setup' ? 'Hide setup' : 'Hide chat');
 </script>
 
 <style scoped>
@@ -123,12 +130,14 @@ defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  min-width: 22px;
   height: 22px;
+  padding: 0 4px;
   border-radius: 999px;
   background: rgba(118, 185, 0, 0.14);
   color: #76b900;
-  font-size: 14px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .save-status-chip.is-unsaved .save-status-dot {

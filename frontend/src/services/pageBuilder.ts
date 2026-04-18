@@ -10,6 +10,8 @@ import type {
   PageBuilderGeneratedFile,
   PageBuilderProject,
   PageBuilderSectionSummary,
+  PageBuilderStreamDoneEvent,
+  PageBuilderStreamFileDoneEvent,
   PageBuilderTreeNode,
   PageSpec
 } from '../types/pageBuilder';
@@ -417,6 +419,91 @@ export async function requestAIPageBuilderWorkspace(
     summary: response.summary || '',
     files: Array.isArray(response.files) ? response.files : []
   };
+}
+
+export async function streamAIPageBuilderWorkspace(
+  table: DataTable,
+  request: PageBuildRequest,
+  aiConfig: PageBuilderAIConfig,
+  callbacks: {
+    onFileDone?: (event: PageBuilderStreamFileDoneEvent) => void;
+    onDone?: (event: PageBuilderStreamDoneEvent) => void;
+  }
+) {
+  const sampleRows = table.rows.slice(0, 5);
+  const openRouterOptions = aiConfig.provider === 'openrouter'
+    ? {
+        httpReferer: window.location.origin,
+        appTitle: 'AIBrowser Page Builder'
+      }
+    : {};
+
+  const response = await fetch(`${api.defaults.baseURL}/ai/generate-page-workspace-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      table: {
+        id: table.id,
+        name: table.name,
+        columns: table.columns,
+        rowCount: table.rows.length,
+        sampleRows
+      },
+      request,
+      model: aiConfig.provider,
+      options: {
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model || undefined,
+        timeoutMs: 180000,
+        ...openRouterOptions
+      }
+    })
+  });
+
+  if (!response.ok || !response.body) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'AI page generation failed.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const event = JSON.parse(trimmed);
+
+      if (event.type === 'file_done') {
+        callbacks.onFileDone?.(event as PageBuilderStreamFileDoneEvent);
+      }
+
+      if (event.type === 'done') {
+        callbacks.onDone?.(event as PageBuilderStreamDoneEvent);
+      }
+
+      if (event.type === 'error') {
+        throw new Error(event.error || 'AI page generation failed.');
+      }
+    }
+  }
 }
 
 function createFallbackGeneratedFiles(table: DataTable, request: PageBuildRequest): PageBuilderGeneratedFile[] {

@@ -3,7 +3,7 @@ import type { DataTable } from './dataTable';
 import {
   createProjectFromGeneratedFiles,
   inferFieldRoles,
-  requestAIPageBuilderWorkspace
+  streamAIPageBuilderWorkspace
 } from '../services/pageBuilder';
 import type {
   PageBuilderAIConfig,
@@ -11,6 +11,8 @@ import type {
   PageBindingContract,
   PageBuildRequest,
   PageBuilderCenterMode,
+  PageBuilderConversationMessage,
+  PageBuilderDrawerMode,
   PageBuilderFile,
   PageBuilderPreviewSelection,
   PageBuilderProject,
@@ -41,6 +43,9 @@ interface PageBuilderState {
   aiApiKey: string;
   aiModel: string;
   isSetupDrawerOpen: boolean;
+  drawerMode: PageBuilderDrawerMode;
+  conversationDraft: string;
+  conversationMessages: PageBuilderConversationMessage[];
   sectionSummaries: PageBuilderSectionSummary[];
   savedWorkspaces: PageBuilderWorkspaceMeta[];
   hasUnsavedChanges: boolean;
@@ -59,6 +64,15 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function createWorkspaceId() {
   return `page-builder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createConversationMessage(role: 'user' | 'assistant', content: string): PageBuilderConversationMessage {
+  return {
+    id: `message-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content: content.trim(),
+    createdAt: Date.now()
+  };
 }
 
 function normalizeWorkspaceName(name: string) {
@@ -119,6 +133,9 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
     aiApiKey: '',
     aiModel: '',
     isSetupDrawerOpen: true,
+    drawerMode: 'setup',
+    conversationDraft: '',
+    conversationMessages: [],
     sectionSummaries: [],
     savedWorkspaces: [],
     hasUnsavedChanges: false,
@@ -205,11 +222,16 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.selectedPreviewElement = null;
       this.centerMode = snapshot.centerMode || 'preview';
       this.lastGenerationSummary = snapshot.lastGenerationSummary || '';
+      this.drawerMode = snapshot.drawerMode || (snapshot.project ? 'conversation' : 'setup');
+      this.conversationDraft = snapshot.conversationDraft || '';
+      this.conversationMessages = Array.isArray(snapshot.conversationMessages)
+        ? snapshot.conversationMessages
+        : [];
       this.sectionSummaries = snapshot.sectionSummaries || [];
       this.error = null;
       this.hasUnsavedChanges = false;
       this.lastSavedAt = snapshot.updatedAt;
-      this.isSetupDrawerOpen = !snapshot.project;
+      this.isSetupDrawerOpen = true;
 
       localStorage.setItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY, snapshot.id);
       this.syncWithTables(tables);
@@ -229,6 +251,9 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         selectedTableId: this.selectedTableId,
         pageTitle: this.pageTitle,
         goal: this.goal,
+        drawerMode: this.drawerMode,
+        conversationDraft: this.conversationDraft,
+        conversationMessages: this.conversationMessages,
         fieldRoleMap: this.fieldRoleMap,
         spec: this.spec,
         project: this.project,
@@ -332,6 +357,11 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.schedulePersist(true);
     },
 
+    setConversationDraft(value: string) {
+      this.conversationDraft = value;
+      this.schedulePersist(false);
+    },
+
     setCenterMode(mode: PageBuilderCenterMode) {
       this.centerMode = mode;
       this.schedulePersist(false);
@@ -368,9 +398,11 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.selectedPreviewElement = selection;
       this.selectedSectionId = selection.sectionId;
       const relatedFile = this.project?.files.find((file) => selection.relatedFilePaths.includes(file.path));
+
       if (relatedFile) {
         this.activeFileId = relatedFile.id;
       }
+
       this.schedulePersist(false);
     },
 
@@ -383,6 +415,29 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.error = message;
     },
 
+    pushConversationMessage(role: 'user' | 'assistant', content: string) {
+      const normalized = content.trim();
+
+      if (!normalized) {
+        return;
+      }
+
+      this.conversationMessages = [
+        ...this.conversationMessages,
+        createConversationMessage(role, normalized)
+      ];
+      this.schedulePersist(false);
+    },
+
+    buildConversationGoal() {
+      const messages = this.conversationMessages
+        .filter((message) => message.role === 'user')
+        .map((message) => message.content.trim())
+        .filter(Boolean);
+
+      return messages.length ? messages.join('\n\n') : this.goal;
+    },
+
     getAIConfig(): PageBuilderAIConfig {
       return {
         provider: this.aiProvider,
@@ -393,6 +448,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
     loadAIConfig() {
       const saved = localStorage.getItem(PAGE_BUILDER_AI_STORAGE_KEY);
+
       if (!saved) {
         if (!this.aiModel) {
           this.aiModel = DEFAULT_PAGE_BUILDER_MODEL;
@@ -461,7 +517,15 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.saveAIConfig();
     },
 
-    applyWorkspaceResult(nextWorkspace: { fieldRoleMap: Record<string, string>; spec: PageSpec; project: PageBuilderProject; sectionSummaries: PageBuilderSectionSummary[] }, summary = '') {
+    applyWorkspaceResult(
+      nextWorkspace: {
+        fieldRoleMap: Record<string, string>;
+        spec: PageSpec;
+        project: PageBuilderProject;
+        sectionSummaries: PageBuilderSectionSummary[];
+      },
+      summary = ''
+    ) {
       this.error = null;
       this.fieldRoleMap = nextWorkspace.fieldRoleMap;
       this.spec = nextWorkspace.spec;
@@ -471,7 +535,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.selectedSectionId = nextWorkspace.sectionSummaries[0]?.id || null;
       this.selectedPreviewElement = null;
       this.centerMode = 'preview';
-      this.isSetupDrawerOpen = false;
+      this.isSetupDrawerOpen = true;
+      this.drawerMode = 'conversation';
       this.lastGenerationSummary = summary;
 
       if (!this.workspaceName || this.workspaceName === DEFAULT_WORKSPACE_NAME) {
@@ -505,6 +570,9 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.isGenerating = false;
       this.lastGenerationSummary = '';
       this.isSetupDrawerOpen = true;
+      this.drawerMode = 'setup';
+      this.conversationDraft = '';
+      this.conversationMessages = [];
       this.sectionSummaries = [];
       this.hasUnsavedChanges = false;
 
@@ -550,14 +618,23 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         return;
       }
 
+      const userGoal = this.goal.trim();
       const request: PageBuildRequest = {
         tableId: table.id,
         title: this.pageTitle || this.workspaceName || `${table.name} Page`,
-        goal: this.goal || undefined
+        goal: userGoal || undefined
       };
 
       this.isGenerating = true;
       this.error = null;
+      this.drawerMode = 'conversation';
+      this.isSetupDrawerOpen = true;
+      this.conversationMessages = [];
+      this.conversationDraft = '';
+
+      if (userGoal) {
+        this.pushConversationMessage('user', userGoal);
+      }
 
       try {
         const aiConfig = this.getAIConfig();
@@ -567,16 +644,68 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
           return;
         }
 
-        const result = await requestAIPageBuilderWorkspace(table, request, aiConfig);
-        const nextWorkspace = createProjectFromGeneratedFiles(table, request, result.files);
-        this.applyWorkspaceResult(nextWorkspace, result.summary);
+        await streamAIPageBuilderWorkspace(table, request, aiConfig, {
+          onFileDone: ({ file }) => {
+            this.pushConversationMessage('assistant', `已生成 ${file.path}`);
+          },
+          onDone: ({ summary, files }) => {
+            const nextWorkspace = createProjectFromGeneratedFiles(table, request, files);
+            this.applyWorkspaceResult(nextWorkspace, summary);
+          }
+        });
       } catch (error: any) {
-        if (error?.code === 'ECONNABORTED') {
-          this.error = 'AI page generation timed out on the client side. The provider may still be running; try a faster model or retry.';
+        this.error = error?.message || 'AI page generation failed.';
+      } finally {
+        this.isGenerating = false;
+      }
+    },
+
+    async sendConversationMessage(tables: DataTable[]) {
+      const message = this.conversationDraft.trim();
+
+      if (!message) {
+        return;
+      }
+
+      const table = tables.find((item) => item.id === this.selectedTableId);
+
+      if (!table) {
+        this.error = 'Select a data table before sending a message.';
+        return;
+      }
+
+      this.pushConversationMessage('user', message);
+      this.conversationDraft = '';
+      this.isGenerating = true;
+      this.error = null;
+      this.drawerMode = 'conversation';
+      this.isSetupDrawerOpen = true;
+
+      const request: PageBuildRequest = {
+        tableId: table.id,
+        title: this.pageTitle || this.workspaceName || `${table.name} Page`,
+        goal: this.buildConversationGoal() || undefined
+      };
+
+      try {
+        const aiConfig = this.getAIConfig();
+
+        if (!aiConfig.apiKey) {
+          this.error = 'Enter an AI API key before sending a message.';
           return;
         }
 
-        this.error = error?.response?.data?.error || error?.message || 'AI page generation failed.';
+        await streamAIPageBuilderWorkspace(table, request, aiConfig, {
+          onFileDone: ({ file }) => {
+            this.pushConversationMessage('assistant', `已生成 ${file.path}`);
+          },
+          onDone: ({ summary, files }) => {
+            const nextWorkspace = createProjectFromGeneratedFiles(table, request, files);
+            this.applyWorkspaceResult(nextWorkspace, summary);
+          }
+        });
+      } catch (error: any) {
+        this.error = error?.message || 'AI page generation failed.';
       } finally {
         this.isGenerating = false;
       }

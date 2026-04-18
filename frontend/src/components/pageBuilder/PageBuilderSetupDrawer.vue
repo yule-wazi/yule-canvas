@@ -1,65 +1,118 @@
 <template>
   <aside class="setup-drawer" :class="{ 'is-open': open }">
-    <div class="drawer-topbar">
-      <div class="topbar-meta">
-        <p class="eyebrow">Workspace Setup</p>
-        <strong>Build the first editable workspace</strong>
+    <template v-if="mode === 'setup'">
+      <div class="drawer-topbar">
+        <div class="topbar-meta">
+          <p class="eyebrow">Workspace Setup</p>
+          <strong>Build the first editable workspace</strong>
+        </div>
+        <button class="config-trigger" type="button" @click="isAIConfigOpen = true">
+          AI Config
+        </button>
       </div>
-      <button class="config-trigger" type="button" @click="isAIConfigOpen = true">
-        AI Config
-      </button>
-    </div>
 
-    <div class="drawer-body">
-      <section class="panel">
-        <label class="field">
-          <span>Data table</span>
-          <select :value="selectedTableId || ''" @change="$emit('update:selectedTableId', ($event.target as HTMLSelectElement).value)">
-            <option value="" disabled>Select a table</option>
-            <option v-for="table in tables" :key="table.id" :value="table.id">
-              {{ table.name }}
-            </option>
-          </select>
-        </label>
+      <div class="drawer-body">
+        <section class="panel">
+          <label class="field">
+            <span>Data table</span>
+            <select :value="selectedTableId || ''" @change="$emit('update:selectedTableId', ($event.target as HTMLSelectElement).value)">
+              <option value="" disabled>Select a table</option>
+              <option v-for="table in tables" :key="table.id" :value="table.id">
+                {{ table.name }}
+              </option>
+            </select>
+          </label>
 
-        <div class="inline-meta">
-          <span>Detected fields</span>
-          <strong>{{ Object.keys(fieldRoleMap).length }}</strong>
+          <div class="inline-meta">
+            <span>Detected fields</span>
+            <strong>{{ Object.keys(fieldRoleMap).length }}</strong>
+          </div>
+
+          <div v-if="Object.keys(fieldRoleMap).length" class="field-chip-list">
+            <span v-for="(role, field) in fieldRoleMap" :key="field" class="field-chip">{{ field }} / {{ role }}</span>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="inline-meta">
+            <span>Goal</span>
+            <strong>{{ selectedTableLabel }}</strong>
+          </div>
+
+          <textarea
+            :value="goal"
+            rows="8"
+            class="composer-input"
+            placeholder="Describe the page direction, visual tone, and content emphasis."
+            @input="$emit('update:goal', ($event.target as HTMLTextAreaElement).value)"
+          />
+
+          <p class="helper-text">
+            Ask AI to generate a multi-file workspace that appears directly in the file tree.
+          </p>
+        </section>
+      </div>
+
+      <div class="drawer-footer">
+        <button class="submit-btn submit-btn--icon" type="button" :disabled="isGenerating" @click="$emit('generate-ai')" :title="isGenerating ? 'Generating...' : 'Generate with AI'">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5V19" />
+            <path d="M5 12L12 5L19 12" />
+          </svg>
+        </button>
+      </div>
+    </template>
+
+    <template v-else>
+      <div class="drawer-topbar">
+        <div class="topbar-meta">
+          <p class="eyebrow">Conversation</p>
+          <strong>{{ workspaceName }}</strong>
         </div>
+      </div>
 
-        <div v-if="Object.keys(fieldRoleMap).length" class="field-chip-list">
-          <span v-for="(role, field) in fieldRoleMap" :key="field" class="field-chip">{{ field }} / {{ role }}</span>
+      <div class="drawer-body conversation-body">
+        <article
+          v-for="message in conversationMessages"
+          :key="message.id"
+          class="message-card"
+          :class="message.role === 'user' ? 'is-user' : 'is-assistant is-file-item'"
+        >
+          <div class="message-meta">
+            <strong>{{ message.role === 'user' ? 'You' : 'AI' }}</strong>
+            <span>{{ formatTime(message.createdAt) }}</span>
+          </div>
+          <p class="message-content">
+            <span v-if="message.role === 'assistant'" class="file-item-icon">✎</span>
+            {{ message.content }}
+          </p>
+        </article>
+
+        <div v-if="isGenerating" class="message-card is-thinking">
+          <div class="message-meta">
+            <strong>AI</strong>
+          </div>
+          <p class="message-content">正在生成文件...</p>
         </div>
-      </section>
+      </div>
 
-      <section class="panel">
-        <div class="inline-meta">
-          <span>Goal</span>
-          <strong>{{ selectedTableLabel }}</strong>
-        </div>
-
+      <div class="drawer-footer conversation-footer">
         <textarea
-          :value="goal"
-          rows="8"
-          class="composer-input"
-          placeholder="Describe the page direction, visual tone, and content emphasis."
-          @input="$emit('update:goal', ($event.target as HTMLTextAreaElement).value)"
+          :value="conversationDraft"
+          rows="3"
+          class="composer-input composer-input--compact"
+          placeholder="Send a follow-up message to AI..."
+          @input="$emit('update:conversationDraft', ($event.target as HTMLTextAreaElement).value)"
+          @keydown.enter.exact.prevent="$emit('send-message')"
         />
 
-        <p class="helper-text">
-          Ask AI to generate a multi-file workspace that appears directly in the file tree.
-        </p>
-      </section>
-    </div>
-
-    <div class="drawer-footer">
-      <button class="submit-btn submit-btn--icon" type="button" :disabled="isGenerating" @click="$emit('generate-ai')" :title="isGenerating ? 'Generating...' : 'Generate with AI'">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 5V19" />
-          <path d="M5 12L12 5L19 12" />
-        </svg>
-      </button>
-    </div>
+        <button class="submit-btn submit-btn--icon" type="button" :disabled="isGenerating || !conversationDraft.trim()" @click="$emit('send-message')" title="Send message">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12L20 4L14 20L11 13L4 12Z" />
+          </svg>
+        </button>
+      </div>
+    </template>
 
     <div v-if="isAIConfigOpen" class="config-modal-backdrop" @click.self="isAIConfigOpen = false">
       <div class="config-modal">
@@ -119,10 +172,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { DataTable } from '../../stores/dataTable';
-import type { PageBuilderAIProvider } from '../../types/pageBuilder';
+import type {
+  PageBuilderAIProvider,
+  PageBuilderConversationMessage,
+  PageBuilderDrawerMode
+} from '../../types/pageBuilder';
 
 const props = defineProps<{
   open: boolean;
+  mode: PageBuilderDrawerMode;
+  workspaceName: string;
   tables: DataTable[];
   selectedTableId: string | null;
   goal: string;
@@ -131,15 +190,19 @@ const props = defineProps<{
   aiProvider: PageBuilderAIProvider;
   aiApiKey: string;
   aiModel: string;
+  conversationDraft: string;
+  conversationMessages: PageBuilderConversationMessage[];
 }>();
 
 defineEmits<{
   'generate-ai': [];
+  'send-message': [];
   'update:selectedTableId': [value: string];
   'update:goal': [value: string];
   'update:aiProvider': [value: string];
   'update:aiApiKey': [value: string];
   'update:aiModel': [value: string];
+  'update:conversationDraft': [value: string];
 }>();
 
 const selectedTableLabel = computed(() => {
@@ -159,6 +222,13 @@ const providerLabel = computed(() => {
 
   return 'SiliconFlow';
 });
+
+function formatTime(value: number) {
+  return new Date(value).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
 </script>
 
 <style scoped>
@@ -230,7 +300,8 @@ const providerLabel = computed(() => {
   padding: 18px;
 }
 
-.panel {
+.panel,
+.message-card {
   display: grid;
   gap: 14px;
   padding: 16px;
@@ -312,6 +383,10 @@ const providerLabel = computed(() => {
   font-size: 15px;
 }
 
+.composer-input--compact {
+  min-height: 110px;
+}
+
 .helper-text {
   margin: 0;
   line-height: 1.6;
@@ -322,6 +397,62 @@ const providerLabel = computed(() => {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
+}
+
+.conversation-body {
+  align-content: start;
+}
+
+.conversation-footer {
+  align-items: flex-end;
+}
+
+.message-card.is-user {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.message-card.is-assistant {
+  background: rgba(118, 185, 0, 0.07);
+  border-color: rgba(118, 185, 0, 0.18);
+}
+
+.message-card.is-file-item {
+  gap: 10px;
+}
+
+.message-card.is-thinking {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #97a1b2;
+  font-size: 12px;
+}
+
+.message-meta strong {
+  color: #f5f7fb;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.message-content {
+  margin: 0;
+  color: #eef3fb;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.file-item-icon {
+  display: inline-block;
+  margin-right: 10px;
+  color: #b8d98a;
 }
 
 .submit-btn {

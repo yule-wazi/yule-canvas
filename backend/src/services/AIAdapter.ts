@@ -342,7 +342,7 @@ export class SiliconFlowAdapter implements AIModelAdapter {
       ],
       temperature: options.temperature ?? 0.2,
       max_tokens: options.maxTokens ?? 4000,
-      stream: false
+      stream: Boolean(options.stream)
     };
   }
 
@@ -371,7 +371,8 @@ export class OpenRouterAdapter implements AIModelAdapter {
         { role: 'user', content: userPrompt }
       ],
       temperature: options.temperature ?? 0.2,
-      max_tokens: options.maxTokens ?? 4000
+      max_tokens: options.maxTokens ?? 4000,
+      stream: Boolean(options.stream)
     };
 
     if (options.useTools) {

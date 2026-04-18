@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { AIAdapterManager, WorkflowGenerationError } from '../services/AIAdapter';
-import { generatePageWorkspace } from '../services/PageBuilderAI';
+import { generatePageWorkspace, generatePageWorkspaceStream } from '../services/PageBuilderAI';
 import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
@@ -223,6 +223,57 @@ router.post('/ai/generate-page-workspace', async (req, res) => {
       files: [],
       error: error.message || 'AI page workspace generation failed.'
     });
+  }
+});
+
+router.post('/ai/generate-page-workspace-stream', async (req, res) => {
+  try {
+    const { table, request, model = 'openrouter', options = {} } = req.body;
+
+    if (!table || !request) {
+      return res.status(400).json({
+        success: false,
+        error: 'table and request are required.'
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+
+    res.write(`${JSON.stringify({ type: 'start' })}\n`);
+
+    const result = await generatePageWorkspaceStream(aiManager, {
+      table,
+      request,
+      model,
+      options
+    }, {
+      onFileDone: (file) => {
+        res.write(`${JSON.stringify({ type: 'file_done', file })}\n`);
+      }
+    });
+
+    res.write(`${JSON.stringify({
+      type: 'done',
+      summary: result.summary,
+      files: result.files
+    })}\n`);
+
+    return res.end();
+  } catch (error: any) {
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'AI page workspace generation failed.'
+      });
+    }
+
+    res.write(`${JSON.stringify({
+      type: 'error',
+      error: error.message || 'AI page workspace generation failed.'
+    })}\n`);
+    return res.end();
   }
 });
 

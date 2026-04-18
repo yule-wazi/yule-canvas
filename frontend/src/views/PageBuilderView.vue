@@ -3,6 +3,7 @@
     <PageBuilderTopBar
       :workspace-name="store.workspaceName"
       :setup-open="store.isSetupDrawerOpen"
+      :drawer-mode="store.drawerMode"
       :has-unsaved-changes="store.hasUnsavedChanges"
       @toggle-setup="store.toggleSetupDrawer"
       @open-workspaces="isWorkspaceManagerOpen = true"
@@ -36,6 +37,8 @@
 
       <PageBuilderSetupDrawer
         :open="store.isSetupDrawerOpen"
+        :mode="store.drawerMode"
+        :workspace-name="store.workspaceName"
         :tables="dataTableStore.tables"
         :selected-table-id="store.selectedTableId"
         :goal="store.goal"
@@ -44,12 +47,16 @@
         :ai-provider="store.aiProvider"
         :ai-api-key="store.aiApiKey"
         :ai-model="store.aiModel"
+        :conversation-draft="store.conversationDraft"
+        :conversation-messages="store.conversationMessages"
         @generate-ai="createAIWorkspace"
+        @send-message="sendConversationMessage"
         @update:selected-table-id="store.setSelectedTable($event, dataTableStore.tables)"
         @update:goal="store.setGoal($event)"
         @update:ai-provider="store.setAIProvider($event as any)"
         @update:ai-api-key="store.setAIApiKey($event)"
         @update:ai-model="store.setAIModel($event)"
+        @update:conversation-draft="store.setConversationDraft($event)"
       />
     </div>
 
@@ -127,6 +134,10 @@ watch(
 
 function createAIWorkspace() {
   void store.createWorkspaceFromAI(dataTableStore.tables);
+}
+
+function sendConversationMessage() {
+  void store.sendConversationMessage(dataTableStore.tables);
 }
 
 function createNamedWorkspace(name: string) {

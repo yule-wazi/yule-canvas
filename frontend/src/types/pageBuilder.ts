@@ -4,6 +4,26 @@ export type PageBuilderFileType = 'html' | 'css' | 'js' | 'ts' | 'json' | 'vue';
 
 export type PageBuilderAIProvider = 'siliconflow' | 'openrouter' | 'qwen';
 
+export type PageBuilderDrawerMode = 'setup' | 'conversation';
+
+export interface PageBuilderConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+}
+
+export interface PageBuilderStreamFileDoneEvent {
+  type: 'file_done';
+  file: PageBuilderGeneratedFile;
+}
+
+export interface PageBuilderStreamDoneEvent {
+  type: 'done';
+  summary: string;
+  files: PageBuilderGeneratedFile[];
+}
+
 export interface PageBuildRequest {
   tableId: string;
   goal?: string;
@@ -129,6 +149,9 @@ export interface SavedPageBuilderWorkspace {
   selectedTableId: string | null;
   pageTitle: string;
   goal: string;
+  drawerMode?: PageBuilderDrawerMode;
+  conversationDraft?: string;
+  conversationMessages?: PageBuilderConversationMessage[];
   fieldRoleMap: Record<string, string>;
   spec: PageSpec | null;
   project: PageBuilderProject | null;
