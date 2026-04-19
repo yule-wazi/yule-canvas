@@ -23,6 +23,7 @@
           :files="store.files"
           :table-snapshot="tableSnapshot"
           :reload-key="store.previewReloadKey"
+          :workspace-id="store.currentWorkspaceId"
           :active-file-id="store.activeFileId"
           :viewport="viewport"
           :data-title="dataTitle"

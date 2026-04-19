@@ -86,6 +86,19 @@ export interface PageBuilderPreviewTableSnapshot {
   rows: Record<string, any>[];
 }
 
+export interface PageBuilderPreviewRuntimeFile {
+  path: string;
+  content: string;
+  editable: boolean;
+  visibility: 'project' | 'internal';
+  type?: string;
+}
+
+export interface PageBuilderPreviewSessionSnapshot {
+  files: PageBuilderPreviewRuntimeFile[];
+  updatedAt: number;
+}
+
 export interface PageBuilderAIResponse {
   summary: string;
   files: PageBuilderGeneratedFile[];

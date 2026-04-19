@@ -33,6 +33,11 @@ const router = createRouter({
       component: () => import('../views/PageBuilderView.vue')
     },
     {
+      path: '/page-builder-preview-host/:sessionId',
+      name: 'page-builder-preview-host',
+      component: () => import('../views/PageBuilderPreviewHost.vue')
+    },
+    {
       path: '/test',
       name: 'test',
       component: () => import('../views/WorkflowJsonTest.vue')

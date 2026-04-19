@@ -1,7 +1,12 @@
 import axios from 'axios';
 
+const defaultApiBase =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:3000/api`
+    : 'http://localhost:3000/api';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+  baseURL: import.meta.env.VITE_API_URL || defaultApiBase,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'

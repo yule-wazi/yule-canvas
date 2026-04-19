@@ -18,6 +18,16 @@ const pageBuilderTableSnapshots = new Map<string, {
   rows: Record<string, unknown>[];
   updatedAt: number;
 }>();
+const pageBuilderPreviewSessions = new Map<string, {
+  files: Array<{
+    path: string;
+    content: string;
+    editable: boolean;
+    visibility: 'project' | 'internal';
+    type?: string;
+  }>;
+  updatedAt: number;
+}>();
 
 router.get('/ai/models', (_req, res) => {
   const models = aiManager.getAllAdapters().map(adapter => ({
@@ -422,6 +432,80 @@ router.get('/page-builder/table-snapshots/:tableId', (req, res) => {
     table: snapshot.table,
     rows: snapshot.rows,
     updatedAt: snapshot.updatedAt
+  });
+});
+
+router.post('/page-builder/preview-sessions/:sessionId', (req, res) => {
+  try {
+    const sessionId = String(req.params.sessionId || '').trim();
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    const updatedAt = typeof req.body?.updatedAt === 'number' ? req.body.updatedAt : Date.now();
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId is required.'
+      });
+    }
+
+    if (!files.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'files are required.'
+      });
+    }
+
+    const normalizedFiles = files
+      .map((file: any) => ({
+        path: typeof file?.path === 'string' ? file.path : '',
+        content: typeof file?.content === 'string' ? file.content : '',
+        editable: Boolean(file?.editable),
+        visibility: file?.visibility === 'internal' ? 'internal' : 'project',
+        type: typeof file?.type === 'string' ? file.type : undefined
+      }))
+      .filter((file: {
+        path: string;
+        content: string;
+        editable: boolean;
+        visibility: 'project' | 'internal';
+        type?: string;
+      }) => file.path);
+
+    pageBuilderPreviewSessions.set(sessionId, {
+      files: normalizedFiles,
+      updatedAt
+    });
+
+    return res.json({
+      success: true,
+      updatedAt,
+      error: null
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to cache preview session.'
+    });
+  }
+});
+
+router.get('/page-builder/preview-sessions/:sessionId', (req, res) => {
+  const session = pageBuilderPreviewSessions.get(req.params.sessionId);
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+
+  if (!session) {
+    return res.status(404).json({
+      success: false,
+      error: 'Preview session not found.'
+    });
+  }
+
+  return res.json({
+    files: session.files,
+    updatedAt: session.updatedAt
   });
 });
 

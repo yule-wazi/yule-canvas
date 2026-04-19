@@ -63,8 +63,8 @@
         :files="files"
         :table-snapshot="tableSnapshot"
         :reload-key="reloadKey"
+        :workspace-id="workspaceId"
         :viewport="viewport"
-        @change-viewport="$emit('changeViewport', $event)"
       />
     </div>
 
@@ -99,6 +99,7 @@ defineProps<{
   files: PageBuilderFile[];
   tableSnapshot: PageBuilderPreviewTableSnapshot | null;
   reloadKey: number;
+  workspaceId: string | null;
   activeFileId: string | null;
   viewport: 'desktop' | 'tablet' | 'mobile';
   dataTitle: string;

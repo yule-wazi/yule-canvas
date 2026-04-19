@@ -16,8 +16,9 @@
       :class="[
         'main',
         {
-          'main--workflow': route.name === 'workflow',
-          'main--page-builder': route.name === 'page-builder'
+        'main--workflow': route.name === 'workflow',
+          'main--page-builder': route.name === 'page-builder',
+          'main--preview-host': route.name === 'page-builder-preview-host'
         }
       ]"
     >
@@ -31,7 +32,7 @@ import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();
-const showHeader = computed(() => route.name !== 'page-builder');
+const showHeader = computed(() => route.name !== 'page-builder' && route.name !== 'page-builder-preview-host');
 </script>
 
 <style scoped>
@@ -116,7 +117,8 @@ nav a.router-link-active {
 }
 
 .main--workflow,
-.main--page-builder {
+.main--page-builder,
+.main--preview-host {
   padding: 0;
   overflow: hidden;
 }
@@ -138,7 +140,8 @@ nav a.router-link-active {
   }
 
   .main--workflow,
-  .main--page-builder {
+  .main--page-builder,
+  .main--preview-host {
     padding: 0;
   }
 }
