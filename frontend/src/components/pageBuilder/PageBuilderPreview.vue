@@ -5,7 +5,7 @@
         Create a workspace to start the live preview.
       </div>
 
-      <div v-else ref="mountRef" class="preview-mount"></div>
+      <div v-else :key="mountVersion" ref="mountRef" class="preview-mount"></div>
     </div>
   </div>
 </template>
@@ -25,6 +25,7 @@ import type { PageBuilderFile, PageBuilderPreviewTableSnapshot } from '../../typ
 const props = defineProps<{
   files: PageBuilderFile[];
   tableSnapshot: PageBuilderPreviewTableSnapshot | null;
+  reloadKey: number;
   viewport: 'desktop' | 'tablet' | 'mobile';
 }>();
 
@@ -33,6 +34,7 @@ defineEmits<{
 }>();
 
 const mountRef = ref<HTMLDivElement | null>(null);
+const mountVersion = ref(0);
 let reactRoot: Root | null = null;
 
 const sandpackFiles = computed<SandpackFiles>(() => {
@@ -105,6 +107,7 @@ async function renderReactPreview() {
   const element = React.createElement(
     SandpackProvider,
     {
+      key: `sandpack-${props.reloadKey}`,
       template: 'vue',
       files: sandpackFiles.value,
       options: {
@@ -148,12 +151,28 @@ async function renderReactPreview() {
   reactRoot.render(element);
 }
 
+async function remountPreview() {
+  reactRoot?.unmount();
+  reactRoot = null;
+  mountVersion.value += 1;
+  await nextTick();
+  await renderReactPreview();
+}
+
 watch(
   () => [props.files, props.tableSnapshot],
   async () => {
     await renderReactPreview();
   },
   { deep: true, flush: 'post' }
+);
+
+watch(
+  () => props.reloadKey,
+  async () => {
+    await remountPreview();
+  },
+  { flush: 'post' }
 );
 
 onMounted(() => {

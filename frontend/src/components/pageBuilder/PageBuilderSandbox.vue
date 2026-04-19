@@ -18,6 +18,34 @@
 
       <div class="mode-switch">
         <button
+          class="mode-btn refresh-btn"
+          :class="{ 'is-refreshing': isRefreshAnimating }"
+          type="button"
+          title="Refresh preview"
+          aria-label="Refresh preview"
+          @click="triggerRefresh(); $emit('refreshPreview')"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M20 12a8 8 0 1 1-2.34-5.66"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+            />
+            <path
+              d="M20 4v5h-5"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+            />
+          </svg>
+        </button>
+
+        <button
           v-for="option in modeOptions"
           :key="option.value"
           class="mode-btn"
@@ -34,6 +62,7 @@
       <PageBuilderPreview
         :files="files"
         :table-snapshot="tableSnapshot"
+        :reload-key="reloadKey"
         :viewport="viewport"
         @change-viewport="$emit('changeViewport', $event)"
       />
@@ -59,6 +88,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import PageBuilderCodeTabs from './PageBuilderCodeTabs.vue';
 import PageBuilderDataPanel from './PageBuilderDataPanel.vue';
 import PageBuilderPreview from './PageBuilderPreview.vue';
@@ -68,6 +98,7 @@ defineProps<{
   mode: PageBuilderCenterMode;
   files: PageBuilderFile[];
   tableSnapshot: PageBuilderPreviewTableSnapshot | null;
+  reloadKey: number;
   activeFileId: string | null;
   viewport: 'desktop' | 'tablet' | 'mobile';
   dataTitle: string;
@@ -80,6 +111,7 @@ defineEmits<{
   selectFile: [fileId: string];
   updateContent: [value: string];
   changeViewport: [viewport: 'desktop' | 'tablet' | 'mobile'];
+  refreshPreview: [];
 }>();
 
 const viewportOptions = [
@@ -93,6 +125,21 @@ const modeOptions: Array<{ label: string; value: PageBuilderCenterMode }> = [
   { label: 'Code', value: 'code' },
   { label: 'Data', value: 'data' }
 ];
+
+const isRefreshAnimating = ref(false);
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function triggerRefresh() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+  }
+
+  isRefreshAnimating.value = true;
+  refreshTimer = setTimeout(() => {
+    isRefreshAnimating.value = false;
+    refreshTimer = null;
+  }, 550);
+}
 </script>
 
 <style scoped>
@@ -139,6 +186,33 @@ const modeOptions: Array<{ label: string; value: PageBuilderCenterMode }> = [
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
+}
+
+.refresh-btn {
+  min-width: 40px;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refresh-btn svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 0.55s ease;
+}
+
+.refresh-btn:hover svg {
+  transform: rotate(45deg);
+}
+
+.refresh-btn.is-refreshing {
+  background: rgba(118, 185, 0, 0.14);
+  color: var(--color-text-primary);
+}
+
+.refresh-btn.is-refreshing svg {
+  transform: rotate(180deg);
 }
 
 .device-btn.is-active,

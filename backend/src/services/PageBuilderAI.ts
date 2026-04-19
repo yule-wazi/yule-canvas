@@ -61,6 +61,7 @@ Data access contract:
   - getTableSnapshot()
 - Generated code should import from that file instead of inventing backend calls.
 - src/data/tableData.js reads runtime data from the hidden internal bridge file src/data/__runtimeTableData.js.
+- Never create or modify src/data/__runtimeTableData.js yourself. That file is injected by the host runtime.
 - fetchTableRows() and fetchTableSnapshot() are async and must be used for runtime data loading.
 - Do not hardcode sample rows into Vue components.
 - Do not treat sampleRows as the real runtime dataset. They are only shape examples for field understanding.
@@ -92,6 +93,7 @@ Additional requirements:
 - Favor valid runnable code over ambitious but fragile code.
 - Load table rows at runtime via the shared data adapter.
 - Do not call fetch() directly for table data inside Vue components.
+- Never output src/data/__runtimeTableData.js as a file block.
 - In Vue components, prefer onMounted plus ref/reactive state for fetched rows.
 - Keep loading and error states simple but real.
 - Finish one whole file before starting the next file block.
@@ -99,6 +101,10 @@ Additional requirements:
 }
 
 function isAllowedPath(path: string) {
+  if (path === 'src/data/__runtimeTableData.js') {
+    return false;
+  }
+
   return path === 'public/index.html'
     || path === 'src/main.js'
     || path === 'src/App.vue'

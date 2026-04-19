@@ -27,6 +27,7 @@ import type {
 
 interface PageBuilderState {
   currentWorkspaceId: string | null;
+  previewReloadKey: number;
   workspaceName: string;
   selectedTableId: string | null;
   pageTitle: string;
@@ -175,6 +176,7 @@ function sortWorkspaceMeta(workspaces: PageBuilderWorkspaceMeta[]) {
 export const usePageBuilderStore = defineStore('pageBuilder', {
   state: (): PageBuilderState => ({
     currentWorkspaceId: null,
+    previewReloadKey: 0,
     workspaceName: DEFAULT_WORKSPACE_NAME,
     selectedTableId: null,
     pageTitle: '',
@@ -220,6 +222,10 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
   },
 
   actions: {
+    bumpPreviewReload() {
+      this.previewReloadKey += 1;
+    },
+
     initialize(tables: DataTable[]) {
       this.loadAIConfig();
 
@@ -295,6 +301,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
       localStorage.setItem(CURRENT_PAGE_BUILDER_WORKSPACE_ID_KEY, snapshot.id);
       this.syncWithTables(tables);
+      this.bumpPreviewReload();
     },
 
     createSnapshot(): SavedPageBuilderWorkspace | null {
@@ -645,6 +652,8 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       },
       summary = ''
     ) {
+      const shouldForcePreviewReload = !this.project;
+
       this.error = null;
       this.fieldRoleMap = nextWorkspace.fieldRoleMap;
       this.spec = nextWorkspace.spec;
@@ -660,6 +669,10 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
       if (!this.workspaceName || this.workspaceName === DEFAULT_WORKSPACE_NAME) {
         this.workspaceName = this.pageTitle || DEFAULT_WORKSPACE_NAME;
+      }
+
+      if (shouldForcePreviewReload) {
+        this.bumpPreviewReload();
       }
 
       this.persistCurrentWorkspace();

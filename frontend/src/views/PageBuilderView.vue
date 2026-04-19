@@ -22,6 +22,7 @@
           :mode="store.centerMode"
           :files="store.files"
           :table-snapshot="tableSnapshot"
+          :reload-key="store.previewReloadKey"
           :active-file-id="store.activeFileId"
           :viewport="viewport"
           :data-title="dataTitle"
@@ -31,6 +32,7 @@
           @select-file="openFile"
           @update-content="store.updateActiveFileContent"
           @change-viewport="viewport = $event"
+          @refresh-preview="store.bumpPreviewReload()"
         />
 
         <div v-if="store.error" class="error-banner">{{ store.error }}</div>

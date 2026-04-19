@@ -334,6 +334,7 @@ function mapGeneratedFilesToProjectFiles(generatedFiles: PageBuilderGeneratedFil
   return generatedFiles.map((file, index) => {
     const path = file.path.replace(/^\/+/, '');
     const name = path.split('/').pop() || path;
+    const isInternalRuntimeBridge = path === 'src/data/__runtimeTableData.js';
 
     return {
       id: `generated-${index}-${path}`,
@@ -341,8 +342,8 @@ function mapGeneratedFilesToProjectFiles(generatedFiles: PageBuilderGeneratedFil
       name,
       type: normalizeFileType(path),
       role: file.role || 'Generated file.',
-      editable: true,
-      visibility: 'project',
+      editable: !isInternalRuntimeBridge,
+      visibility: isInternalRuntimeBridge ? 'internal' : 'project',
       content: file.content
     };
   });
