@@ -7,6 +7,8 @@ export type PageBuilderAIProvider = 'siliconflow' | 'openrouter' | 'qwen';
 export type PageBuilderDrawerMode = 'setup' | 'conversation';
 
 export type PageBuilderFileOperationAction = 'create' | 'read' | 'update';
+export type PageBuilderConversationOperationTone = 'neutral' | 'inspect' | 'write';
+export type PageBuilderConversationIntent = 'chat' | 'update' | 'create' | 'mixed';
 
 export interface PageBuilderConversationMessage {
   id: string;
@@ -28,11 +30,24 @@ export interface PageBuilderConversationOperationGroup {
   kind: 'file_operation_group';
   status: 'running' | 'done';
   createdAt: number;
+  title: string;
+  subtitle: string;
+  tone: PageBuilderConversationOperationTone;
   items: PageBuilderFileOperationItem[];
+}
+
+export interface PageBuilderConversationStatus {
+  id: string;
+  kind: 'status';
+  tone: 'info' | 'thinking';
+  label: string;
+  detail?: string;
+  createdAt: number;
 }
 
 export type PageBuilderConversationItem =
   | PageBuilderConversationMessage
+  | PageBuilderConversationStatus
   | PageBuilderConversationOperationGroup;
 
 export interface PageBuilderStreamFileDoneEvent {
@@ -73,6 +88,59 @@ export interface PageBuilderPreviewTableSnapshot {
 
 export interface PageBuilderAIResponse {
   summary: string;
+  files: PageBuilderGeneratedFile[];
+}
+
+export interface PageBuilderConversationHistoryItem {
+  kind: PageBuilderConversationItem['kind'];
+  role?: 'user' | 'assistant';
+  content?: string;
+  tone?: 'info' | 'thinking';
+  label?: string;
+  detail?: string;
+  status?: 'running' | 'done';
+  actions?: Array<{
+    action: PageBuilderFileOperationAction;
+    path: string;
+  }>;
+}
+
+export interface PageBuilderConversationWorkspaceInput {
+  workspaceId: string | null;
+  selectedFilePath?: string | null;
+  files: Array<{
+    path: string;
+    role: string;
+    content: string;
+    visibility: 'project' | 'internal';
+    editable: boolean;
+  }>;
+}
+
+export interface PageBuilderConversationStatusEvent {
+  type: 'status';
+  phase: 'inspect' | 'write';
+  tone: 'info' | 'thinking';
+  label: string;
+  detail?: string;
+}
+
+export interface PageBuilderConversationFileOperationEvent {
+  type: 'file_operation';
+  action: PageBuilderFileOperationAction;
+  path: string;
+}
+
+export interface PageBuilderConversationAssistantEvent {
+  type: 'assistant';
+  message: string;
+}
+
+export interface PageBuilderConversationDoneEvent {
+  type: 'done';
+  intent: PageBuilderConversationIntent;
+  summary: string;
+  message: string;
   files: PageBuilderGeneratedFile[];
 }
 

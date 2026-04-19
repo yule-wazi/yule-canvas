@@ -7,30 +7,34 @@
       @click="isExpanded = !isExpanded"
     >
       <div class="operation-heading">
-        <p class="operation-title">{{ title }}</p>
-        <p class="operation-subtitle">{{ subtitle }}</p>
+        <div class="operation-kicker">
+          <span class="operation-dot" :class="`tone-${group.tone}`" />
+          <p class="operation-title">{{ displayTitle }}</p>
+        </div>
+        <p class="operation-subtitle">{{ displaySubtitle }}</p>
       </div>
 
       <div class="operation-meta">
-        <span class="operation-time">{{ formatTime(group.createdAt) }}</span>
-        <span class="operation-chevron" :class="{ 'is-open': isExpanded }">⌃</span>
+        <span class="operation-count">{{ group.items.length }}</span>
+        <span class="operation-chevron" :class="{ 'is-open': isExpanded }" aria-hidden="true">⌄</span>
       </div>
     </button>
 
-    <div v-if="isExpanded" class="operation-list">
-      <div
-        v-for="item in group.items"
-        :key="item.id"
-        class="operation-row"
-      >
-        <span class="operation-icon">{{ iconFor(item.action) }}</span>
-        <strong>{{ labelFor(item.action) }}</strong>
-        <span class="operation-path">{{ item.path }}</span>
-      </div>
+    <div v-if="isExpanded" class="operation-list-shell">
+      <div class="operation-list">
+        <div
+          v-for="item in group.items"
+          :key="item.id"
+          class="operation-row"
+        >
+          <span class="operation-label">{{ labelFor(item.action) }}</span>
+          <span class="operation-path">{{ item.path }}</span>
+        </div>
 
-      <p v-if="!group.items.length" class="operation-empty">
-        正在等待首个文件完成…
-      </p>
+        <p v-if="!group.items.length" class="operation-empty">
+          正在整理这轮操作，马上会展示实际查看或变更的文件。
+        </p>
+      </div>
     </div>
   </section>
 </template>
@@ -48,6 +52,46 @@ const props = defineProps<{
 
 const isExpanded = ref(props.group.status === 'running');
 
+const displayTitle = computed(() => {
+  if (props.group.status !== 'done') {
+    return props.group.title;
+  }
+
+  if (props.group.title !== '处理中') {
+    return props.group.title;
+  }
+
+  if (props.group.tone === 'inspect') {
+    return '已查看当前工作区';
+  }
+
+  if (props.group.items.length && props.group.items.every((item) => item.action === 'create')) {
+    return '已生成首版工作区';
+  }
+
+  return '已整理改动结果';
+});
+
+const displaySubtitle = computed(() => {
+  if (props.group.status !== 'done') {
+    return props.group.subtitle;
+  }
+
+  if (props.group.subtitle !== '正在整理当前操作') {
+    return props.group.subtitle;
+  }
+
+  if (props.group.tone === 'inspect') {
+    return '需要的上下文已经整理好，开始落结果';
+  }
+
+  if (props.group.items.length && props.group.items.every((item) => item.action === 'create')) {
+    return '工作区已经准备好，可以继续对话微调了';
+  }
+
+  return '这轮结果已经同步到工作区和预览';
+});
+
 watch(
   () => props.group.status,
   (status) => {
@@ -57,67 +101,35 @@ watch(
   }
 );
 
-const title = computed(() => (
-  props.group.status === 'running' ? '正在处理文件' : `已执行 ${props.group.items.length} 个任务`
-));
-
-const subtitle = computed(() => {
-  if (!props.group.items.length) {
-    return '等待返回第一个文件';
-  }
-
-  const latest = props.group.items[props.group.items.length - 1];
-  return `${labelFor(latest.action)} ${latest.path}`;
-});
-
 function labelFor(action: PageBuilderFileOperationAction) {
   switch (action) {
     case 'read':
-      return '读取内容';
+      return '读取';
     case 'update':
-      return '更新内容';
+      return '更新';
     case 'create':
     default:
-      return '新增内容';
+      return '新增';
   }
-}
-
-function iconFor(action: PageBuilderFileOperationAction) {
-  switch (action) {
-    case 'read':
-      return '○';
-    case 'update':
-      return '↺';
-    case 'create':
-    default:
-      return '+';
-  }
-}
-
-function formatTime(value: number) {
-  return new Date(value).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
 }
 </script>
 
 <style scoped>
 .operation-group {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  overflow: hidden;
+  flex: 0 0 auto;
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.015);
 }
 
 .operation-group.is-running {
-  border-color: rgba(118, 185, 0, 0.24);
-  background: linear-gradient(180deg, rgba(118, 185, 0, 0.08), rgba(255, 255, 255, 0.03));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
 }
 
 .operation-toggle {
   width: 100%;
-  padding: 16px;
+  padding: 14px 4px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -130,33 +142,77 @@ function formatTime(value: number) {
 }
 
 .operation-heading {
+  min-width: 0;
+  flex: 1 1 auto;
   display: grid;
-  gap: 6px;
+  gap: 4px;
+}
+
+.operation-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.operation-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.operation-dot.tone-inspect {
+  background: #89b6ff;
+}
+
+.operation-dot.tone-write {
+  background: #78b900;
+}
+
+.operation-dot.tone-neutral {
+  background: #b6becb;
 }
 
 .operation-title {
   margin: 0;
-  color: #f5f7fb;
-  font-size: 16px;
-  font-weight: 700;
+  color: #edf2fa;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .operation-subtitle {
   margin: 0;
-  color: #9fb08a;
-  font-size: 13px;
+  color: #8f9aac;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .operation-meta {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #97a1b2;
+  color: #8c97a8;
   font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.operation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .operation-chevron {
   display: inline-flex;
+  font-size: 14px;
+  line-height: 1;
   transition: transform 0.2s ease;
 }
 
@@ -164,48 +220,43 @@ function formatTime(value: number) {
   transform: rotate(180deg);
 }
 
+.operation-list-shell {
+  padding: 0 4px 14px;
+}
+
 .operation-list {
   display: grid;
-  gap: 10px;
-  padding: 0 16px 16px;
+  gap: 8px;
+  max-height: min(34vh, 320px);
+  overflow-y: auto;
+  padding-right: 6px;
 }
 
 .operation-row {
   display: grid;
-  grid-template-columns: 18px auto minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: 44px minmax(0, 1fr);
   gap: 10px;
-  min-height: 42px;
-  padding: 0 12px;
-  border-radius: 14px;
-  background: rgba(0, 0, 0, 0.22);
-  color: #dce5f2;
+  align-items: start;
 }
 
-.operation-row strong {
-  color: #f5f7fb;
-  font-size: 14px;
-}
-
-.operation-icon {
-  color: #b7d98b;
-  font-weight: 700;
-  text-align: center;
+.operation-label {
+  color: #dbe4f2;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .operation-path {
   min-width: 0;
-  color: #a9b5c7;
-  font-size: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #9aa8bb;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-all;
 }
 
 .operation-empty {
   margin: 0;
-  padding: 10px 12px 2px;
-  color: #97a1b2;
-  font-size: 13px;
+  color: #8d99aa;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

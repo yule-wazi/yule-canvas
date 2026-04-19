@@ -3,6 +3,8 @@ import type { DataTable } from './dataTable';
 import {
   createProjectFromGeneratedFiles,
   inferFieldRoles,
+  mergeGeneratedFilesIntoProject,
+  streamAIPageBuilderConversation,
   streamAIPageBuilderWorkspace
 } from '../services/pageBuilder';
 import type {
@@ -11,11 +13,14 @@ import type {
   PageBindingContract,
   PageBuildRequest,
   PageBuilderCenterMode,
+  PageBuilderConversationHistoryItem,
   PageBuilderConversationItem,
   PageBuilderConversationMessage,
+  PageBuilderConversationOperationTone,
   PageBuilderDrawerMode,
   PageBuilderFile,
   PageBuilderFileOperationAction,
+  PageBuilderGeneratedFile,
   PageBuilderPreviewSelection,
   PageBuilderProject,
   PageBuilderSectionSummary,
@@ -80,12 +85,30 @@ function createConversationMessage(role: 'user' | 'assistant', content: string):
   };
 }
 
-function createOperationGroup() {
+function createStatusItem(label: string, detail?: string, tone: 'info' | 'thinking' = 'info') {
+  return {
+    id: `status-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    kind: 'status' as const,
+    tone,
+    label: label.trim(),
+    detail: detail?.trim() || undefined,
+    createdAt: Date.now()
+  };
+}
+
+function createOperationGroup(
+  title = '处理中',
+  subtitle = '正在整理当前操作',
+  tone: PageBuilderConversationOperationTone = 'neutral'
+) {
   return {
     id: `operation-group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     kind: 'file_operation_group' as const,
     status: 'running' as const,
     createdAt: Date.now(),
+    title,
+    subtitle,
+    tone,
     items: []
   };
 }
@@ -102,12 +125,26 @@ function normalizeConversationItems(items: unknown): PageBuilderConversationItem
 
     const candidate = item as Record<string, any>;
 
+    if (candidate.kind === 'status' && typeof candidate.label === 'string') {
+      return [{
+        id: typeof candidate.id === 'string' ? candidate.id : createStatusItem(candidate.label, candidate.detail, candidate.tone === 'thinking' ? 'thinking' : 'info').id,
+        kind: 'status' as const,
+        tone: candidate.tone === 'thinking' ? 'thinking' : 'info',
+        label: candidate.label.trim(),
+        detail: typeof candidate.detail === 'string' ? candidate.detail.trim() || undefined : undefined,
+        createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now()
+      }];
+    }
+
     if (candidate.kind === 'file_operation_group') {
       return [{
         id: typeof candidate.id === 'string' ? candidate.id : createOperationGroup().id,
         kind: 'file_operation_group' as const,
         status: candidate.status === 'done' ? 'done' : 'running',
         createdAt: typeof candidate.createdAt === 'number' ? candidate.createdAt : Date.now(),
+        title: typeof candidate.title === 'string' ? candidate.title : '处理中',
+        subtitle: typeof candidate.subtitle === 'string' ? candidate.subtitle : '正在整理当前操作',
+        tone: candidate.tone === 'inspect' || candidate.tone === 'write' ? candidate.tone : 'neutral',
         items: Array.isArray(candidate.items)
           ? candidate.items
               .filter((entry) => entry && typeof entry === 'object')
@@ -496,13 +533,55 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.schedulePersist(false);
     },
 
-    startFileOperationGroup() {
-      const group = createOperationGroup();
+    pushConversationStatus(label: string, detail?: string, tone: 'info' | 'thinking' = 'info') {
+      const normalizedLabel = label.trim();
+
+      if (!normalizedLabel) {
+        return;
+      }
+
+      this.conversationMessages = [
+        ...this.conversationMessages,
+        createStatusItem(normalizedLabel, detail, tone)
+      ];
+      this.schedulePersist(false);
+    },
+
+    startFileOperationGroup(
+      title = '处理中',
+      subtitle = '正在整理当前操作',
+      tone: PageBuilderConversationOperationTone = 'neutral'
+    ) {
+      const group = createOperationGroup(title, subtitle, tone);
       this.activeOperationGroupId = group.id;
       this.conversationMessages = [
         ...this.conversationMessages,
         group
       ];
+      this.schedulePersist(false);
+    },
+
+    updateActiveOperationGroup(details: {
+      title?: string;
+      subtitle?: string;
+      tone?: PageBuilderConversationOperationTone;
+    }) {
+      if (!this.activeOperationGroupId) {
+        return;
+      }
+
+      this.conversationMessages = this.conversationMessages.map((item) => {
+        if (item.kind !== 'file_operation_group' || item.id !== this.activeOperationGroupId) {
+          return item;
+        }
+
+        return {
+          ...item,
+          title: details.title ?? item.title,
+          subtitle: details.subtitle ?? item.subtitle,
+          tone: details.tone ?? item.tone
+        };
+      });
       this.schedulePersist(false);
     },
 
@@ -534,7 +613,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       this.schedulePersist(false);
     },
 
-    finishFileOperationGroup() {
+    finishFileOperationGroup(finalSubtitle?: string, finalTitle?: string) {
       if (!this.activeOperationGroupId) {
         return;
       }
@@ -546,11 +625,81 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
 
         return {
           ...item,
-          status: 'done'
+          status: 'done',
+          title: finalTitle ?? item.title,
+          subtitle: finalSubtitle ?? item.subtitle
         };
       });
       this.activeOperationGroupId = null;
       this.schedulePersist(false);
+    },
+
+    buildConversationHistory(): PageBuilderConversationHistoryItem[] {
+      return this.conversationMessages.slice(-12).flatMap((item) => {
+        if (item.kind === 'message') {
+          return [{
+            kind: item.kind,
+            role: item.role,
+            content: item.content
+          }];
+        }
+
+        if (item.kind === 'status') {
+          return [{
+            kind: item.kind,
+            tone: item.tone,
+            label: item.label,
+            detail: item.detail
+          }];
+        }
+
+        return [{
+          kind: item.kind,
+          title: item.title,
+          subtitle: item.subtitle,
+          status: item.status,
+          actions: item.items.map((entry) => ({
+            action: entry.action,
+            path: entry.path
+          }))
+        }];
+      });
+    },
+
+    buildConversationWorkspace() {
+      return {
+        workspaceId: this.currentWorkspaceId,
+        selectedFilePath: this.activeFile?.path || null,
+        files: (this.project?.files || []).map((file) => ({
+          path: file.path,
+          role: file.role,
+          content: file.content,
+          visibility: file.visibility,
+          editable: file.editable
+        }))
+      };
+    },
+
+    applyConversationFileChanges(files: PageBuilderGeneratedFile[]) {
+      if (!this.project || !files.length) {
+        return;
+      }
+
+      const previousPaths = new Set(this.project.files.map((file) => file.path));
+      const nextProject = mergeGeneratedFilesIntoProject(this.project, files);
+      const firstChangedFile = files
+        .map((file) => nextProject.files.find((entry) => entry.path === file.path))
+        .find(Boolean);
+
+      this.project = nextProject;
+      this.activeFileId = firstChangedFile?.id || this.activeFileId;
+      this.centerMode = 'preview';
+      this.selectedPreviewElement = null;
+      this.selectedSectionId = this.selectedSectionId;
+      this.bumpPreviewReload();
+      this.schedulePersist(true);
+
+      return previousPaths;
     },
 
     buildConversationGoal() {
@@ -779,7 +928,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
         }
 
         const existingPaths = new Set(this.files.map((file) => file.path));
-        this.startFileOperationGroup();
+        this.startFileOperationGroup('正在生成首版工作区', '先搭好第一批可预览文件', 'write');
 
         await streamAIPageBuilderWorkspace(table, request, aiConfig, {
           onFileDone: ({ file }) => {
@@ -789,14 +938,14 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
             existingPaths.add(normalizedPath);
           },
           onDone: ({ summary, files }) => {
-            this.finishFileOperationGroup();
+            this.finishFileOperationGroup('工作区已经准备好，可以继续对话微调了', '已生成首版工作区');
             const nextWorkspace = createProjectFromGeneratedFiles(table, request, files);
             this.applyWorkspaceResult(nextWorkspace, summary);
           }
         });
       } catch (error: any) {
         this.error = error?.message || 'AI page generation failed.';
-        this.finishFileOperationGroup();
+        this.finishFileOperationGroup('这次生成没有走完，稍后可以直接继续重试', '生成中断');
       } finally {
         this.isGenerating = false;
       }
@@ -827,7 +976,7 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
       const request: PageBuildRequest = {
         tableId: table.id,
         title: this.pageTitle || this.workspaceName || `${table.name} Page`,
-        goal: this.buildConversationGoal() || undefined
+        goal: this.goal.trim() || undefined
       };
 
       try {
@@ -838,25 +987,79 @@ export const usePageBuilderStore = defineStore('pageBuilder', {
           return;
         }
 
-        const existingPaths = new Set(this.files.map((file) => file.path));
-        this.startFileOperationGroup();
+        await streamAIPageBuilderConversation(
+          table,
+          request,
+          message,
+          this.buildConversationHistory(),
+          this.buildConversationWorkspace(),
+          aiConfig,
+          {
+            onStatus: ({ detail, phase }) => {
+              if (phase === 'inspect') {
+                if (!this.activeOperationGroupId) {
+                  this.startFileOperationGroup('正在查看当前工作区', detail || '先确认这轮对话需要哪些上下文', 'inspect');
+                } else {
+                  this.updateActiveOperationGroup({
+                    title: '正在查看当前工作区',
+                    subtitle: detail || '先确认这轮对话需要哪些上下文',
+                    tone: 'inspect'
+                  });
+                }
+                return;
+              }
 
-        await streamAIPageBuilderWorkspace(table, request, aiConfig, {
-          onFileDone: ({ file }) => {
-            const normalizedPath = file.path.replace(/^\/+/, '');
-            const action: PageBuilderFileOperationAction = existingPaths.has(normalizedPath) ? 'update' : 'create';
-            this.appendFileOperation(action, normalizedPath);
-            existingPaths.add(normalizedPath);
-          },
-          onDone: ({ summary, files }) => {
-            this.finishFileOperationGroup();
-            const nextWorkspace = createProjectFromGeneratedFiles(table, request, files);
-            this.applyWorkspaceResult(nextWorkspace, summary);
+              if (this.activeOperationGroupId) {
+                this.finishFileOperationGroup('需要的上下文已经整理好，开始落结果', '已查看当前工作区');
+              }
+
+              this.startFileOperationGroup('正在整理改动结果', detail || '把这一轮的改动收敛成最终文件', 'write');
+            },
+            onFileOperation: ({ action, path }) => {
+              if (!this.activeOperationGroupId) {
+                this.startFileOperationGroup(
+                  action === 'read' ? '正在查看当前工作区' : '正在整理改动结果',
+                  action === 'read' ? '先读清当前文件，再继续回答或修改' : '把这轮结果落成可预览文件',
+                  action === 'read' ? 'inspect' : 'write'
+                );
+              }
+
+              this.appendFileOperation(action, path);
+            },
+            onAssistant: ({ message: assistantMessage }) => {
+              this.pushConversationMessage('assistant', assistantMessage);
+            },
+            onDone: ({ summary, message: assistantMessage, files }) => {
+              if (files.length) {
+                this.applyConversationFileChanges(files);
+              }
+
+              const lastAssistantMessage = [...this.conversationMessages]
+                .reverse()
+                .find((item): item is PageBuilderConversationMessage => item.kind === 'message' && item.role === 'assistant');
+
+              if (!assistantMessage.trim() || lastAssistantMessage?.content !== assistantMessage.trim()) {
+                this.pushConversationMessage('assistant', assistantMessage || summary);
+              }
+
+              if (this.activeOperationGroupId) {
+                this.finishFileOperationGroup(
+                  files.length ? '这轮结果已经同步到工作区和预览' : '这轮主要是说明和建议，没有改动文件',
+                  files.length ? '已整理改动结果' : '已完成本轮说明'
+                );
+              }
+
+              this.lastGenerationSummary = summary;
+              this.schedulePersist(true);
+            }
           }
-        });
+        );
       } catch (error: any) {
-        this.error = error?.message || 'AI page generation failed.';
-        this.finishFileOperationGroup();
+        this.error = error?.message || 'AI page conversation failed.';
+
+        if (this.activeOperationGroupId) {
+          this.finishFileOperationGroup('这轮操作中断了，可以直接继续补充说明或重试', '处理中断');
+        }
       } finally {
         this.isGenerating = false;
       }

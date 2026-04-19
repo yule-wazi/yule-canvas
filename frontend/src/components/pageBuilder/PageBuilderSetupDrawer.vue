@@ -75,18 +75,17 @@
         <template v-for="message in conversationMessages" :key="message.id">
           <article
             v-if="message.kind === 'message'"
-            class="message-card"
+            class="message-row"
             :class="message.role === 'user' ? 'is-user' : 'is-assistant'"
           >
-            <div class="message-meta">
-              <strong>{{ message.role === 'user' ? 'You' : 'Assistant' }}</strong>
-              <span>{{ formatTime(message.createdAt) }}</span>
+            <div class="message-shell">
+              <div class="message-time">{{ formatTime(message.createdAt) }}</div>
+              <p class="message-content">{{ message.content }}</p>
             </div>
-            <p class="message-content">{{ message.content }}</p>
           </article>
 
           <AIFileOperationGroup
-            v-else
+            v-else-if="message.kind === 'file_operation_group'"
             :group="message"
           />
         </template>
@@ -297,8 +296,7 @@ function formatTime(value: number) {
   padding: 18px;
 }
 
-.panel,
-.message-card {
+.panel {
   display: grid;
   gap: 14px;
   padding: 16px;
@@ -398,42 +396,65 @@ function formatTime(value: number) {
 }
 
 .conversation-body {
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.conversation-body > * {
+  flex: 0 0 auto;
 }
 
 .conversation-footer {
   align-items: flex-end;
 }
 
-.message-card.is-user {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.message-card.is-assistant {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.message-meta {
+.message-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: #97a1b2;
-  font-size: 12px;
+  flex: 0 0 auto;
 }
 
-.message-meta strong {
-  color: #f5f7fb;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.message-row.is-user {
+  justify-content: flex-end;
+}
+
+.message-row.is-assistant {
+  justify-content: flex-start;
+}
+
+.message-shell {
+  max-width: min(92%, 420px);
+  display: grid;
+  gap: 8px;
+}
+
+.message-row.is-user .message-shell {
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.message-row.is-assistant .message-shell {
+  padding: 4px 0;
+}
+
+.message-time {
+  color: #7f8b9c;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.message-row.is-user .message-time {
+  text-align: right;
 }
 
 .message-content {
   margin: 0;
   color: #eef3fb;
   white-space: pre-wrap;
-  line-height: 1.7;
+  line-height: 1.72;
   font-size: 14px;
 }
 
@@ -533,6 +554,10 @@ function formatTime(value: number) {
   .setup-drawer {
     width: 100%;
     border-left: 0;
+  }
+
+  .message-shell {
+    max-width: 100%;
   }
 }
 </style>

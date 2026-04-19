@@ -2,6 +2,7 @@ import { Router } from 'express';
 import axios from 'axios';
 import { AIAdapterManager, WorkflowGenerationError } from '../services/AIAdapter';
 import { generatePageWorkspace, generatePageWorkspaceStream } from '../services/PageBuilderAI';
+import { runPageBuilderConversation } from '../services/PageBuilderConversationAI';
 import { RecordingWorkflowMapper } from '../services/RecordingWorkflowMapper';
 
 const router = Router();
@@ -283,6 +284,82 @@ router.post('/ai/generate-page-workspace-stream', async (req, res) => {
     res.write(`${JSON.stringify({
       type: 'error',
       error: error.message || 'AI page workspace generation failed.'
+    })}\n`);
+    return res.end();
+  }
+});
+
+router.post('/ai/page-builder/conversation-stream', async (req, res) => {
+  try {
+    const {
+      table,
+      request,
+      conversation,
+      workspace,
+      model = 'openrouter',
+      options = {}
+    } = req.body || {};
+
+    if (!table || !request || !conversation || !workspace) {
+      return res.status(400).json({
+        success: false,
+        error: 'table, request, conversation, and workspace are required.'
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.write(`${JSON.stringify({ type: 'start' })}\n`);
+
+    const result = await runPageBuilderConversation(aiManager, {
+      table,
+      request,
+      conversation,
+      workspace,
+      model,
+      options
+    }, {
+      onStatus: (status) => {
+        res.write(`${JSON.stringify({
+          type: 'status',
+          ...status
+        })}\n`);
+      },
+      onFileOperation: (operation) => {
+        res.write(`${JSON.stringify({
+          type: 'file_operation',
+          ...operation
+        })}\n`);
+      },
+      onAssistant: (message) => {
+        res.write(`${JSON.stringify({
+          type: 'assistant',
+          message
+        })}\n`);
+      }
+    });
+
+    res.write(`${JSON.stringify({
+      type: 'done',
+      intent: result.intent,
+      summary: result.summary,
+      message: result.message,
+      files: result.files
+    })}\n`);
+
+    return res.end();
+  } catch (error: any) {
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'AI page conversation failed.'
+      });
+    }
+
+    res.write(`${JSON.stringify({
+      type: 'error',
+      error: error.message || 'AI page conversation failed.'
     })}\n`);
     return res.end();
   }

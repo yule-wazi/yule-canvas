@@ -5,6 +5,12 @@ import type {
   PageBindingContract,
   PageBuildRequest,
   PageBuilderAIResponse,
+  PageBuilderConversationAssistantEvent,
+  PageBuilderConversationDoneEvent,
+  PageBuilderConversationFileOperationEvent,
+  PageBuilderConversationHistoryItem,
+  PageBuilderConversationStatusEvent,
+  PageBuilderConversationWorkspaceInput,
   PageBuilderFile,
   PageBuilderFileType,
   PageBuilderGeneratedFile,
@@ -349,6 +355,43 @@ function mapGeneratedFilesToProjectFiles(generatedFiles: PageBuilderGeneratedFil
   });
 }
 
+export function mergeGeneratedFilesIntoProject(
+  project: PageBuilderProject,
+  generatedFiles: PageBuilderGeneratedFile[]
+) {
+  const currentFiles = [...project.files];
+  const currentByPath = new Map(currentFiles.map((file) => [file.path, file]));
+  const appliedFiles = mapGeneratedFilesToProjectFiles(generatedFiles);
+
+  for (const appliedFile of appliedFiles) {
+    const existing = currentByPath.get(appliedFile.path);
+
+    if (existing) {
+      currentByPath.set(appliedFile.path, {
+        ...existing,
+        role: appliedFile.role,
+        editable: appliedFile.editable,
+        visibility: appliedFile.visibility,
+        content: appliedFile.content
+      });
+      continue;
+    }
+
+    currentByPath.set(appliedFile.path, {
+      ...appliedFile,
+      id: `generated-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    });
+  }
+
+  const nextFiles = Array.from(currentByPath.values());
+
+  return {
+    ...project,
+    files: nextFiles,
+    tree: buildTree(nextFiles)
+  };
+}
+
 export function createProjectFromGeneratedFiles(
   table: DataTable,
   request: PageBuildRequest,
@@ -502,6 +545,109 @@ export async function streamAIPageBuilderWorkspace(
 
       if (event.type === 'error') {
         throw new Error(event.error || 'AI page generation failed.');
+      }
+    }
+  }
+}
+
+export async function streamAIPageBuilderConversation(
+  table: DataTable,
+  request: PageBuildRequest,
+  message: string,
+  history: PageBuilderConversationHistoryItem[],
+  workspace: PageBuilderConversationWorkspaceInput,
+  aiConfig: PageBuilderAIConfig,
+  callbacks: {
+    onStatus?: (event: PageBuilderConversationStatusEvent) => void;
+    onFileOperation?: (event: PageBuilderConversationFileOperationEvent) => void;
+    onAssistant?: (event: PageBuilderConversationAssistantEvent) => void;
+    onDone?: (event: PageBuilderConversationDoneEvent) => void;
+  }
+) {
+  const sampleRows = table.rows.slice(0, 5);
+  const openRouterOptions = aiConfig.provider === 'openrouter'
+    ? {
+        httpReferer: window.location.origin,
+        appTitle: 'AIBrowser Page Builder'
+      }
+    : {};
+
+  const response = await fetch(`${api.defaults.baseURL}/ai/page-builder/conversation-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      table: {
+        id: table.id,
+        name: table.name,
+        columns: table.columns,
+        rowCount: table.rows.length,
+        sampleRows
+      },
+      request,
+      conversation: {
+        message,
+        history
+      },
+      workspace,
+      model: aiConfig.provider,
+      options: {
+        apiKey: aiConfig.apiKey,
+        model: aiConfig.model || undefined,
+        timeoutMs: 180000,
+        ...openRouterOptions
+      }
+    })
+  });
+
+  if (!response.ok || !response.body) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'AI page conversation failed.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const event = JSON.parse(trimmed);
+
+      if (event.type === 'status') {
+        callbacks.onStatus?.(event as PageBuilderConversationStatusEvent);
+      }
+
+      if (event.type === 'file_operation') {
+        callbacks.onFileOperation?.(event as PageBuilderConversationFileOperationEvent);
+      }
+
+      if (event.type === 'assistant') {
+        callbacks.onAssistant?.(event as PageBuilderConversationAssistantEvent);
+      }
+
+      if (event.type === 'done') {
+        callbacks.onDone?.(event as PageBuilderConversationDoneEvent);
+      }
+
+      if (event.type === 'error') {
+        throw new Error(event.error || 'AI page conversation failed.');
       }
     }
   }
