@@ -53,7 +53,7 @@ The current main focus is:
 1. keep the crawler workflow practical and stable
 2. treat extracted tables as the input source for the next stage
 3. build the first practical `page builder workbench`
-4. move toward `data table -> page spec -> generated page -> AI iteration`
+4. move toward `data table -> generated workspace -> preview -> AI iteration`
 
 Not in scope by default:
 
@@ -71,8 +71,9 @@ Main backend responsibility today:
 - map recordings to workflows
 - validate and execute workflows
 - optionally use AI to generate workflow JSON
+- stream page-builder file generation results
 
-Important files:
+Important backend files:
 
 - `backend/src/server.ts`
 - `backend/src/routes/api.ts`
@@ -81,6 +82,7 @@ Important files:
 - `backend/src/services/WorkflowInterpreter.ts`
 - `backend/src/services/WorkflowSemanticValidator.ts`
 - `backend/src/services/AIAdapter.ts`
+- `backend/src/services/PageBuilderAI.ts`
 
 ### Frontend
 
@@ -91,22 +93,29 @@ Main frontend responsibility today:
 - data table management
 - execution logs and results
 - page-builder workbench development
+- Sandpack-based runtime preview
 
-Important existing workflow files:
+Important crawler-side files:
 
 - `frontend/src/components/workflow/WorkflowEditor.vue`
 - `frontend/src/stores/workflow.ts`
 - `frontend/src/components/DataTableManager.vue`
 - `frontend/src/views/Home.vue`
-- `frontend/src/styles/tokens.css`
+
+Important page-builder files:
+
+- `frontend/src/views/PageBuilderView.vue`
+- `frontend/src/stores/pageBuilder.ts`
+- `frontend/src/services/pageBuilder.ts`
+- `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
 
 Important page-builder docs:
 
-- `docs/page-builder-plan.md`
 - `docs/page-builder-workbench.md`
 - `docs/page-builder-context.md`
 
-## 7. Constraints
+## 7. Stable Constraints
 
 These constraints should remain stable unless the user explicitly changes direction:
 
@@ -117,6 +126,9 @@ These constraints should remain stable unless the user explicitly changes direct
 5. Prefer deterministic mapping when recording evidence exists.
 6. AI-generated workflow output must be validated before use.
 7. Avoid replacing working crawler behavior with unstable AI-first behavior.
+8. The page builder should remain workspace-centered.
+9. Sandpack remains the official preview runtime for the current stage.
+10. Runtime table data for preview is currently bridged from host frontend state, not fetched from a permanent backend data service.
 
 ## 8. Recommended Reading Order
 
@@ -137,6 +149,8 @@ When resuming the whole project in a new conversation:
    - `frontend/src/views/PageBuilderView.vue`
    - `frontend/src/stores/pageBuilder.ts`
    - `frontend/src/services/pageBuilder.ts`
+   - `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
+   - `backend/src/services/PageBuilderAI.ts`
 
 ## 9. Guidance For Future AI
 
@@ -150,7 +164,9 @@ When continuing this repo:
 - if ambiguous, assume crawler stability should be preserved
 - if ambiguous, prefer moving the product toward stable page generation from extracted tables
 - treat recent page-builder interaction details as belonging to `docs/page-builder-context.md`, not this file
+- do not reintroduce hidden preview paths that bypass the visible workspace
+- do not let AI generate or expose `src/data/__runtimeTableData.js` as an ordinary project file
 
 ## 10. Short Resume Prompt
 
-`AIBrowser is a workflow-based browser data extraction platform evolving into a dual-agent system: one agent for extracting data and one for generating webpages from that data. The crawler stack is already usable. The current active focus is the page-builder workbench built on top of extracted tables, while the crawler side should stay stable.`
+`AIBrowser is a workflow-based browser data extraction platform evolving into a dual-agent system: one agent for extracting data and one for generating webpages from that data. The crawler stack is already usable. The current active focus is the page-builder workbench built on top of extracted tables. That workbench now uses streamed file generation, a workspace-first Sandpack preview, and a host-injected runtime table-data bridge so generated pages can render current table data without hardcoding sample rows.`

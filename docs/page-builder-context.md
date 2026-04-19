@@ -20,18 +20,17 @@ The page builder is still in:
 
 `Phase A: direct multi-file workspace generation`
 
-But the interaction model has now advanced from a single opaque request into:
+But the practical interaction model is now:
 
-`setup -> real streaming file progress -> final workspace commit`
+`setup -> streaming file progress -> final workspace commit -> Sandpack preview`
 
 Meaning:
 
 - the user first sees the setup drawer
-- the user clicks send once to start generation
-- the drawer immediately switches into conversation mode
-- AI generation is now streamed in real time at the file level
-- the conversation only shows files after each file is fully generated
-- the real workspace and Sandpack preview are updated only after the whole generation finishes
+- the first send moves the drawer into conversation mode
+- AI generation streams real file-complete events
+- the real workspace is committed only after the stream finishes
+- the preview reads runtime data from a host-injected hidden bridge file instead of hardcoded sample rows
 
 The system is still **not** doing:
 
@@ -43,320 +42,181 @@ The system is still **not** doing:
 
 ## 3. What Was Completed In The Latest Session
 
-### 3.1 The Drawer Now Has A True Setup-To-Conversation Flow
+### 3.1 Runtime Table Data Is Now Bridged From Frontend State Into Sandpack
 
-This is now an important product behavior change.
+This is the biggest product correction from the latest session.
 
 Current behavior:
 
-- the setup UI is shown only before the first send
-- when the user clicks the send button, the drawer immediately switches to conversation mode
-- after that point, the same drawer is used as the main AI conversation surface
-- follow-up prompts are sent from the conversation input area instead of returning to the setup form
+- the selected table snapshot is computed in the host frontend
+- the preview injects a hidden runtime file:
+  - `src/data/__runtimeTableData.js`
+- `src/data/tableData.js` is system-controlled and reads runtime data from that hidden file
+- generated Vue components are expected to import from `src/data/tableData.js`
+- preview data now reflects current frontend table state rather than stale hardcoded sample rows
+
+Why this changed:
+
+- backend temporary caching added synchronization problems
+- the true source of truth is still frontend table state
+- host injection is simpler and more reliable for the current product stage
 
 Important files:
 
-- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
 - `frontend/src/views/PageBuilderView.vue`
-- `frontend/src/stores/pageBuilder.ts`
+- `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
+- `backend/src/services/PageBuilderAI.ts`
 
-### 3.2 Page Builder Streaming Route Is Now In Place
+### 3.2 The Hidden Runtime Data File Must Not Be AI-Generated
 
-The backend now has a dedicated streaming generation route:
-
-- `POST /api/ai/generate-page-workspace-stream`
+This is now a fixed rule.
 
 Current behavior:
 
-- backend requests the model with real streaming enabled
-- backend parses streamed model output using file block delimiters
-- backend emits `file_done` events only after one full file block is complete
-- backend emits a final `done` event only after all files are complete
-
-Important files:
-
-- `backend/src/routes/api.ts`
-- `backend/src/services/PageBuilderAI.ts`
-- `backend/src/services/AIAdapter.ts`
-
-### 3.3 The AI Output Contract Was Changed From One JSON Blob To A Streamable File Protocol
-
-This is a major implementation decision made in this session.
-
-Previous practical contract:
-
-- AI returns one final JSON object containing `summary` and `files[]`
-
-Current practical contract for streaming:
-
-- AI outputs file blocks such as:
-  - `<file path="..." role="..."> ... </file>`
-- AI outputs one final summary block:
-  - `<summary>...</summary>`
-
-Why this was changed:
-
-- final JSON is awkward for real file-level progress reporting
-- file blocks let the backend know exactly when a file is complete
-- this makes it possible to show real progress without pushing partial code into Sandpack
+- the host runtime injects `src/data/__runtimeTableData.js`
+- AI must not create or modify that file
+- backend path validation rejects that file if the model emits it anyway
+- frontend also treats it as internal-only and does not expose it as a normal project file
 
 Important files:
 
 - `backend/src/services/PageBuilderAI.ts`
-
-### 3.4 The Frontend Now Consumes File-Level Streaming Progress
-
-Current behavior:
-
-- frontend opens a streaming request instead of waiting for one final JSON response
-- frontend appends a conversation item only when one file has fully completed
-- the UI does not render token chunks or half-finished code
-- the file progress UI should not be treated as ordinary chat bubbles
-- file progress should be rendered inside a collapsible drawer-style operation component
-- this operation UI should be reusable for similar AI file actions, not hardcoded only for first-generation flow
-
-Important files:
-
 - `frontend/src/services/pageBuilder.ts`
-- `frontend/src/stores/pageBuilder.ts`
-- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
 
-### 3.5 File Operation Naming Was Standardized
+### 3.3 Preview Refresh Is Now Explicitly Controllable
 
-This was explicitly decided during the session.
-
-Unified file operation labels should now use:
-
-- `新增内容`
-- `读取内容`
-- `更新内容`
-
-Do **not** prefer wording like:
-
-- `AI generated`
-- `AI updated`
-- `已生成`
-
-The product should describe the file operation itself rather than foregrounding the AI actor in every row.
-
-This means the preferred UX direction is closer to:
-
-- `新增内容 src/App.vue`
-- `更新内容 src/styles.css`
-- `读取内容 src/data/tableData.js`
-
-Not:
-
-- `AI 已生成 src/App.vue`
-
-### 3.6 The File Progress UI Should Become A Reusable Collapsible Operation Component
-
-Another explicit product decision made in this session:
-
-- do not treat each completed file as its own standalone assistant message card
-- group similar file operations into one collapsible drawer-like component
-- this component should be abstract enough to support multiple AI file workflows later
-
-The intended design direction is:
-
-- one grouped operation surface
-- collapsed / expanded behavior
-- a count header such as `瀹稿弶澧界悰?3 娑擃亙鎹㈤崝顡?- rows that list normalized file operations with file paths
-
-This should be implemented as a dedicated reusable component for AI file operations, rather than embedding the whole rendering logic directly in the page-builder drawer.
-
-### 3.5 Sandpack Update Timing Is Deliberately Deferred Until The End
-
-This is now a fixed near-term product decision.
+Sandpack refresh is no longer left entirely to incidental file updates.
 
 Current behavior:
 
-- generated files are **not** written into the real page-builder workspace while the model is still streaming
-- generated files are buffered during streaming
-- only when the stream reaches final completion does the system normalize files into the real workspace
-- only then do the file tree, code panel, and Sandpack preview update
+- switching workspace now forces a Sandpack remount
+- the first successful AI generation for a new workspace forces a Sandpack remount
+- there is now a manual refresh button beside the `Preview / Code / Data` mode group
+- clicking refresh forces the preview iframe to rebuild
 
 Why:
 
-- partial Vue files can break preview immediately
-- imports and dependent files may not exist yet mid-stream
-- the user still gets live progress, but the runtime remains stable
+- Sandpack sometimes failed to start rendering immediately on first workspace creation
+- a hard remount is more reliable than hoping internal recompilation logic notices the right state transition
 
 Important files:
 
 - `frontend/src/stores/pageBuilder.ts`
-- `frontend/src/services/pageBuilder.ts`
+- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
+- `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
 
-## 4. Important Corrections Made During This Session
+### 3.4 The Refresh Button Now Has Interaction Feedback
 
-### 4.1 Streaming Is Real At The Model Level, Not Fake Replay
-
-This was clarified explicitly during the session.
-
-The intended behavior is **not**:
-
-- wait for the full AI result
-- split files afterward
-- pretend to stream file completion
-
-The current intended behavior is:
-
-- request the provider with streaming enabled
-- parse the stream while it is arriving
-- emit a file completion event only when one file block truly finishes
-
-### 4.2 Frontend Streaming Feedback Must Stay Minimal
-
-The user explicitly asked to avoid noisy progress UI.
-
-Current practical behavior:
-
-- do not show token-by-token text
-- do not show partial code chunks
-- do not show half-generated file contents
-- only show completed files as they become available
-- prefer grouped operation rows over repeated assistant message cards
-
-### 4.3 Setup Is First-Run Only
-
-The setup form is no longer treated as a recurring screen during the same generation flow.
+The manual refresh control is not purely functional anymore.
 
 Current behavior:
 
-- setup is the pre-send view
-- conversation is the post-send view
-- the product direction is moving toward continued work from the conversation surface rather than bouncing back into setup every turn
+- hover gives the icon a light rotation cue
+- click triggers a visible refresh animation state
+- the button also triggers the actual preview remount
 
-### 4.4 Avoid Referring To The Progress UI As "Reference To Figure 2 / Figure 3"
+Important file:
 
-The intended implementation should be described in product terms, not as:
+- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
 
-- "make it like figure 2"
-- "refer to figure 3"
+## 4. Important Product Decisions Now Fixed
 
-The correct wording for continuation is:
+These points should now be treated as fixed unless explicitly changed.
 
-- implement the streamed file feedback inside a collapsible drawer-style operation component
-- use normalized file operation naming
-- keep it inside the post-send conversation surface
+1. The page builder remains in Phase A direct workspace generation.
+2. The page builder remains workspace-centered.
+3. Sandpack remains the official preview runtime.
+4. Streaming progress should be shown at the file-complete level, not token-by-token.
+5. The real workspace and Sandpack should update only after the full streamed generation finishes.
+6. Runtime preview data should currently come from host frontend state through a hidden bridge file.
+7. `src/data/tableData.js` is a system-controlled data adapter.
+8. `src/data/__runtimeTableData.js` is a host-injected internal file and must not be AI-authored.
+9. Sample rows are still sent to the model for shape understanding, but they are not the real runtime dataset.
+10. Preview refresh must be explicitly forceable when Sandpack lifecycle behavior is unreliable.
 
 ## 5. Current Practical Working State
 
 At the moment, the following is true:
 
-- Sandpack preview still works for finalized generated Vue workspace files
-- AI-generated files still appear in the file tree and code editor after final commit
-- local workspace switching and persistence are still working
-- AI provider configuration still persists locally
-- the request still sends schema + rowCount + a small sampleRows set
-- the request still does not inject default `pageType`, `stylePreset`, or `density`
-- the drawer now switches to conversation mode immediately when the user sends the first prompt
-- page-builder generation now has a real streaming route
-- the frontend now receives file completion updates during generation
-- the streamed file feedback direction is now a grouped collapsible operation component rather than repeated assistant message bubbles
-- Sandpack still waits for final completion before updating
+- the setup drawer switches to conversation mode on first send
+- page-builder generation has a real streaming route
+- frontend receives file completion updates during generation
+- the workspace is committed only after the stream completes
+- generated files appear in the file tree and code panel after final commit
+- workspaces and AI config still persist locally
+- the request still sends schema + rowCount + a small `sampleRows` set
+- generated pages are now supposed to read runtime data through `src/data/tableData.js`
+- the preview injects current table data into a hidden runtime bridge file
+- switching workspace can force a full preview remount
+- first-time generation for a new workspace can force a full preview remount
+- the user has a manual refresh button to force preview rebuild
 
 In short:
 
-`Phase A direct AI workspace generation is now paired with real file-level streaming progress in the conversation drawer, while runtime updates remain final-commit only`
+`Phase A direct AI workspace generation now includes file-level streaming progress, a host-injected runtime table-data bridge, and explicit Sandpack remount controls for reliability`
 
 ## 6. Known Issues Already Encountered
 
-### 6.1 Stream Parsing Depends On The Model Following The File Block Contract
-
-The new streaming approach is only reliable when the model obeys the file block format.
+### 6.1 Stream Parsing Still Depends On The Model Following The File Block Contract
 
 Likely failure categories:
 
 - model emits explanatory text outside the expected file blocks
 - file tags are malformed
 - summary block is missing
-- generated file order is strange or unstable
+- generated file order is unstable
 
-This means prompt/output discipline is now even more important than before.
-
-### 6.2 Provider Streaming Support Is Not Uniform
-
-The current streaming path is aimed at OpenAI-compatible provider behavior.
-
-Current practical state:
-
-- the page-builder streaming path is designed for OpenRouter / SiliconFlow style streaming responses
-- Qwen was not fully adapted for this file-stream protocol path in this session
-
-This should be treated as a current limitation, not a completed cross-provider solution.
-
-### 6.3 AI Output Quality Is Still A Core Risk
-
-Even with improved progress visibility, the underlying generation quality is still not stabilized.
+### 6.2 AI Output Quality Is Still A Core Risk
 
 This still includes:
 
 - invalid Vue code
 - broken imports
-- fragile structure choices
+- overly fragile structure choices
 - Sandpack-incompatible output
 
-Streaming progress improves UX, but it does not by itself solve code quality.
+### 6.3 The Conversation Surface Is Still Functionally Ahead Of Its Visual Design
 
-## 7. What Is Fixed For Now
+The streaming/file-operation behavior is now more correct than polished.
 
-These points should now be treated as fixed unless explicitly changed.
+Remaining UI work likely includes:
 
-1. The page builder remains in Phase A direct AI workspace generation.
-2. The page builder remains workspace-centered.
-3. Sandpack remains the official preview runtime.
-4. AI config remains editable in-product and persists locally.
-5. Full table rows should not be sent to the model.
-6. Current AI context should use schema + rowCount + small sampleRows.
-7. Page-builder workspaces should persist locally across refresh.
-8. The setup drawer should switch to conversation mode immediately on first send.
-9. Streaming progress should be shown at the file-complete level, not token-by-token.
-10. Sandpack and the real workspace should update only after the whole streamed generation completes.
-11. File operation naming should use `閺傛澘顤冮崘鍛啇 / 鐠囪褰囬崘鍛啇 / 閺囧瓨鏌婇崘鍛啇`.
-12. Streamed file feedback should be grouped into a reusable collapsible operation component.
-13. Default `pageType`, `stylePreset`, and `density` should not be silently injected into the AI request.
+- a stronger collapsible operation component
+- better grouping visuals
+- a better bottom conversation input area
 
-## 8. Files Most Relevant For The Next Session
+## 7. Files Most Relevant For The Next Session
 
 Open these first:
 
 - `docs/page-builder-workbench.md`
 - `docs/page-builder-context.md`
-- `frontend/src/services/pageBuilder.ts`
-- `frontend/src/stores/pageBuilder.ts`
-- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
-- `frontend/src/components/pageBuilder/PageBuilderTopBar.vue`
 - `frontend/src/views/PageBuilderView.vue`
+- `frontend/src/stores/pageBuilder.ts`
+- `frontend/src/services/pageBuilder.ts`
+- `frontend/src/components/pageBuilder/PageBuilderPreview.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSandbox.vue`
+- `frontend/src/components/pageBuilder/PageBuilderSetupDrawer.vue`
 - `backend/src/services/PageBuilderAI.ts`
-- `backend/src/services/AIAdapter.ts`
 - `backend/src/routes/api.ts`
 
-## 9. Main Remaining Gaps
+## 8. Main Remaining Gaps
 
-### 9.1 The Conversation UI Is Still Functionally Correct But Visually Minimal
+### 8.1 The Streaming File-Operation UI Still Needs Better Productization
 
-The current chat UI now reflects file completion progress, but it is still visually simple.
+The mechanics now work, but the grouped operation UI can still be improved.
 
-Likely next improvements:
-
-- replace repeated assistant file bubbles with one reusable collapsible operation component
-- use the new normalized operation labels: `閺傛澘顤冮崘鍛啇 / 鐠囪褰囬崘鍛啇 / 閺囧瓨鏌婇崘鍛啇`
-- improve the bottom input area so it feels more like a dedicated AI chat control
-
-### 9.2 The New File Streaming Contract Needs More Real-World Validation
-
-The streaming file protocol has been implemented, but it still needs exercise across real prompts and models.
+### 8.2 The File-Stream Contract Still Needs More Real-World Validation
 
 The next practical questions are:
 
-- how often does the model follow the block protocol cleanly
-- which providers behave best under this contract
-- whether additional guardrails are needed for malformed stream segments
+- how often the model follows the block protocol cleanly
+- which providers behave best under the contract
+- what extra guardrails are needed for malformed output
 
-### 9.3 Workspace Editing Still Has Not Started
+### 8.3 Workspace Editing Still Has Not Started
 
-Even though the drawer is now conversational, the product is still in direct generation mode.
+Even though the drawer is conversational, the product is still in direct generation mode.
 
 This means:
 
@@ -364,22 +224,22 @@ This means:
 - there is still no selective in-place file editing stage
 - there is still no autonomous repair stage
 
-## 10. Recommended Next Step
+## 9. Recommended Next Step
 
 The next session should continue from here:
 
-1. test the streaming route across multiple real prompts and providers
-2. observe whether the model reliably emits valid file block boundaries
-3. tighten the output contract if malformed stream segments appear
-4. build the reusable collapsible AI file-operation component and wire streamed file completion rows into it
-5. only after the file streaming contract is reliable, consider moving toward selective workspace editing
+1. test more prompts against the streaming file protocol
+2. tighten output guardrails if malformed stream segments appear
+3. improve the reusable file-operation UI
+4. verify whether preview refresh logic is sufficient under repeated workspace switching
+5. only after direct generation is stable, consider selective workspace editing
 
 Do **not** jump straight to agentic file editing yet.
 
-The current correct focus is still:
+The correct near-term focus is still:
 
-`make direct AI workspace generation reliable, stream progress to the user at the file-complete level, and keep Sandpack updates deferred until the final generation commit`
+`make direct AI workspace generation reliable, keep runtime data current through the host bridge, and keep Sandpack preview behavior predictable through explicit remount controls`
 
-## 11. Short Resume Prompt
+## 10. Short Resume Prompt
 
-`The page builder is still in Phase A direct AI workspace generation, but its interaction model has changed. The user first sees a setup drawer, then the drawer switches immediately into conversation mode on first send. Generation is now streamed in real time at the file level using a file block output contract rather than one final JSON blob. The frontend should present streamed file completion through a reusable collapsible operation component inside the drawer, not repeated assistant message bubbles. File operation naming is now standardized as 閺傛澘顤冮崘鍛啇 / 鐠囪褰囬崘鍛啇 / 閺囧瓨鏌婇崘鍛啇. The real workspace and Sandpack preview are still updated only after the full generation finishes. Workspaces and AI config still persist locally, schema + rowCount + small sampleRows remain the core model context, and default pageType/stylePreset/density are still intentionally not injected.`  
+`The page builder is still in Phase A direct AI workspace generation, but its interaction model now includes real file-level streaming progress and a more reliable preview runtime. The drawer switches from setup to conversation on first send, generation uses a file-block streaming protocol, and the real workspace is committed only after the full stream completes. Runtime table data is no longer fetched from a temporary backend cache; instead, the host frontend injects current table data into a hidden internal file at src/data/__runtimeTableData.js, and src/data/tableData.js is a system-controlled adapter that generated components must use. Sandpack remounts can now be forced when switching workspaces, after the first successful generation for a new workspace, and through a manual refresh button.`
