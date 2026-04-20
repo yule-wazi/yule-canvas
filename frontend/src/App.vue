@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { RouterView, useRoute } from 'vue-router';
 import Layout from './components/Layout.vue';
+
+const route = useRoute();
+const isPreviewHostRoute = computed(() => route.name === 'page-builder-preview-host');
 </script>
 
 <template>
-  <Layout />
+  <RouterView v-if="isPreviewHostRoute" />
+  <Layout v-else />
 </template>
 
 <style>

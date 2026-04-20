@@ -64,6 +64,19 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+:global(html),
+:global(body),
+:global(#app) {
+  margin: 0 !important;
+  min-height: 100vh !important;
+  background: #fff !important;
+  color: initial !important;
+}
+
+:global(body) {
+  font-family: initial !important;
+}
+
 .preview-host {
   min-height: 100vh;
   background: #fff;
