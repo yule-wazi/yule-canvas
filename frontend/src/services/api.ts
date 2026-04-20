@@ -2,8 +2,8 @@ import axios from 'axios';
 
 const defaultApiBase =
   typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:3000/api`
-    : 'http://localhost:3000/api';
+    ? `${window.location.protocol}//${window.location.hostname}:3001/api`
+    : 'http://localhost:3001/api';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || defaultApiBase,

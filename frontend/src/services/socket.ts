@@ -1,11 +1,16 @@
 import { io, Socket } from 'socket.io-client';
 
+const defaultSocketUrl =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    : 'http://localhost:3001';
+
 class SocketClient {
   private socket: Socket | null = null;
   private url: string;
 
   constructor() {
-    this.url = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
+    this.url = import.meta.env.VITE_SOCKET_URL || defaultSocketUrl;
   }
 
   connect() {

@@ -534,7 +534,11 @@ function getProxyVideoUrl(originalUrl: string): string {
   if (!fullUrl) return '';
   
   // 通过后端代理访问视频，绕过防盗链限制
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  const apiUrl =
+    import.meta.env.VITE_API_URL ||
+    (typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}:3001/api`
+      : 'http://localhost:3001/api');
   return `${apiUrl}/proxy/video?url=${encodeURIComponent(fullUrl)}`;
 }
 
