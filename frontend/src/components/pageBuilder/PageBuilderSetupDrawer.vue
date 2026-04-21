@@ -15,12 +15,12 @@
         <section class="panel">
           <label class="field">
             <span>Data table</span>
-            <select :value="selectedTableId || ''" @change="$emit('update:selectedTableId', ($event.target as HTMLSelectElement).value)">
-              <option value="" disabled>Select a table</option>
-              <option v-for="table in tables" :key="table.id" :value="table.id">
-                {{ table.name }}
-              </option>
-            </select>
+            <PageBuilderSelect
+              :model-value="selectedTableId || ''"
+              placeholder="Select a table"
+              :options="tableOptions"
+              @update:model-value="$emit('update:selectedTableId', $event)"
+            />
           </label>
 
           <div class="inline-meta">
@@ -122,11 +122,12 @@
         <div class="config-body">
           <label class="field">
             <span>Provider</span>
-            <select :value="aiProvider" @change="$emit('update:aiProvider', ($event.target as HTMLSelectElement).value)">
-              <option value="siliconflow">SiliconFlow</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="qwen">Qwen</option>
-            </select>
+            <PageBuilderSelect
+              :model-value="aiProvider"
+              placeholder="Select provider"
+              :options="providerOptions"
+              @update:model-value="$emit('update:aiProvider', $event)"
+            />
           </label>
 
           <label class="field">
@@ -167,6 +168,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import AIFileOperationGroup from './AIFileOperationGroup.vue';
+import PageBuilderSelect from './PageBuilderSelect.vue';
 import type { DataTable } from '../../stores/dataTable';
 import type {
   PageBuilderAIProvider,
@@ -207,6 +209,19 @@ const selectedTableLabel = computed(() => {
 
 const isAIConfigOpen = ref(false);
 
+const tableOptions = computed(() =>
+  props.tables.map((table) => ({
+    value: table.id,
+    label: table.name
+  }))
+);
+
+const providerOptions = [
+  { value: 'siliconflow', label: 'SiliconFlow' },
+  { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'qwen', label: 'Qwen' }
+];
+
 const providerLabel = computed(() => {
   if (props.aiProvider === 'openrouter') {
     return 'OpenRouter';
@@ -238,7 +253,7 @@ function formatTime(value: number) {
   height: 100%;
   transform: translateX(100%);
   transition: transform 0.24s ease;
-  background: linear-gradient(180deg, rgba(11, 11, 11, 0.985) 0%, rgba(6, 6, 6, 0.99) 100%);
+  background: #000000;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: rgba(0, 0, 0, 0.48) -18px 0 38px;
   overflow: hidden;
@@ -265,7 +280,7 @@ function formatTime(value: number) {
 .eyebrow {
   margin: 0;
   color: #78b900;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -273,18 +288,28 @@ function formatTime(value: number) {
 
 .topbar-meta strong {
   color: #f5f7fb;
-  font-size: 18px;
+  font-size: 36px;
+  line-height: 1.25;
 }
 
 .config-trigger,
 .config-close {
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  min-height: 40px;
+  padding: 0 13px;
+  border: 2px solid #76b900;
+  border-radius: 2px;
+  background: transparent;
   color: #f5f7fb;
   cursor: pointer;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.config-trigger:hover,
+.config-close:hover {
+  background: #1eaedb;
+  color: #ffffff;
 }
 
 .drawer-body {
@@ -300,9 +325,10 @@ function formatTime(value: number) {
   display: grid;
   gap: 14px;
   padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
+  background: #1a1a1a;
+  box-shadow: rgba(0, 0, 0, 0.3) 0px 0px 5px 0px;
 }
 
 .field {
@@ -312,42 +338,38 @@ function formatTime(value: number) {
 
 .field span,
 .helper-text {
-  color: #97a1b2;
-  font-size: 13px;
+  color: #a7a7a7;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
-.field select,
 .composer-input,
 .submit-btn,
 .text-input {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #141414;
   color: #f5f7fb;
   outline: none;
 }
 
-.field select {
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 14px;
-}
-
 .text-input {
   min-height: 44px;
   padding: 0 14px;
-  border-radius: 14px;
+  border-radius: 2px;
 }
 
 .inline-meta {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  color: #9ba5b4;
-  font-size: 13px;
+  color: #a7a7a7;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .inline-meta strong {
-  color: #f5f7fb;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .field-chip-list {
@@ -361,20 +383,22 @@ function formatTime(value: number) {
   align-items: center;
   min-height: 28px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  color: #d9e0ea;
-  font-size: 12px;
+  border: 1px solid #5e5e5e;
+  border-radius: 2px;
+  background: #141414;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.43;
 }
 
 .composer-input {
   width: 100%;
   min-height: 180px;
   padding: 14px 16px;
-  border-radius: 18px;
+  border-radius: 2px;
   resize: none;
-  line-height: 1.7;
+  line-height: 1.67;
   font-size: 15px;
 }
 
@@ -431,7 +455,7 @@ function formatTime(value: number) {
 
 .message-row.is-user .message-shell {
   padding: 12px 14px;
-  border-radius: 18px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -460,9 +484,16 @@ function formatTime(value: number) {
 
 .submit-btn {
   min-height: 48px;
-  border-radius: 16px;
+  border-radius: 2px;
   font-weight: 700;
   cursor: pointer;
+  background: transparent;
+  border: 2px solid #76b900;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #1eaedb;
+  color: #ffffff;
 }
 
 .submit-btn:disabled {
@@ -503,8 +534,8 @@ function formatTime(value: number) {
 .config-modal {
   width: min(640px, 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 28px;
-  background: linear-gradient(180deg, rgba(14, 14, 14, 0.99) 0%, rgba(9, 9, 9, 0.99) 100%);
+  border-radius: 2px;
+  background: #000000;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
   overflow: hidden;
 }
@@ -528,16 +559,17 @@ function formatTime(value: number) {
 }
 
 .config-header-meta span {
-  color: #97a1b2;
-  font-size: 12px;
+  color: #a7a7a7;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .config-header-meta strong {
   color: #f5f7fb;
-  font-size: 16px;
+  font-size: 24px;
+  line-height: 1.25;
 }
 
 .config-body {
